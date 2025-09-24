@@ -1,1 +1,69 @@
-*.tmp
+# --- LTspice ---
+# Ignore simulation output files. These are regenerated on each run and can be large.
+*.raw
+*.fft
+
+# Ignore intermediate files like netlists and logs.
+*.net
+*.log
+
+# Ignore plot setting files. These are specific to a user's session.
+*.plt
+
+# Ignore automatic backup and draft files.
+*.asc.bak
+*.asy.bak
+DRAFT*.asc
+
+
+# --- EasyEDA ---
+# Ignore generated manufacturing files. Regenerate these from a specific commit when needed.
+/gerber/
+/Gerber/
+/production/
+/export/
+*.gbr
+*.gtl
+*.gbl
+*.gts
+*.gbs
+*.gto
+*.gbo
+*.gm*
+*.drl
+*.xln
+*_backup/
+
+# Ignore Bill of Materials (BOM) and Pick-and-Place files.
+# Be careful if your project uses other important CSV files.
+*.csv
+*.pos
+*.pnp
+
+# Ignore EasyEDA project backups and logs.
+*.bak
+*.backup
+/log/
+/logs/
+
+# Ignore local configuration and cache files from the EasyEDA desktop client.
+# These are not part of the core design.
+/projects/
+/extensions/
+/locales/
+
+
+# --- General System & Editor Files ---
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*~
+.history
+/doc

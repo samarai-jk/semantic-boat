@@ -1,0 +1,82 @@
+Configuration	stm32-cube
+STM32CubeMX 	6.15.0
+Date	09/27/2025
+MCU	STM32F373CCTx
+
+
+
+PERIPHERALS	MODES	FUNCTIONS	PINS
+I2C1	SMBus-Alert-mode	I2C1_SCL	PB6
+I2C1	SMBus-Alert-mode	I2C1_SDA	PB7
+I2C1	SMBus-Alert-mode	I2C1_SMBA	PB5
+SDADC1	IN4-Single-Ended	SDADC1_AIN4P	PB2
+SDADC1	IN5-Single-Ended	SDADC1_AIN5P	PB1
+SDADC1	IN7-Single-Ended	SDADC1_AIN7P	PE9
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+12	PA2*	USART2_TX	
+13	PA3*	USART2_RX	
+19	PB1	SDADC1_AIN5P	MCU_ANA_DEV_V
+20	PB2	SDADC1_AIN4P	MCU_ANA_DEV_I
+22	PE9	SDADC1_AIN7P	MCU_ANA_DEV_T
+29	PA8	GPIO_EXTI8	
+34	PA13*	SYS_JTMS-SWDIO	
+37	PA14*	SYS_JTCK-SWCLK	
+39	PB3*	SYS_JTDO-TRACESWO	
+41	PB5	I2C1_SMBA	
+42	PB6	I2C1_SCL	
+43	PB7	I2C1_SDA	
+PERIPHERALS	MODES	FUNCTIONS	PINS
+I2C1	SMBus-Alert-mode	I2C1_SCL	PB6
+I2C1	SMBus-Alert-mode	I2C1_SDA	PB7
+I2C1	SMBus-Alert-mode	I2C1_SMBA	PB5
+SDADC1	IN4-Single-Ended	SDADC1_AIN4P	PB2
+SDADC1	IN5-Single-Ended	SDADC1_AIN5P	PB1
+SDADC1	IN7-Single-Ended	SDADC1_AIN7P	PE9
+SYS	SysTick	SYS_VS_Systick	VP_SYS_VS_Systick
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+12	PA2*	USART2_TX	
+13	PA3*	USART2_RX	
+19	PB1	SDADC1_AIN5P	MCU_ANA_DEV_V
+20	PB2	SDADC1_AIN4P	MCU_ANA_DEV_I
+22	PE9	SDADC1_AIN7P	MCU_ANA_DEV_T
+29	PA8	GPIO_EXTI8	
+34	PA13*	SYS_JTMS-SWDIO	
+37	PA14*	SYS_JTCK-SWCLK	
+39	PB3*	SYS_JTDO-TRACESWO	
+41	PB5	I2C1_SMBA	
+42	PB6	I2C1_SCL	
+43	PB7	I2C1_SDA	
+
+
+
+SOFTWARE PROJECT
+
+Project Settings : 
+Project Name : stm32-cube
+Project Folder : D:\Projects\Private\Sailing\semantic-boat\stm32-cube
+Toolchain / IDE : EWARM V8.32
+Firmware Package Name and Version : STM32Cube FW_F3 V1.11.5
+
+
+Code Generation Settings : 
+STM32Cube MCU packages and embedded software packs : Copy all used libraries into the project folder
+Generate peripheral initialization as a pair of '.c/.h' files per peripheral : No
+Backup previously generated files when re-generating : No
+Delete previously generated files when not re-generated : Yes
+Set all free pins as analog (to optimize the power consumption) : No
+
+
+Toolchains Settings : 
+Compiler Optimizations : 
+
+
+
+
+

@@ -75,3 +75,5 @@ stm32-cube/stm32-cube.txt
 /backup
 stm32-cube/stm32-cube.pdf
 stm32-cube/stm32-cube.txt
+# Excel temp files
+~$*

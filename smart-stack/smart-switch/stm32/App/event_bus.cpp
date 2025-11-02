@@ -37,6 +37,7 @@ bool EventBus::publish(EventId evt, const void* payload, uint16_t size) {
         if (s.used && s.evt == evt && s.h) {
             EvtThunkCtx c{evt, s.h, s.ctx, payload, size};
             Task t{&evt_thunk, &c};
+            (void)t;
             // NOTE: c lives on stack; need to copy. Use small inline copying by posting the handler directly.
             // Alternative: call handler inline since we're already in executor context typically.
             // For safety, call handler directly here.
@@ -46,10 +47,10 @@ bool EventBus::publish(EventId evt, const void* payload, uint16_t size) {
     return ok;
 }
 
-static void evt_thunk_isr(void* p) {
-    auto* c = static_cast<EvtThunkCtx*>(p);
-    c->h(c->evt, c->payload, c->size, c->ctx);
-}
+// static void evt_thunk_isr(void* p) {
+//     auto* c = static_cast<EvtThunkCtx*>(p);
+//     c->h(c->evt, c->payload, c->size, c->ctx);
+// }
 
 bool EventBus::publishFromISR(EventId evt, const void* payload, uint16_t size) {
     bool any = false;

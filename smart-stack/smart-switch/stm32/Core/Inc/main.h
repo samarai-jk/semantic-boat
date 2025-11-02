@@ -91,10 +91,9 @@ void Error_Handler(void);
 #define UNUSEDB15_GPIO_Port GPIOB
 #define UNUSEDD8_Pin GPIO_PIN_8
 #define UNUSEDD8_GPIO_Port GPIOD
-#define TP_MCO_Pin GPIO_PIN_8
-#define TP_MCO_GPIO_Port GPIOA
 #define MCU_TOGGLE_Pin GPIO_PIN_9
 #define MCU_TOGGLE_GPIO_Port GPIOA
+#define MCU_TOGGLE_EXTI_IRQn EXTI9_5_IRQn
 #define MCU_FEEDBACK_Pin GPIO_PIN_10
 #define MCU_FEEDBACK_GPIO_Port GPIOA
 #define IND_LED_BLU_Pin GPIO_PIN_11
@@ -107,8 +106,10 @@ void Error_Handler(void);
 #define UNUSEDF7_GPIO_Port GPIOF
 #define BTN_FUNCTION_Pin GPIO_PIN_15
 #define BTN_FUNCTION_GPIO_Port GPIOA
+#define BTN_FUNCTION_EXTI_IRQn EXTI15_10_IRQn
 #define BTN_TOGGLE_Pin GPIO_PIN_4
 #define BTN_TOGGLE_GPIO_Port GPIOB
+#define BTN_TOGGLE_EXTI_IRQn EXTI4_IRQn
 #define IND_LED_GRN_Pin GPIO_PIN_8
 #define IND_LED_GRN_GPIO_Port GPIOB
 #define MCU_ERROR_Pin GPIO_PIN_9

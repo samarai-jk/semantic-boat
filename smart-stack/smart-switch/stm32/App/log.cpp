@@ -1,5 +1,8 @@
 #include "log.hpp"
 #include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <string>
 
 extern "C" {
 #include "main.h"
@@ -12,7 +15,7 @@ static inline bool swo_enabled() {
 }
 
 void log_init() {
-    // Assume debugger config enables SWO; nothing to do here.
+    DBGMCU->CR |= DBGMCU_CR_TRACE_IOEN;
 }
 
 static void swo_putc(char c) {
@@ -28,38 +31,53 @@ static void swo_write(const char* s) {
     }
 }
 
-void log_write(LogLevel level, const char* msg) {
-    (void)level; // could prefix with level tag if desired
-    swo_write(msg);
+static const char* level_to_str(LogLevel level) {
+    switch (level) {
+        case LogLevel::Debug: return "DEBUG";
+        case LogLevel::Info:  return "INFO";
+        case LogLevel::Warn:  return "WARN";
+        case LogLevel::Error: return "ERROR";
+        default:              return "INFO";
+    }
+}
+
+// Format and write: hhMMss.fff [LEVEL] Message\n
+static void write_prefixed(LogLevel level, const char* msg) {
+    if (!swo_enabled()) return;
+    uint32_t ms = HAL_GetTick();
+    unsigned long hh = (ms / 3600000UL) % 100UL;
+    unsigned long MM = (ms / 60000UL)   % 60UL;
+    unsigned long ss = (ms / 1000UL)    % 60UL;
+    unsigned long fff = ms % 1000UL;
+
+    char header[32];
+    int n = std::snprintf(header, sizeof(header), "%02lu%02lu%02lu.%03lu [%s] ",
+                          hh, MM, ss, fff, level_to_str(level));
+    if (n > 0) {
+        swo_write(header);
+    }
+    if (msg && *msg) {
+        swo_write(msg);
+    }
     swo_putc('\n');
 }
 
+void log_write(LogLevel level, const char* msg) {
+    write_prefixed(level, msg);
+}
+
+void log_write(LogLevel level, const std::string& msg) {
+    write_prefixed(level, msg.c_str());
+}
+
 void log_writef(LogLevel level, const char* fmt, ...) {
-    (void)level;
     if (!swo_enabled()) return;
-    char buf[160];
+    char buf[192];
     va_list ap;
     va_start(ap, fmt);
-    // Minimal vsnprintf-free formatting to keep footprint; rely on truncation
-    int i = 0;
-    for (const char* p = fmt; *p && i < (int)sizeof(buf)-1; ++p) {
-        if (*p == '%' && *(p+1) == 's') {
-            p += 1; const char* s = va_arg(ap, const char*);
-            while (s && *s && i < (int)sizeof(buf)-1) buf[i++] = *s++;
-        } else if (*p == '%' && (*(p+1) == 'd' || *(p+1) == 'u')) {
-            bool sign = (*(p+1) == 'd'); p += 1; int v = va_arg(ap, int);
-            unsigned int u = sign ? (unsigned int)((v < 0) ? -v : v) : (unsigned int)v;
-            char tmp[16]; int ti = 0; do { tmp[ti++] = '0' + (u % 10); u /= 10; } while (u && ti < 16);
-            if (sign && v < 0 && i < (int)sizeof(buf)-1) buf[i++] = '-';
-            while (ti && i < (int)sizeof(buf)-1) buf[i++] = tmp[--ti];
-        } else {
-            buf[i++] = *p;
-        }
-    }
-    buf[i] = 0;
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    swo_write(buf);
-    swo_putc('\n');
+    write_prefixed(level, buf);
 }
 
 } // namespace app

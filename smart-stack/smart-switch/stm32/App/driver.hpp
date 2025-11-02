@@ -3,15 +3,16 @@
 
 #include <cstdint>
 
-namespace app {
+namespace app
+{
 
-// Simple driver lifecycle interface
-class IDriver {
-public:
-    virtual ~IDriver() = default;
-    virtual void init() = 0; // called once during app startup
-    virtual void run() = 0;  // called periodically from app loop
-};
+    class IDriver
+    {
+    public:
+        virtual ~IDriver() = default;
+        virtual void init() = 0; // called once during app startup
+        virtual void run() = 0;  // called periodically from app loop
+    };
 
 } // namespace app
 

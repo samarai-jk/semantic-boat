@@ -4,17 +4,17 @@
 #include <cstdint>
 #include "driver.hpp"
 
-namespace app {
+namespace app
+{
 
-// Known driver IDs (organizational, not plugins)
-enum : uint16_t {
-    DRV_RGB_LED = 1,
-    DRV_INTERNAL_TOGGLE_SWITCH = 2,
-    // Add more here
-};
+    enum : uint16_t
+    {
+        DRV_RGB_LED,
+        DRV_UI_HARDWARE,
+        DRV_DEVICE,
+    };
 
-// Factory creates instances of drivers (owned statically in their units)
-IDriver* createDriver(uint16_t id);
+    IDriver *createDriver(uint16_t id);
 
 } // namespace app
 

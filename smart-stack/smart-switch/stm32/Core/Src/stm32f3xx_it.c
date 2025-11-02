@@ -202,21 +202,6 @@ void SysTick_Handler(void)
 /* please refer to the startup file (startup_stm32f3xx.s).                    */
 /******************************************************************************/
 
-/* USER CODE BEGIN 1 */
-
-// HAL EXTI callback hook
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-  /* USER CODE BEGIN HAL_GPIO_EXTI_Callback 0 */
-  /* USER CODE END HAL_GPIO_EXTI_Callback 0 */
-  if (GPIO_Pin == BTN_TOGGLE_Pin) {
-    extern void app_internal_toggle_switch_exti_notify(void);
-    app_internal_toggle_switch_exti_notify();
-  }
-  /* USER CODE BEGIN HAL_GPIO_EXTI_Callback 1 */
-  /* USER CODE END HAL_GPIO_EXTI_Callback 1 */
-}
-
 /**
   * @brief This function handles EXTI line4 interrupt.
   */
@@ -230,6 +215,20 @@ void EXTI4_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles EXTI line[9:5] interrupts.
+  */
+void EXTI9_5_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI9_5_IRQn 0 */
+
+  /* USER CODE END EXTI9_5_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(MCU_TOGGLE_Pin);
+  /* USER CODE BEGIN EXTI9_5_IRQn 1 */
+
+  /* USER CODE END EXTI9_5_IRQn 1 */
+}
+
+/**
   * @brief This function handles EXTI line[15:10] interrupts.
   */
 void EXTI15_10_IRQHandler(void)
@@ -239,6 +238,27 @@ void EXTI15_10_IRQHandler(void)
   HAL_GPIO_EXTI_IRQHandler(BTN_FUNCTION_Pin);
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
   /* USER CODE END EXTI15_10_IRQn 1 */
+}
+
+/* USER CODE BEGIN 1 */
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == BTN_TOGGLE_Pin) // PB4 (line 4)
+    { 
+        extern void app_internal_toggle_switch_exti_notify(void);
+        app_internal_toggle_switch_exti_notify();
+    }
+    else if (GPIO_Pin == MCU_TOGGLE_Pin) // PA9 (line 9)
+    { 
+        extern void app_mcu_toggle_exti_notify(void);
+        app_mcu_toggle_exti_notify();
+    }
+    else if (GPIO_Pin == BTN_FUNCTION_Pin) // PA15 (line 15)
+    { 
+        extern void app_btn_function_exti_notify(void);
+        app_btn_function_exti_notify();
+    }
 }
 
 /* USER CODE END 1 */

@@ -27,13 +27,27 @@ void RgbLedDriver::run() {
             blink_on_ = !blink_on_;
             applyPwm(blink_on_ ? r_ : 0, blink_on_ ? g_ : 0, blink_on_ ? b_ : 0);
         }
-    } else {
-        // Static color; nothing to do repeatedly
     }
 }
 
-void RgbLedDriver::setColor(uint8_t r, uint8_t g, uint8_t b) {
-    r_ = r; g_ = g; b_ = b;
+void RgbLedDriver::setColor(float r, float g, float b) {
+    auto clamp01 = [](float x) -> float {
+        if (x < 0.0f) return 0.0f;
+        if (x > 1.0f) return 1.0f;
+        return x;
+    };
+    float rf = clamp01(r);
+    float gf = clamp01(g);
+    float bf = clamp01(b);
+    uint32_t vmax = (LED_RESOLUTION > 0) ? (LED_RESOLUTION - 1) : 1;
+    // round to nearest (linear mapping)
+    r_ = static_cast<uint16_t>(rf * vmax + 0.5f);
+    g_ = static_cast<uint16_t>(gf * vmax + 0.5f);
+    b_ = static_cast<uint16_t>(bf * vmax + 0.5f);
+    // Guarantee at least one logical step for any non-zero request
+    if (rf > 0.0f && r_ == 0) r_ = 1;
+    if (gf > 0.0f && g_ == 0) g_ = 1;
+    if (bf > 0.0f && b_ == 0) b_ = 1;
     if (prog_ == Program::Static || blink_on_) {
         applyPwm(r_, g_, b_);
     }
@@ -58,11 +72,21 @@ void RgbLedDriver::setProgram(Program p, uint16_t frequency_hz, uint8_t duty_per
     }
 }
 
-void RgbLedDriver::applyPwm(uint8_t r, uint8_t g, uint8_t b) {
-    // Channels mapping: App/app.c used CH1, CH3, CH4; keep same
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, r);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, g);
-    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, b);
+void RgbLedDriver::applyPwm(uint16_t r, uint16_t g, uint16_t b) {
+    // Scale 0..LED_RESOLUTION-1 to 0..ARR and write CCRs directly
+    uint32_t arr = __HAL_TIM_GET_AUTORELOAD(&htim4);
+    auto to_ticks = [arr](uint16_t v) -> uint32_t {
+        if (v == 0) return 0;
+        uint32_t vmax = (LED_RESOLUTION > 0) ? (LED_RESOLUTION - 1) : 1;
+        if (v > vmax) v = static_cast<uint16_t>(vmax);
+        uint32_t ticks = (static_cast<uint32_t>(v) * arr + (vmax / 2)) / vmax;
+        if (ticks == 0) ticks = 1; // ensure at least one tick for non-zero
+        return ticks;
+    };
+
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_1, to_ticks(r));
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, to_ticks(g));
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_4, to_ticks(b));
 }
 
 } // namespace app

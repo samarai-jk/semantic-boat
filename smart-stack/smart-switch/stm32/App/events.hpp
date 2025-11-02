@@ -6,8 +6,9 @@
 namespace app {
 
 enum : uint16_t {
-    EVT_TOGGLE_BUTTON_PRESSED = 1,
-    // add more events as needed
+    EVT_INTERNAL_TOGGLE_BUTTON_PRESSED,
+    EVT_EXTERNAL_TOGGLE_BUTTON_PRESSED,
+    EVT_FUNCTION_BUTTON_PRESSED,
 };
 
 } // namespace app

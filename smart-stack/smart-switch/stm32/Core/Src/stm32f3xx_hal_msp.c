@@ -171,8 +171,10 @@ void HAL_SDADC_MspInit(SDADC_HandleTypeDef* hsdadc)
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOE_CLK_ENABLE();
     /**SDADC1 GPIO Configuration
+    PB1     ------> SDADC1_AIN6M
     PB1     ------> SDADC1_AIN5P
     PB2     ------> SDADC1_AIN4P
+    PE9     ------> SDADC1_AIN8M
     PE9     ------> SDADC1_AIN7P
     */
     GPIO_InitStruct.Pin = MCU_ANA_DEV_V_Pin|MCU_ANA_DEV_I_Pin;
@@ -183,7 +185,7 @@ void HAL_SDADC_MspInit(SDADC_HandleTypeDef* hsdadc)
     GPIO_InitStruct.Pin = MCU_ANA_DEV_T_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(MCU_ANA_DEV_T_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
     /* USER CODE BEGIN SDADC1_MspInit 1 */
 
@@ -210,13 +212,15 @@ void HAL_SDADC_MspDeInit(SDADC_HandleTypeDef* hsdadc)
     __HAL_RCC_SDADC1_CLK_DISABLE();
 
     /**SDADC1 GPIO Configuration
+    PB1     ------> SDADC1_AIN6M
     PB1     ------> SDADC1_AIN5P
     PB2     ------> SDADC1_AIN4P
+    PE9     ------> SDADC1_AIN8M
     PE9     ------> SDADC1_AIN7P
     */
     HAL_GPIO_DeInit(GPIOB, MCU_ANA_DEV_V_Pin|MCU_ANA_DEV_I_Pin);
 
-    HAL_GPIO_DeInit(MCU_ANA_DEV_T_GPIO_Port, MCU_ANA_DEV_T_Pin);
+    HAL_GPIO_DeInit(GPIOE, MCU_ANA_DEV_T_Pin);
 
     /* USER CODE BEGIN SDADC1_MspDeInit 1 */
 

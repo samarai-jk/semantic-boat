@@ -16,7 +16,7 @@ namespace app
 
     void UiHardwareDriver::run()
     {
-
+        
         HAL_GPIO_WritePin(
             FEEDBACK_LED_GPIO_Port,
             FEEDBACK_LED_Pin,

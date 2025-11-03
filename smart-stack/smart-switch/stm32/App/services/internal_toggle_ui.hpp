@@ -16,15 +16,11 @@ namespace app
     class RgbLedDriver;
     class UiHardwareDriver;
     class DeviceDriver;
+    class TempSenseEnableDriver;
 
     class InternalToggleUi : public IService
     {
-    public:
-        
-        RgbLedDriver& GetRgbLedDriver() const; 
-        UiHardwareDriver& GetUiHardwareDriver() const; 
-        DeviceDriver& GetDeviceDriver() const; 
-
+         
     public: // IService
         void init() override;
         void run() override;
@@ -33,6 +29,9 @@ namespace app
         bool int_feedback_led_{false};
         bool ext_feedback_output_{false};
         bool ext_error_output_{false};
+        
+        bool dev_temp_sense_enabled_{false};
+        int32_t dev_temp_sense_value{0};
         
         std::optional<bool> device_pos_in_{std::nullopt};
         std::optional<bool> device_pos_out_{std::nullopt};

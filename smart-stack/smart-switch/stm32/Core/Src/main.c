@@ -22,7 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app.h"
-
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,6 +32,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* Debug instrumentation switch: set to 1 temporarily to enable SDADC bring-up helpers */
+#ifndef SDADC_DEBUG
+#define SDADC_DEBUG 1
+#endif
 
 /* USER CODE END PD */
 
@@ -55,14 +59,31 @@ TIM_HandleTypeDef htim4;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_SMBUS_Init(void);
-static void MX_SDADC1_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_SDADC1_Init(void);
 /* USER CODE BEGIN PFP */
+/* Debug helpers (prototypes) */
+/* Always-on: ensure internal VREF is enabled and ready before SDADC init */
+static void ensure_vref_ready(void);
+static void dump_pwr_sdadc(void);
+static void dump_rcc_summary(void);
+static void swo_trace_kv_hex32(const char *key, uint32_t value);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void swo_trace_line(const char *s)
+{
+    if (s == NULL)
+        return;
+    while (*s)
+    {
+        ITM_SendChar((uint32_t)(*s++));
+    }
+    ITM_SendChar((uint32_t)('\n'));
+}
 
 /* USER CODE END 0 */
 
@@ -90,14 +111,16 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+  /* Ensure internal VREF is enabled and has time to become ready before any SDADC init */
+  ensure_vref_ready();
 
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_SMBUS_Init();
-  MX_SDADC1_Init();
   MX_TIM4_Init();
+  MX_SDADC1_Init();
   /* USER CODE BEGIN 2 */
   app_init();
   
@@ -154,7 +177,7 @@ void SystemClock_Config(void)
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_SDADC;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
-  PeriphClkInit.SdadcClockSelection = RCC_SDADCSYSCLK_DIV2;
+  PeriphClkInit.SdadcClockSelection = RCC_SDADCSYSCLK_DIV4;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -217,8 +240,46 @@ static void MX_SDADC1_Init(void)
 {
 
   /* USER CODE BEGIN SDADC1_Init 0 */
-
+  /* Rely on HAL to sequence SDADC correctly. VREFINT and analog domains
+     are enabled earlier in SystemClock_Config() and ensure_vref_ready(). */
+  swo_trace_line("SDADC: begin init");
+  /* Belt-and-suspenders: ensure SDADC1 analog domain is enabled and peripheral is clean */
+  HAL_PWREx_EnableSDADC(PWR_SDADC_ANALOG1);
+  __HAL_RCC_SDADC1_FORCE_RESET();
+  __DSB();
+  __HAL_RCC_SDADC1_RELEASE_RESET();
+  HAL_Delay(1);
+  /* Manual pre-bring-up: make sure SDADC clock is enabled and try to clear STABIP */
+  __HAL_RCC_SDADC1_CLK_ENABLE();
+  /* Select internal VREFINT2 and slow clock before ADON */
+  SDADC1->CR1 = (SDADC1->CR1 & ~SDADC_CR1_REFV) | SDADC_VREF_VREFINT2;
+  SDADC1->CR1 |= SDADC_CR1_SLOWCK;
+  for (int attempt = 0; attempt < 2; ++attempt)
+  {
+    SDADC1->CR2 |= SDADC_CR2_ADON;
+    uint32_t t0 = HAL_GetTick();
+    while ((SDADC1->ISR & SDADC_ISR_STABIP) != 0U)
+    {
+      if ((HAL_GetTick() - t0) > 200U)
+      {
+        break;
+      }
+    }
+    if ((SDADC1->ISR & SDADC_ISR_STABIP) == 0U)
+    {
+      swo_trace_line("SDADC: STABIP cleared in pre-seq");
+      break;
+    }
+    /* Retry after short power-cycle/reset */
+    swo_trace_line("SDADC: STABIP stuck, retry pre-seq");
+    __HAL_RCC_SDADC1_FORCE_RESET();
+    __DSB();
+    __HAL_RCC_SDADC1_RELEASE_RESET();
+    HAL_Delay(1);
+  }
   /* USER CODE END SDADC1_Init 0 */
+
+  SDADC_ConfParamTypeDef ConfParamStruct = {0};
 
   /* USER CODE BEGIN SDADC1_Init 1 */
 
@@ -231,8 +292,37 @@ static void MX_SDADC1_Init(void)
   hsdadc1.Init.IdleLowPowerMode = SDADC_LOWPOWER_NONE;
   hsdadc1.Init.FastConversionMode = SDADC_FAST_CONV_DISABLE;
   hsdadc1.Init.SlowClockMode = SDADC_SLOW_CLOCK_DISABLE;
-  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_EXT;
+  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_VREFINT2;
   if (HAL_SDADC_Init(&hsdadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure The Regular Mode
+  */
+  if (HAL_SDADC_SelectRegularTrigger(&hsdadc1, SDADC_SOFTWARE_TRIGGER) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Set parameters for SDADC configuration 0 Register
+  */
+  ConfParamStruct.InputMode = SDADC_INPUT_MODE_SE_OFFSET;
+  ConfParamStruct.Gain = SDADC_GAIN_1;
+  ConfParamStruct.CommonMode = SDADC_COMMON_MODE_VSSA;
+  ConfParamStruct.Offset = 0;
+  if (HAL_SDADC_PrepareChannelConfig(&hsdadc1, SDADC_CONF_INDEX_0, &ConfParamStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the Regular Channel
+  */
+  if (HAL_SDADC_AssociateChannelConfig(&hsdadc1, SDADC_CHANNEL_4, SDADC_CONF_INDEX_0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_SDADC_ConfigChannel(&hsdadc1, SDADC_CHANNEL_4, SDADC_CONTINUOUS_CONV_OFF) != HAL_OK)
   {
     Error_Handler();
   }
@@ -320,8 +410,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, RELAY_ON_Pin|RELAY_OFF_Pin|TEMP_SENSE_ON_Pin|MCU_FEEDBACK_Pin
-                          |CUR_SENSE_ON_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, RELAY_ON_Pin|RELAY_OFF_Pin|MCU_FEEDBACK_Pin|CUR_SENSE_ON_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(TEMP_SENSE_ON_GPIO_Port, TEMP_SENSE_ON_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, FEEDBACK_LED_Pin|MCU_ERROR_Pin, GPIO_PIN_RESET);
@@ -423,6 +515,123 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+// *************************************************************************************************
+ 
+static void safe_delay_ms(uint32_t ms)
+{
+    uint32_t t0 = HAL_GetTick();
+    for (volatile uint32_t i = 0; i < 5000U; ++i)
+    {
+        __NOP();
+    }
+    uint32_t t1 = HAL_GetTick();
+    if (t1 != t0)
+    {
+        HAL_Delay(ms);
+        return;
+    }
+    volatile uint32_t cycles = ms * 10000U;
+    while (cycles--)
+    {
+        __NOP();
+    }
+}
+
+static void safe_delay_us(uint32_t us)
+{
+    /* Prefer DWT cycle counter for microsecond delays if available */
+    /* Ensure tracing is enabled */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    uint32_t cycles_per_us = SystemCoreClock / 1000000U;
+    if (cycles_per_us == 0U)
+    {
+        cycles_per_us = 1U;
+    }
+    uint32_t start = DWT->CYCCNT;
+    uint32_t wait_cycles = us * cycles_per_us;
+    /* If DWT counter is incrementing, use it */
+    uint32_t check = DWT->CYCCNT;
+    if (check != start)
+    {
+        while ((uint32_t)(DWT->CYCCNT - start) < wait_cycles)
+        {
+            __NOP();
+        }
+        return;
+    }
+    /* Fallback crude busy-wait if DWT not ticking */
+    volatile uint32_t loops = (cycles_per_us / 8U + 1U) * us;
+    while (loops--)
+    {
+        __NOP();
+    }
+}
+ 
+// *************************************************************************************************
+
+static void swo_trace_kv_hex32(const char *key, uint32_t value)
+{
+  char buf[64];
+  int i = 0;
+  if (key)
+  {
+    while (key[i] != '\0' && i < (int)sizeof(buf) - 1)
+    {
+      buf[i] = key[i];
+      i++;
+    }
+    if (i < (int)sizeof(buf) - 1)
+    {
+      buf[i++] = '=';
+    }
+  }
+  if (i < (int)sizeof(buf) - 1) buf[i++] = '0';
+  if (i < (int)sizeof(buf) - 1) buf[i++] = 'x';
+  for (int nib = 7; nib >= 0 && i < (int)sizeof(buf) - 1; --nib)
+  {
+    uint8_t d = (uint8_t)((value >> (nib * 4)) & 0xFU);
+    buf[i++] = (char)(d < 10 ? ('0' + d) : ('A' + (d - 10)));
+  }
+  buf[i] = '\0';
+  swo_trace_line(buf);
+}
+
+/* Build-time-only debug helper removed (was unused) */
+
+/* Always-available dumps used by Error_Handler and debug pre-init */
+static void dump_pwr_sdadc(void)
+{
+  swo_trace_kv_hex32("PWR CR", PWR->CR);
+  swo_trace_kv_hex32("PWR CSR", PWR->CSR);
+}
+
+static void dump_rcc_summary(void)
+{
+  swo_trace_kv_hex32("RCC CFGR", RCC->CFGR);
+  swo_trace_kv_hex32("RCC CFGR2", RCC->CFGR2);
+  swo_trace_kv_hex32("RCC CFGR3", RCC->CFGR3);
+  swo_trace_kv_hex32("RCC APB1ENR", RCC->APB1ENR);
+  swo_trace_kv_hex32("RCC APB2ENR", RCC->APB2ENR);
+}
+
+static void ensure_vref_ready(void)
+{
+  /* Enable ADC1 clock to access CR2 TSVREFE */
+  __HAL_RCC_ADC1_CLK_ENABLE();
+  /* Set TSVREFE to enable internal VREF buffer (and temp sensor) */
+  ADC1->CR2 |= ADC_CR2_TSVREFE;
+  /* Wait briefly for VREF to be ready */
+  uint32_t t0 = HAL_GetTick();
+  while ((PWR->CSR & PWR_CSR_VREFINTRDYF) == 0U)
+  {
+    if ((HAL_GetTick() - t0) > 20U)
+    {
+      break;
+    }
+  }
+}
+
 /* USER CODE END 4 */
 
 /**
@@ -432,11 +641,49 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+
+    swo_trace_line("ERROR: Error_Handler()");
+    {
+  swo_trace_kv_hex32("SDADC1 state", (uint32_t)HAL_SDADC_GetState(&hsdadc1));
+  swo_trace_kv_hex32("SDADC1 err", (uint32_t)HAL_SDADC_GetError(&hsdadc1));
+#if SDADC_DEBUG
+        /* Detailed SDADC registers (debug only) */
+  swo_trace_kv_hex32("SDADC1 CR1", SDADC1->CR1);
+  swo_trace_kv_hex32("SDADC1 CR2", SDADC1->CR2);
+  swo_trace_kv_hex32("SDADC1 ISR", SDADC1->ISR);
+#endif
+        dump_pwr_sdadc();
+        dump_rcc_summary();
+    }
+
+    /* Ensure PB8 (IND_LED_GRN) is configured as output in case GPIO init didn't run */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitTypeDef gi = {0};
+    gi.Pin = IND_LED_GRN_Pin;
+    gi.Mode = GPIO_MODE_OUTPUT_PP;
+    gi.Pull = GPIO_NOPULL;
+    gi.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(IND_LED_GRN_GPIO_Port, &gi);
+    HAL_GPIO_WritePin(IND_LED_GRN_GPIO_Port, IND_LED_GRN_Pin, GPIO_PIN_RESET);
+
+    const uint32_t on_us = 100U;
+    const uint32_t on_ms = 0U; /* accounted in us for the ON pulse */
+    const uint32_t off_ms = 100U;
+    const uint32_t cycle_ms = 1000U;
+    const uint32_t burst_ms = 3U * (on_ms + off_ms);
+    const uint32_t rest_ms = (cycle_ms > burst_ms) ? (cycle_ms - burst_ms) : 0U;
+    while (1)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            HAL_GPIO_WritePin(IND_LED_GRN_GPIO_Port, IND_LED_GRN_Pin, GPIO_PIN_SET);
+            safe_delay_us(on_us);
+            HAL_GPIO_WritePin(IND_LED_GRN_GPIO_Port, IND_LED_GRN_Pin, GPIO_PIN_RESET);
+            safe_delay_ms(off_ms);
+        }
+        safe_delay_ms(rest_ms);
+    }
+
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

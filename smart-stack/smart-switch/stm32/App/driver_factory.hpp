@@ -6,12 +6,14 @@
 
 namespace app
 {
-
+    
     enum : uint16_t
     {
         DRV_RGB_LED,
         DRV_UI_HARDWARE,
         DRV_DEVICE,
+        DRV_TEMP_SENSE_EN,
+        DRV_DEV_TEMP_SENSE_IN,
     };
 
     IDriver *createDriver(uint16_t id);

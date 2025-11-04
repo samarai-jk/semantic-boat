@@ -12,6 +12,10 @@ namespace app
         virtual ~IDriver() = default;
         virtual void init() = 0; // called once during app startup
         virtual void run() = 0;  // called periodically from app loop
+        virtual bool enabled() { return enabled_; }
+        virtual void setEnabled(bool value) { enabled_ = value; }
+    private:
+        bool enabled_{true};
     };
 
 } // namespace app

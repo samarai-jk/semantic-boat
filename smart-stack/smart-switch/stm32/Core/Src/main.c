@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include "app.h"
 #include <stdio.h>
+// Use shared SWO trace function implemented in App/lib.cpp
+#include "lib.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,6 +53,8 @@ SDADC_HandleTypeDef hsdadc1;
 
 TIM_HandleTypeDef htim4;
 
+UART_HandleTypeDef huart2;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -61,6 +65,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_SMBUS_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_SDADC1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 /* Debug helpers (prototypes) */
 /* Always-on: ensure internal VREF is enabled and ready before SDADC init */
@@ -73,17 +78,6 @@ static void swo_trace_kv_hex32(const char *key, uint32_t value);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-static void swo_trace_line(const char *s)
-{
-    if (s == NULL)
-        return;
-    while (*s)
-    {
-        ITM_SendChar((uint32_t)(*s++));
-    }
-    ITM_SendChar((uint32_t)('\n'));
-}
 
 /* USER CODE END 0 */
 
@@ -121,6 +115,7 @@ int main(void)
   MX_I2C1_SMBUS_Init();
   MX_TIM4_Init();
   MX_SDADC1_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   app_init();
   
@@ -128,6 +123,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  swo_trace_line_level(LOG_INFO, "Alrighty... lets go");
   while (1)
   {
     app_step();
@@ -175,7 +171,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_SDADC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_I2C1
+                              |RCC_PERIPHCLK_SDADC;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.SdadcClockSelection = RCC_SDADCSYSCLK_DIV4;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -240,43 +238,44 @@ static void MX_SDADC1_Init(void)
 {
 
   /* USER CODE BEGIN SDADC1_Init 0 */
-  /* Rely on HAL to sequence SDADC correctly. VREFINT and analog domains
-     are enabled earlier in SystemClock_Config() and ensure_vref_ready(). */
-  swo_trace_line("SDADC: begin init");
-  /* Belt-and-suspenders: ensure SDADC1 analog domain is enabled and peripheral is clean */
-  HAL_PWREx_EnableSDADC(PWR_SDADC_ANALOG1);
-  __HAL_RCC_SDADC1_FORCE_RESET();
-  __DSB();
-  __HAL_RCC_SDADC1_RELEASE_RESET();
-  HAL_Delay(1);
-  /* Manual pre-bring-up: make sure SDADC clock is enabled and try to clear STABIP */
-  __HAL_RCC_SDADC1_CLK_ENABLE();
-  /* Select internal VREFINT2 and slow clock before ADON */
-  SDADC1->CR1 = (SDADC1->CR1 & ~SDADC_CR1_REFV) | SDADC_VREF_VREFINT2;
-  SDADC1->CR1 |= SDADC_CR1_SLOWCK;
-  for (int attempt = 0; attempt < 2; ++attempt)
-  {
-    SDADC1->CR2 |= SDADC_CR2_ADON;
-    uint32_t t0 = HAL_GetTick();
-    while ((SDADC1->ISR & SDADC_ISR_STABIP) != 0U)
-    {
-      if ((HAL_GetTick() - t0) > 200U)
-      {
-        break;
-      }
-    }
-    if ((SDADC1->ISR & SDADC_ISR_STABIP) == 0U)
-    {
-      swo_trace_line("SDADC: STABIP cleared in pre-seq");
-      break;
-    }
-    /* Retry after short power-cycle/reset */
-    swo_trace_line("SDADC: STABIP stuck, retry pre-seq");
-    __HAL_RCC_SDADC1_FORCE_RESET();
-    __DSB();
-    __HAL_RCC_SDADC1_RELEASE_RESET();
-    HAL_Delay(1);
-  }
+    /* Rely on HAL to sequence SDADC correctly. VREFINT and analog domains
+       are enabled earlier in SystemClock_Config() and ensure_vref_ready(). */
+    // swo_trace_line_level(LOG_INFO, "SDADC: begin init");
+    // /* Belt-and-suspenders: ensure SDADC1 analog domain is enabled and peripheral is clean */
+    // HAL_PWREx_EnableSDADC(PWR_SDADC_ANALOG1);
+    // __HAL_RCC_SDADC1_FORCE_RESET();
+    // __DSB();
+    // __HAL_RCC_SDADC1_RELEASE_RESET();
+    // HAL_Delay(1);
+    // /* Manual pre-bring-up: make sure SDADC clock is enabled and try to clear STABIP */
+    // __HAL_RCC_SDADC1_CLK_ENABLE();
+    // /* Select internal VREFINT2 and slow clock before ADON */
+    // SDADC1->CR1 = (SDADC1->CR1 & ~SDADC_CR1_REFV) | SDADC_VREF_VREFINT2;
+    // SDADC1->CR1 |= SDADC_CR1_SLOWCK;
+    // for (int attempt = 0; attempt < 2; ++attempt)
+    // {
+    //     SDADC1->CR2 |= SDADC_CR2_ADON;
+    //     uint32_t t0 = HAL_GetTick();
+    //     while ((SDADC1->ISR & SDADC_ISR_STABIP) != 0U)
+    //     {
+    //         if ((HAL_GetTick() - t0) > 200U)
+    //         {
+    //             break;
+    //         }
+    //     }
+    //     if ((SDADC1->ISR & SDADC_ISR_STABIP) == 0U)
+    //     {
+    //         swo_trace_line_level(LOG_INFO, "SDADC: STABIP cleared in pre-seq");
+    //         break;
+    //     }
+    //     /* Retry after short power-cycle/reset */
+    //     swo_trace_line_level(LOG_WARNING, "SDADC: STABIP stuck, retry pre-seq");
+    //     __HAL_RCC_SDADC1_FORCE_RESET();
+    //     __DSB();
+    //     __HAL_RCC_SDADC1_RELEASE_RESET();
+    //     HAL_Delay(1);
+    // }
+
   /* USER CODE END SDADC1_Init 0 */
 
   SDADC_ConfParamTypeDef ConfParamStruct = {0};
@@ -292,15 +291,8 @@ static void MX_SDADC1_Init(void)
   hsdadc1.Init.IdleLowPowerMode = SDADC_LOWPOWER_NONE;
   hsdadc1.Init.FastConversionMode = SDADC_FAST_CONV_DISABLE;
   hsdadc1.Init.SlowClockMode = SDADC_SLOW_CLOCK_DISABLE;
-  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_VREFINT2;
+  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_VDDA;
   if (HAL_SDADC_Init(&hsdadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure The Regular Mode
-  */
-  if (HAL_SDADC_SelectRegularTrigger(&hsdadc1, SDADC_SOFTWARE_TRIGGER) != HAL_OK)
   {
     Error_Handler();
   }
@@ -308,26 +300,26 @@ static void MX_SDADC1_Init(void)
   /** Set parameters for SDADC configuration 0 Register
   */
   ConfParamStruct.InputMode = SDADC_INPUT_MODE_SE_OFFSET;
-  ConfParamStruct.Gain = SDADC_GAIN_1;
+  ConfParamStruct.Gain = SDADC_GAIN_1_2;
   ConfParamStruct.CommonMode = SDADC_COMMON_MODE_VSSA;
   ConfParamStruct.Offset = 0;
   if (HAL_SDADC_PrepareChannelConfig(&hsdadc1, SDADC_CONF_INDEX_0, &ConfParamStruct) != HAL_OK)
   {
     Error_Handler();
   }
-
-  /** Configure the Regular Channel
-  */
-  if (HAL_SDADC_AssociateChannelConfig(&hsdadc1, SDADC_CHANNEL_4, SDADC_CONF_INDEX_0) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_SDADC_ConfigChannel(&hsdadc1, SDADC_CHANNEL_4, SDADC_CONTINUOUS_CONV_OFF) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN SDADC1_Init 2 */
-
+//   if (HAL_SDADC_SelectRegularTrigger(&hsdadc1, SDADC_SOFTWARE_TRIGGER) != HAL_OK)
+//   {
+//       swo_trace_line_level(LOG_ERROR, "SFail to select the trigger for a regular conversion");
+//   }
+//   if (HAL_SDADC_CalibrationStart(&hsdadc1, SDADC_CALIBRATION_SEQ_1) != HAL_OK)
+//   {
+//       swo_trace_line_level(LOG_ERROR, "SDADC Calibration Failed");
+//   }
+//   if (HAL_SDADC_PollForCalibEvent(&hsdadc1, HAL_MAX_DELAY) != HAL_OK)
+//   {
+//       swo_trace_line_level(LOG_ERROR, "Fail to correctly calibrate SDADC");
+//   }
   /* USER CODE END SDADC1_Init 2 */
 
 }
@@ -390,6 +382,41 @@ static void MX_TIM4_Init(void)
 }
 
 /**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -431,14 +458,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA2 PA3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : MCU_DIG_DEV_VS_IN_Pin MCU_DIG_DEV_VS_OUT_Pin */
@@ -594,7 +613,7 @@ static void swo_trace_kv_hex32(const char *key, uint32_t value)
     buf[i++] = (char)(d < 10 ? ('0' + d) : ('A' + (d - 10)));
   }
   buf[i] = '\0';
-  swo_trace_line(buf);
+  swo_trace_line_level(LOG_VERBOSE, buf);
 }
 
 /* Build-time-only debug helper removed (was unused) */
@@ -642,15 +661,15 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
 
-    swo_trace_line("ERROR: Error_Handler()");
+    swo_trace_line_level(LOG_FATAL, "ERROR: Error_Handler()");
     {
-  swo_trace_kv_hex32("SDADC1 state", (uint32_t)HAL_SDADC_GetState(&hsdadc1));
-  swo_trace_kv_hex32("SDADC1 err", (uint32_t)HAL_SDADC_GetError(&hsdadc1));
+        swo_trace_kv_hex32("SDADC1 state", (uint32_t)HAL_SDADC_GetState(&hsdadc1));
+        swo_trace_kv_hex32("SDADC1 err", (uint32_t)HAL_SDADC_GetError(&hsdadc1));
 #if SDADC_DEBUG
         /* Detailed SDADC registers (debug only) */
-  swo_trace_kv_hex32("SDADC1 CR1", SDADC1->CR1);
-  swo_trace_kv_hex32("SDADC1 CR2", SDADC1->CR2);
-  swo_trace_kv_hex32("SDADC1 ISR", SDADC1->ISR);
+        swo_trace_kv_hex32("SDADC1 CR1", SDADC1->CR1);
+        swo_trace_kv_hex32("SDADC1 CR2", SDADC1->CR2);
+        swo_trace_kv_hex32("SDADC1 ISR", SDADC1->ISR);
 #endif
         dump_pwr_sdadc();
         dump_rcc_summary();

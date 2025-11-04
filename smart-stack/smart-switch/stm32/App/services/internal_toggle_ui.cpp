@@ -3,6 +3,7 @@
 #include "events.hpp"
 #include "event_bus.hpp"
 #include "driver_store.hpp"
+#include "lib.hpp"
 
 namespace app
 {
@@ -11,6 +12,7 @@ namespace app
     {
 
         getTempSenseEnableDriver().set(!dev_temp_sense_enabled_);
+        getDevTempSenseInputDriver().setEnabled(dev_temp_sense_enabled_);
         
         EventBus::instance().subscribe(
             EVT_INTERNAL_TOGGLE_BUTTON_PRESSED,
@@ -45,6 +47,7 @@ namespace app
                 self->ext_error_output_ = !self->ext_error_output_;
                 self->dev_temp_sense_enabled_ = !self->dev_temp_sense_enabled_;
                 getTempSenseEnableDriver().set(!self->dev_temp_sense_enabled_);
+                getDevTempSenseInputDriver().setEnabled(self->dev_temp_sense_enabled_);
             },
             this
         );
@@ -53,7 +56,22 @@ namespace app
     void InternalToggleUi::run() { 
         
         dev_temp_sense_value = getDevTempSenseInputDriver().value();
-        
+        static uint32_t last_trace_time = 0;
+        if (dev_temp_sense_enabled_ && HAL_GetTick() - last_trace_time > 1000)
+        {
+            last_trace_time = HAL_GetTick();
+            float volts = getDevTempSenseInputDriver().valueV();
+            char volts_str[10];
+            snprintf(volts_str, sizeof(volts_str), "%.3f", volts);
+            swo_trace_line(
+                LOG_VERBOSE, 
+                std::string("dev_temp_sense_value: ") 
+                + std::to_string(dev_temp_sense_value)
+                + " -> "
+                + volts_str
+                + "V"
+            );
+        }
         getUiHardwareDriver().setIntFeedbackLedState(int_feedback_led_);
         getUiHardwareDriver().setExtFeedbackOutputState(ext_feedback_output_);
         getUiHardwareDriver().setExtErrorOutputState(ext_error_output_);

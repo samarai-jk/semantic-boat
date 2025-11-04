@@ -16,11 +16,12 @@ public:
     void init() override;
     void run() override;
     int32_t value() const { return last_value_; }
+    // Absolute volts (on demand). Returns NaN if no valid sample yet.
+    float valueV() const;
     bool valid() const { return has_value_; }
 protected:
     virtual SDADC_HandleTypeDef* sdadc() const = 0;
     virtual uint32_t channel() const = 0;
-    virtual uint32_t confIndex() const { return SDADC_CONF_INDEX_0; }
 private:
     int32_t last_value_{0};
     bool has_value_{false};

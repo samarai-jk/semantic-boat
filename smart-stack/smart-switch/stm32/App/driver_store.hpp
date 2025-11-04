@@ -46,7 +46,7 @@ namespace app
     DevTempSenseInputDriver& getDevTempSenseInputDriver()
     {
         return *static_cast<DevTempSenseInputDriver*>(
-            DriverManager::instance().get(DRV_TEMP_SENSE_EN)
+            DriverManager::instance().get(DRV_DEV_TEMP_SENSE_IN)
         );
     }
     

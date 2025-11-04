@@ -3,20 +3,22 @@
 
 #include "drivers/sdadc_se_input_driver.hpp"
 
-extern "C" {
+extern "C"
+{
 #include "main.h"
-extern SDADC_HandleTypeDef hsdadc1;
+    extern SDADC_HandleTypeDef hsdadc1;
 }
 
-namespace app {
+namespace app
+{
 
-// SDADC input driver for device temperature sense on PE9 (SDADC1 CH7P)
-class DevTempSenseInputDriver : public SdadcSeInputDriver {
-protected:
-    SDADC_HandleTypeDef* sdadc() const override { return &hsdadc1; }
-    uint32_t channel() const override { return SDADC_CHANNEL_7; }
-    uint32_t confIndex() const override { return SDADC_CONF_INDEX_0; }
-};
+    // SDADC input driver for device temperature sense on PE9 (SDADC1 CH7P)
+    class DevTempSenseInputDriver : public SdadcSeInputDriver
+    {
+    protected:
+        SDADC_HandleTypeDef *sdadc() const override { return &hsdadc1; }
+        uint32_t channel() const override { return SDADC_CHANNEL_7; }
+    };
 
 } // namespace app
 

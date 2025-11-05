@@ -13,6 +13,12 @@ namespace app
 
         getTempSenseEnableDriver().set(!dev_temp_sense_enabled_);
         getDevTempSenseInputDriver().setEnabled(dev_temp_sense_enabled_);
+        getVoltageSenseInputDriver().setEnabled(true);
+        getCurrentSenseEnableDriver().set(true);
+        
+        getCurrentSenseInputDriver().setEnabled(true);
+        getCurrentSenseInputDriver().setAveragingEnabled(true);
+        getCurrentSenseInputDriver().setAveragingWindow(50);
         
         EventBus::instance().subscribe(
             EVT_INTERNAL_TOGGLE_BUTTON_PRESSED,
@@ -21,7 +27,12 @@ namespace app
                 auto *self = static_cast<InternalToggleUi *>(ctx);
                 if (!self)
                     return;
-                self->int_feedback_led_ = !self->int_feedback_led_;
+                self->relay_on_ = !self->relay_on_;
+                if (self->relay_on_) {
+                    getLatchingRelayDriver().switchOn();
+                } else {
+                    getLatchingRelayDriver().switchOff();
+                }
             },
             this);
 
@@ -55,24 +66,48 @@ namespace app
     
     void InternalToggleUi::run() { 
         
-        dev_temp_sense_value = getDevTempSenseInputDriver().value();
         static uint32_t last_trace_time = 0;
-        if (dev_temp_sense_enabled_ && HAL_GetTick() - last_trace_time > 1000)
+        if (HAL_GetTick() - last_trace_time > 1000)
         {
+            
+            std::string temp{};
+            std::string curr{};
+            std::string volt{};
+            
             last_trace_time = HAL_GetTick();
-            float volts = getDevTempSenseInputDriver().valueV();
-            char volts_str[10];
-            snprintf(volts_str, sizeof(volts_str), "%.3f", volts);
-            swo_trace_line(
-                LOG_VERBOSE, 
-                std::string("dev_temp_sense_value: ") 
-                + std::to_string(dev_temp_sense_value)
-                + " -> "
-                + volts_str
-                + "V"
-            );
+            if (dev_temp_sense_enabled_) {
+                dev_temp_sense_value_ = getDevTempSenseInputDriver().value();
+                float volts = getDevTempSenseInputDriver().valueV();
+                char volts_str[10];
+                snprintf(volts_str, sizeof(volts_str), "%.4f", volts);
+                temp = std::to_string(dev_temp_sense_value_) + "/" + volts_str + "V";
+            }
+            {
+                dev_curr_sense_value_ = getCurrentSenseInputDriver().value();
+                float volts = getCurrentSenseInputDriver().valueV();
+                auto volts_corrected = (volts / 0.359) - 0.5;
+                if (volts_corrected < 0) volts_corrected = 0;
+                auto amps = volts_corrected / 0.2;
+                char volts_str[10];
+                snprintf(volts_str, sizeof(volts_str), "%.4f", volts_corrected);
+                char amps_str[10];
+                snprintf(amps_str, sizeof(amps_str), "%.4f", amps);
+                curr = std::to_string(dev_curr_sense_value_) 
+                    + "/" + volts_str + "V" 
+                    + "/" + amps_str + "A";
+            }       
+            {
+                dev_volt_sense_value_ = getVoltageSenseInputDriver().value();
+                float volts = getVoltageSenseInputDriver().valueV() * 10;
+                char volts_str[10];
+                snprintf(volts_str, sizeof(volts_str), "%.4f", volts);
+                volt = std::to_string(dev_volt_sense_value_) + "/" + volts_str + "V";            
+            }  
+            
+            swo_trace_line("volt=" + volt + ", curr=" + curr + ", temp=" + temp);
+            
         }
-        getUiHardwareDriver().setIntFeedbackLedState(int_feedback_led_);
+        getUiHardwareDriver().setIntFeedbackLedState(relay_on_);
         getUiHardwareDriver().setExtFeedbackOutputState(ext_feedback_output_);
         getUiHardwareDriver().setExtErrorOutputState(ext_error_output_);
 
@@ -85,21 +120,21 @@ namespace app
         {
             if (device_pos_out)
             {
-                getRgbLedDriver().setColor(0.0, 0.1, 0.0);
-                getRgbLedDriver().setProgram(app::RgbLedDriver::Program::Blink, 2, 5);
+                getRgbLedDriver().setColor(0.0, 0.02, 0.0);
+                getRgbLedDriver().setProgram(app::RgbLedDriver::Program::Blink, 3, 80);
             }
             else if (device_pos_in)
             {
-                getRgbLedDriver().setColor(0.0, 0.05, 0.0);
-                getRgbLedDriver().setProgram(app::RgbLedDriver::Program::Blink, 3, 90);
+                getRgbLedDriver().setColor(0.0, 0.005, 0.0);
+                getRgbLedDriver().setProgram(app::RgbLedDriver::Program::Blink, 3, 10);
             }
             else
             {
                 getRgbLedDriver().setColor(0.0, 0.001, 0.0);
                 getRgbLedDriver().setProgram(app::RgbLedDriver::Program::Static, 0, 0);
             }
-            device_pos_in_ = device_pos_in;
-            device_pos_out_ = device_pos_out;
+            device_pos_in_.emplace(device_pos_in);
+            device_pos_out_.emplace(device_pos_out);
         }
         
     }

@@ -26,12 +26,15 @@ namespace app
         void run() override;
     private:
         
-        bool int_feedback_led_{false};
+        bool relay_on_{false};
         bool ext_feedback_output_{false};
         bool ext_error_output_{false};
         
         bool dev_temp_sense_enabled_{false};
-        int32_t dev_temp_sense_value{0};
+        
+        int32_t dev_temp_sense_value_{0};
+        int32_t dev_curr_sense_value_{0};
+        int32_t dev_volt_sense_value_{0};
         
         std::optional<bool> device_pos_in_{std::nullopt};
         std::optional<bool> device_pos_out_{std::nullopt};

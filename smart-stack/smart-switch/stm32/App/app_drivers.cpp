@@ -73,6 +73,22 @@ extern "C" void app_drivers_init(void)
     {
         mgr.registerDriver(app::DRV_DEV_TEMP_SENSE_IN, tsi);
     }
+    if (auto *cs_en = app::createDriver(app::DRV_CUR_SENSE_EN))
+    {
+        mgr.registerDriver(app::DRV_CUR_SENSE_EN, cs_en);
+    }
+    if (auto *cs_in = app::createDriver(app::DRV_CUR_SENSE_IN))
+    {
+        mgr.registerDriver(app::DRV_CUR_SENSE_IN, cs_in);
+    }
+    if (auto *lr = app::createDriver(app::DRV_LATCHING_RELAY))
+    {
+        mgr.registerDriver(app::DRV_LATCHING_RELAY, lr);
+    }
+    if (auto *vs_in = app::createDriver(app::DRV_VOL_SENSE_IN))
+    {
+        mgr.registerDriver(app::DRV_VOL_SENSE_IN, vs_in);
+    }
     // Register services
     app::ServiceManagerInstance().registerService(new app::InternalToggleUi());
 

@@ -84,7 +84,7 @@ namespace app
     };
 
     // Application-wide manager type with modest capacity
-    using DriverManager = DriverManagerT<8>;
+    using DriverManager = DriverManagerT<32>;
     
     // *********************************************************************************************
     

@@ -9,6 +9,10 @@
 #include "drivers/device_driver.hpp"
 #include "drivers/temp_sense_enable_driver.hpp"
 #include "drivers/dev_temp_sense_input_driver.hpp"
+#include "drivers/current_sense_enable_driver.hpp"
+#include "drivers/current_sense_input_driver.hpp"
+#include "drivers/latching_relay_driver.hpp"
+#include "drivers/voltage_sense_input_driver.hpp"
 
 namespace app
 {
@@ -47,6 +51,34 @@ namespace app
     {
         return *static_cast<DevTempSenseInputDriver*>(
             DriverManager::instance().get(DRV_DEV_TEMP_SENSE_IN)
+        );
+    }
+
+    CurrentSenseEnableDriver& getCurrentSenseEnableDriver()
+    {
+        return *static_cast<CurrentSenseEnableDriver*>(
+            DriverManager::instance().get(DRV_CUR_SENSE_EN)
+        );
+    }
+    
+    CurrentSenseInputDriver& getCurrentSenseInputDriver()
+    {
+        return *static_cast<CurrentSenseInputDriver*>(
+            DriverManager::instance().get(DRV_CUR_SENSE_IN)
+        );
+    }
+    
+    LatchingRelayDriver& getLatchingRelayDriver()
+    {
+        return *static_cast<LatchingRelayDriver*>(
+            DriverManager::instance().get(DRV_LATCHING_RELAY)
+        );
+    }
+
+    VoltageSenseInputDriver& getVoltageSenseInputDriver()
+    {
+        return *static_cast<VoltageSenseInputDriver*>(
+            DriverManager::instance().get(DRV_VOL_SENSE_IN)
         );
     }
     

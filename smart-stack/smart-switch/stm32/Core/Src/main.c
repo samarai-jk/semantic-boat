@@ -69,7 +69,6 @@ static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 /* Debug helpers (prototypes) */
 /* Always-on: ensure internal VREF is enabled and ready before SDADC init */
-static void ensure_vref_ready(void);
 static void dump_pwr_sdadc(void);
 static void dump_rcc_summary(void);
 static void swo_trace_kv_hex32(const char *key, uint32_t value);
@@ -105,8 +104,6 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  /* Ensure internal VREF is enabled and has time to become ready before any SDADC init */
-  ensure_vref_ready();
 
   /* USER CODE END SysInit */
 
@@ -238,43 +235,6 @@ static void MX_SDADC1_Init(void)
 {
 
   /* USER CODE BEGIN SDADC1_Init 0 */
-    /* Rely on HAL to sequence SDADC correctly. VREFINT and analog domains
-       are enabled earlier in SystemClock_Config() and ensure_vref_ready(). */
-    // swo_trace_line_level(LOG_INFO, "SDADC: begin init");
-    // /* Belt-and-suspenders: ensure SDADC1 analog domain is enabled and peripheral is clean */
-    // HAL_PWREx_EnableSDADC(PWR_SDADC_ANALOG1);
-    // __HAL_RCC_SDADC1_FORCE_RESET();
-    // __DSB();
-    // __HAL_RCC_SDADC1_RELEASE_RESET();
-    // HAL_Delay(1);
-    // /* Manual pre-bring-up: make sure SDADC clock is enabled and try to clear STABIP */
-    // __HAL_RCC_SDADC1_CLK_ENABLE();
-    // /* Select internal VREFINT2 and slow clock before ADON */
-    // SDADC1->CR1 = (SDADC1->CR1 & ~SDADC_CR1_REFV) | SDADC_VREF_VREFINT2;
-    // SDADC1->CR1 |= SDADC_CR1_SLOWCK;
-    // for (int attempt = 0; attempt < 2; ++attempt)
-    // {
-    //     SDADC1->CR2 |= SDADC_CR2_ADON;
-    //     uint32_t t0 = HAL_GetTick();
-    //     while ((SDADC1->ISR & SDADC_ISR_STABIP) != 0U)
-    //     {
-    //         if ((HAL_GetTick() - t0) > 200U)
-    //         {
-    //             break;
-    //         }
-    //     }
-    //     if ((SDADC1->ISR & SDADC_ISR_STABIP) == 0U)
-    //     {
-    //         swo_trace_line_level(LOG_INFO, "SDADC: STABIP cleared in pre-seq");
-    //         break;
-    //     }
-    //     /* Retry after short power-cycle/reset */
-    //     swo_trace_line_level(LOG_WARNING, "SDADC: STABIP stuck, retry pre-seq");
-    //     __HAL_RCC_SDADC1_FORCE_RESET();
-    //     __DSB();
-    //     __HAL_RCC_SDADC1_RELEASE_RESET();
-    //     HAL_Delay(1);
-    // }
 
   /* USER CODE END SDADC1_Init 0 */
 
@@ -291,7 +251,7 @@ static void MX_SDADC1_Init(void)
   hsdadc1.Init.IdleLowPowerMode = SDADC_LOWPOWER_NONE;
   hsdadc1.Init.FastConversionMode = SDADC_FAST_CONV_DISABLE;
   hsdadc1.Init.SlowClockMode = SDADC_SLOW_CLOCK_DISABLE;
-  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_VDDA;
+  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_EXT;
   if (HAL_SDADC_Init(&hsdadc1) != HAL_OK)
   {
     Error_Handler();
@@ -299,8 +259,8 @@ static void MX_SDADC1_Init(void)
 
   /** Set parameters for SDADC configuration 0 Register
   */
-  ConfParamStruct.InputMode = SDADC_INPUT_MODE_SE_OFFSET;
-  ConfParamStruct.Gain = SDADC_GAIN_1_2;
+  ConfParamStruct.InputMode = SDADC_INPUT_MODE_SE_ZERO_REFERENCE;
+  ConfParamStruct.Gain = SDADC_GAIN_1;
   ConfParamStruct.CommonMode = SDADC_COMMON_MODE_VSSA;
   ConfParamStruct.Offset = 0;
   if (HAL_SDADC_PrepareChannelConfig(&hsdadc1, SDADC_CONF_INDEX_0, &ConfParamStruct) != HAL_OK)
@@ -308,18 +268,7 @@ static void MX_SDADC1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN SDADC1_Init 2 */
-//   if (HAL_SDADC_SelectRegularTrigger(&hsdadc1, SDADC_SOFTWARE_TRIGGER) != HAL_OK)
-//   {
-//       swo_trace_line_level(LOG_ERROR, "SFail to select the trigger for a regular conversion");
-//   }
-//   if (HAL_SDADC_CalibrationStart(&hsdadc1, SDADC_CALIBRATION_SEQ_1) != HAL_OK)
-//   {
-//       swo_trace_line_level(LOG_ERROR, "SDADC Calibration Failed");
-//   }
-//   if (HAL_SDADC_PollForCalibEvent(&hsdadc1, HAL_MAX_DELAY) != HAL_OK)
-//   {
-//       swo_trace_line_level(LOG_ERROR, "Fail to correctly calibrate SDADC");
-//   }
+
   /* USER CODE END SDADC1_Init 2 */
 
 }
@@ -616,8 +565,6 @@ static void swo_trace_kv_hex32(const char *key, uint32_t value)
   swo_trace_line_level(LOG_VERBOSE, buf);
 }
 
-/* Build-time-only debug helper removed (was unused) */
-
 /* Always-available dumps used by Error_Handler and debug pre-init */
 static void dump_pwr_sdadc(void)
 {
@@ -632,23 +579,6 @@ static void dump_rcc_summary(void)
   swo_trace_kv_hex32("RCC CFGR3", RCC->CFGR3);
   swo_trace_kv_hex32("RCC APB1ENR", RCC->APB1ENR);
   swo_trace_kv_hex32("RCC APB2ENR", RCC->APB2ENR);
-}
-
-static void ensure_vref_ready(void)
-{
-  /* Enable ADC1 clock to access CR2 TSVREFE */
-  __HAL_RCC_ADC1_CLK_ENABLE();
-  /* Set TSVREFE to enable internal VREF buffer (and temp sensor) */
-  ADC1->CR2 |= ADC_CR2_TSVREFE;
-  /* Wait briefly for VREF to be ready */
-  uint32_t t0 = HAL_GetTick();
-  while ((PWR->CSR & PWR_CSR_VREFINTRDYF) == 0U)
-  {
-    if ((HAL_GetTick() - t0) > 20U)
-    {
-      break;
-    }
-  }
 }
 
 /* USER CODE END 4 */

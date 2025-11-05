@@ -14,6 +14,10 @@ namespace app
         DRV_DEVICE,
         DRV_TEMP_SENSE_EN,
         DRV_DEV_TEMP_SENSE_IN,
+        DRV_LATCHING_RELAY,
+        DRV_CUR_SENSE_EN,
+        DRV_CUR_SENSE_IN,
+        DRV_VOL_SENSE_IN,
     };
 
     IDriver *createDriver(uint16_t id);

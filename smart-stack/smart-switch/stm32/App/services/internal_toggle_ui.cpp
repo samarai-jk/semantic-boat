@@ -10,15 +10,25 @@ namespace app
  
     void InternalToggleUi::init()
     {
-
+        
+        // temp sense enable
         getTempSenseEnableDriver().set(!dev_temp_sense_enabled_);
+        
+        // temp sense
         getDevTempSenseInputDriver().setEnabled(dev_temp_sense_enabled_);
-        getVoltageSenseInputDriver().setEnabled(true);
+        getDevTempSenseInputDriver().setAveragingEnabled(true);
+        getDevTempSenseInputDriver().setAveragingWindow(50);
+        
+        // current sense enable
         getCurrentSenseEnableDriver().set(true);
         
+        // current sense
         getCurrentSenseInputDriver().setEnabled(true);
         getCurrentSenseInputDriver().setAveragingEnabled(true);
         getCurrentSenseInputDriver().setAveragingWindow(50);
+        
+        // voltage sense
+        getVoltageSenseInputDriver().setEnabled(true);
         
         EventBus::instance().subscribe(
             EVT_INTERNAL_TOGGLE_BUTTON_PRESSED,
@@ -80,7 +90,12 @@ namespace app
                 float volts = getDevTempSenseInputDriver().valueV();
                 char volts_str[10];
                 snprintf(volts_str, sizeof(volts_str), "%.4f", volts);
-                temp = std::to_string(dev_temp_sense_value_) + "/" + volts_str + "V";
+                float temp_c = getDevTempSenseInputDriver().temperatureC();
+                char temp_str[10];
+                snprintf(temp_str, sizeof(temp_str), "%.2f", temp_c);
+                temp = std::to_string(dev_temp_sense_value_) 
+                    + "/" + volts_str + "V"
+                    + "/" + temp_str + "C";
             }
             {
                 dev_curr_sense_value_ = getCurrentSenseInputDriver().value();

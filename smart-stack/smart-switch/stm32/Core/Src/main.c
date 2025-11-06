@@ -251,7 +251,7 @@ static void MX_SDADC1_Init(void)
   hsdadc1.Init.IdleLowPowerMode = SDADC_LOWPOWER_NONE;
   hsdadc1.Init.FastConversionMode = SDADC_FAST_CONV_DISABLE;
   hsdadc1.Init.SlowClockMode = SDADC_SLOW_CLOCK_DISABLE;
-  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_EXT;
+  hsdadc1.Init.ReferenceVoltage = SDADC_VREF_VREFINT2;
   if (HAL_SDADC_Init(&hsdadc1) != HAL_OK)
   {
     Error_Handler();

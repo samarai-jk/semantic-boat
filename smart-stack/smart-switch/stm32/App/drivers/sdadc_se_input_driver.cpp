@@ -131,7 +131,7 @@ namespace app
             return std::nanf("");
         }
         
-        constexpr float v_ref = 3.3f;      
+        constexpr float v_ref = 1.8f;      
         constexpr float sdadc_gain = 1.0f;      
         
         // sungle-ended zero reference

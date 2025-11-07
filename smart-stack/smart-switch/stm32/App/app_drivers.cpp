@@ -89,6 +89,10 @@ extern "C" void app_drivers_init(void)
     {
         mgr.registerDriver(app::DRV_VOL_SENSE_IN, vs_in);
     }
+    if (auto *smb_in = app::createDriver(app::DRV_SMBUS))
+    {
+        mgr.registerDriver(app::DRV_SMBUS, smb_in);
+    }
     // Register services
     app::ServiceManagerInstance().registerService(new app::InternalToggleUi());
 

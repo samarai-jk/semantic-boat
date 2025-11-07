@@ -13,6 +13,7 @@
 #include "drivers/current_sense_input_driver.hpp"
 #include "drivers/latching_relay_driver.hpp"
 #include "drivers/voltage_sense_input_driver.hpp"
+#include "drivers/smbus_driver.hpp"
 
 namespace app
 {
@@ -79,6 +80,13 @@ namespace app
     {
         return *static_cast<VoltageSenseInputDriver*>(
             DriverManager::instance().get(DRV_VOL_SENSE_IN)
+        );
+    }
+    
+    SmBusDriver& getSmBusDriver()
+    {
+        return *static_cast<SmBusDriver*>(
+            DriverManager::instance().get(DRV_SMBUS)
         );
     }
     

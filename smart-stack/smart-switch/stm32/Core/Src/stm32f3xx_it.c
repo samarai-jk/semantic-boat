@@ -242,6 +242,24 @@ void EXTI15_10_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+/**
+  * @brief This function handles I2C1 event interrupt.
+  */
+void I2C1_EV_IRQHandler(void)
+{
+    extern SMBUS_HandleTypeDef hsmbus1;
+    HAL_SMBUS_EV_IRQHandler(&hsmbus1);
+}
+
+/**
+  * @brief This function handles I2C1 error interrupt.
+  */
+void I2C1_ER_IRQHandler(void)
+{
+    extern SMBUS_HandleTypeDef hsmbus1;
+    HAL_SMBUS_ER_IRQHandler(&hsmbus1);
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == BTN_TOGGLE_Pin) // PB4 (line 4)

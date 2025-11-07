@@ -11,6 +11,35 @@ A common layering you can follow as the project grows:
 - App/            — startup, main loop, state machines (e.g., `app_init()`, `app_step()`).
 - BSP/            — board/pin helpers (LEDs, relays, PWM, ADC routing).
 - Services/       — reusable services (debounce, scheduler, PID, filters, I2C/SMBus helper).
+### SMBus (I2C1) Slave Driver
+
+The `SmBusDriver` exposes the device as an SMBus slave on I2C1 (PB6=SCL, PB7=SDA) address 0x02 with SMBALERT# on PB5.
+
+Events:
+- `EVT_SMBUS_DATA_RECEIVED` — payload is the bytes written by a master.
+- `EVT_SMBUS_ALERT_ASSERTED` / `EVT_SMBUS_ALERT_RELEASED` (currently not published automatically; you can extend driver to emit when calling assert/release.)
+
+Driver API highlights:
+- `setResponse(buf,len)` queue bytes that will be sent when a master performs a read.
+- `assertAlert()` / `releaseAlert()` drive SMBALERT# low/high for testing.
+- `enableAlertBlink(true, period_ms)` to periodically toggle SMBALERT# so you can probe it on a scope without a master present.
+
+Scope-only bring-up (no master yet):
+1. Instantiate the driver via factory (add `DRV_SMBUS` to enabled driver list in your app init if not already).
+2. Call `enableAlertBlink(true, 250)` somewhere after init to get a 2 Hz square wave on PB5 (active-low pulses).
+3. Build & flash. Probe PB5 with oscilloscope: you should see periodic low pulses (line idles high due to external pull-up or internal). If not, verify pull-ups on SCL/SDA/SMBA lines (typically 4.7kΩ to 3V3).
+4. (Optional) To view bus idle levels, trigger on falling edge of PB5. SCL/SDA remain high unless you manually force transactions.
+5. To test TX path: call `setResponseU8(0xA5)`; then when you later attach an external master and read from address 0x02 you should see 0xA5.
+
+Alert pulse test without blink:
+```
+SmBusDriver::instance()->pulseAlert(10); // drives low for ~10 ms then releases
+```
+
+Extending for automatic alert event publishing: inside `assertAlert()` and `releaseAlert()` call `EventBus::instance().publish(EVT_SMBUS_ALERT_ASSERTED)` and RELEASED respectively.
+
+I2C1 Interrupts: `I2C1_EV_IRQHandler` and `I2C1_ER_IRQHandler` are added to forward HAL SMBus handlers. Ensure NVIC priorities are set in CubeMX (Events and Errors enabled). If interrupts are not firing, check startup file vector table contains these symbols.
+
 - Middleware/     — protocols or stacks if you add any.
 
 You can place `BSP/`, `Services/`, `Middleware/` next to `App/`. Update the Makefile to compile them and add `-I` include paths.

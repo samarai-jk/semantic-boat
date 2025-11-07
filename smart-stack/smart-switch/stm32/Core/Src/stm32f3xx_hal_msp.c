@@ -111,6 +111,12 @@ void HAL_SMBUS_MspInit(SMBUS_HandleTypeDef* hsmbus)
     __HAL_RCC_I2C1_CLK_ENABLE();
     /* USER CODE BEGIN I2C1_MspInit 1 */
 
+    /* Enable I2C1 event and error interrupts */
+    HAL_NVIC_SetPriority(I2C1_EV_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(I2C1_EV_IRQn);
+    HAL_NVIC_SetPriority(I2C1_ER_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(I2C1_ER_IRQn);
+
     /* USER CODE END I2C1_MspInit 1 */
 
   }

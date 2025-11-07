@@ -17,6 +17,9 @@ typedef enum log_level_t {
 // Trace a line with level; implementation also adds timestamp and newline
 void swo_trace_line_level(log_level_t level, const char *s);
 
+// Trace a formatted line with level and variable arguments
+void swo_trace_linef(log_level_t level, const char *fmt, ...);
+
 // Backward compatible helper: defaults to INFO
 static inline void swo_trace_line(const char *s) { swo_trace_line_level(LOG_INFO, s); }
 

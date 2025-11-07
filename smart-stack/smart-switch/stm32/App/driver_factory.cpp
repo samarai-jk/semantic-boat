@@ -8,6 +8,7 @@
 #include "drivers/current_sense_input_driver.hpp"
 #include "drivers/latching_relay_driver.hpp"
 #include "drivers/voltage_sense_input_driver.hpp"
+#include "drivers/smbus_driver.hpp"
 
 namespace app
 {
@@ -60,6 +61,11 @@ namespace app
         {
             static VoltageSenseInputDriver s_vs_in;
             return &s_vs_in;
+        }
+        case DRV_SMBUS:
+        {
+            static SmBusDriver s_smb;
+            return &s_smb;
         }
         default:
             return nullptr;

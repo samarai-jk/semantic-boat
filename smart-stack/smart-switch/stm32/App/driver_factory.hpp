@@ -18,6 +18,7 @@ namespace app
         DRV_CUR_SENSE_EN,
         DRV_CUR_SENSE_IN,
         DRV_VOL_SENSE_IN,
+        DRV_SMBUS,
     };
 
     IDriver *createDriver(uint16_t id);

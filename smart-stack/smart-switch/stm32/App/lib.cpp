@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <string>
 #include <cstring>
+#include <cstdarg>
+#include <cstdio>
 
 // --- UART2 (PA2/PA3) minimal bring-up for trace mirroring ---
 // Notes:
@@ -101,4 +103,20 @@ extern "C" void swo_trace_line_level(log_level_t level, const char *s)
     static const char crlf[] = "\r\n";
     uart2_write(crlf, 2);
     
+}
+ 
+extern "C" void swo_trace_linef(log_level_t level, const char *fmt, ...)
+{
+    if (!fmt) 
+        return;
+    
+    // Format the message into a buffer
+    char buf[192];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    
+    // Now call the regular line-level function
+    swo_trace_line_level(level, buf);
 }

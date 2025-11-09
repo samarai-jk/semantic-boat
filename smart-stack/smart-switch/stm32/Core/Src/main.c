@@ -394,6 +394,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, FEEDBACK_LED_Pin|MCU_ERROR_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(MCU_RELAY_SENSE_EN_GPIO_Port, MCU_RELAY_SENSE_EN_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : UNUSED_Pin UNUSEDC14_Pin UNUSEDC15_Pin */
   GPIO_InitStruct.Pin = UNUSED_Pin|UNUSEDC14_Pin|UNUSEDC15_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
@@ -454,11 +457,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : UNUSEDF7_Pin */
-  GPIO_InitStruct.Pin = UNUSEDF7_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  /*Configure GPIO pin : MCU_RELAY_SENSE_EN_Pin */
+  GPIO_InitStruct.Pin = MCU_RELAY_SENSE_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(UNUSEDF7_GPIO_Port, &GPIO_InitStruct);
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(MCU_RELAY_SENSE_EN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : BTN_TOGGLE_Pin */
   GPIO_InitStruct.Pin = BTN_TOGGLE_Pin;

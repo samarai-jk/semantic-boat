@@ -29,6 +29,9 @@ static void uart2_init_if_needed()
     s_uart2.Init.Mode = UART_MODE_TX_RX;
     s_uart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     s_uart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    // Board wiring has USART2 RX/TX swapped; fix in software via CR2.SWAP.
+    s_uart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_SWAP_INIT;
+    s_uart2.AdvancedInit.Swap = UART_ADVFEATURE_SWAP_ENABLE;
     if (HAL_UART_Init(&s_uart2) == HAL_OK)
     {
         s_uart2_ready = true;

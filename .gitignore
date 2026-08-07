@@ -60,6 +60,12 @@ DRAFT*.asc
 # Windows
 Thumbs.db
 
+# STM32CubeMX default Makefile build directory
+build/
+
+# Ignore CubeMX generated vendor libraries
+Drivers/
+Middlewares/
 # IDE / Editor specific
 .vscode/
 .idea/

@@ -63,6 +63,13 @@ openocd.log
 .vscode/ipch/
 .vscode/targets.log
 
+# Keep this project's shared build, IntelliSense, and debug configuration.
+!.vscode/
+!.vscode/*.json
+
+# CubeMX GCC startup source (the generic *.s rule above is for generated listings).
+!startup_stm32l431xx.s
+
 # CLion/JetBrains
 .idea/
 cmake-build-*/

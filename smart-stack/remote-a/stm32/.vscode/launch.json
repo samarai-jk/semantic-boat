@@ -1,0 +1,43 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "OpenOCD Debug",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/stm32.elf",
+            "device": "STM32L431xx",
+            "interface": "swd",
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/STM32L431.svd",
+            "preLaunchTask": "Build (Make)",
+            "armToolchainPath": "${env:USERPROFILE}/scoop/apps/gcc-arm-none-eabi/current/bin",
+            "serverpath": "E:\\Tools\\xpack-openocd-0.12.0-7\\bin\\openocd.exe",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32l4x.cfg"
+            ],
+            "openOCDLaunchCommands": [
+                "adapter speed 480"
+            ],
+            "postStartSessionCommands": [
+                "monitor adapter speed 4000"
+            ],
+            "swoConfig": {
+                "enabled": true,
+                "cpuFrequency": 80000000,
+                "swoFrequency": 2000000,
+                "source": "probe",
+                "decoders": [
+                    {
+                        "type": "console",
+                        "port": 0,
+                        "label": "ITM0"
+                    }
+                ]
+            }
+        }
+    ]
+}

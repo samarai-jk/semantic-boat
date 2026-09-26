@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build (Make)",
+      "type": "process",
+      "command": "make",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Clean",
+      "type": "process",
+      "command": "make",
+      "args": [
+        "clean"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Flash (OpenOCD)",
+      "type": "process",
+      "command": "E:\\Tools\\xpack-openocd-0.12.0-7\\bin\\openocd.exe",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "args": [
+        "-f",
+        "interface/stlink.cfg",
+        "-f",
+        "target/stm32l4x.cfg",
+        "-c",
+        "program build/stm32.elf verify reset exit"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Update (Refresh + Flash)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "args": [
+        "update"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    }
+  ]
+}

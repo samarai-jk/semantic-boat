@@ -1,0 +1,15 @@
+{
+  "C_Cpp.errorSquiggles": "enabled",
+  "C_Cpp.intelliSenseEngine": "default",
+  "files.associations": {
+    "*.h": "c",
+    "*.s": "arm"
+  },
+  "files.exclude": {
+    "**/build": true
+  },
+  "makefile.configureOnOpen": false,
+  "cSpell.words": [
+    "hsdadc"
+  ]
+}

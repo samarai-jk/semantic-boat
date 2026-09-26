@@ -56,8 +56,6 @@
 
 /* External variables --------------------------------------------------------*/
 
-extern UART_HandleTypeDef huart2;
-
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -199,14 +197,6 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32l4xx.s).                    */
 /******************************************************************************/
-
-/**
-  * @brief This function handles USART2 global interrupt.
-  */
-void USART2_IRQHandler(void)
-{
-  HAL_UART_IRQHandler(&huart2);
-}
 
 /* USER CODE BEGIN 1 */
 

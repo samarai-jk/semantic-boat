@@ -56,8 +56,9 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 48K
-RAM2 (xrw)      : ORIGIN = 0x10000000, LENGTH = 16K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 256K
+RAM2 (xrw)     : ORIGIN = 0x10000000, LENGTH = 16K
+FLASH (rx)     : ORIGIN = 0x8000000, LENGTH = 240K
+CONFIG (r)     : ORIGIN = 0x803C000, LENGTH = 16K
 }
 
 /* Highest address of the user mode stack */
@@ -76,6 +77,15 @@ SECTIONS
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(8);
   } >FLASH
+
+  /* Runtime view of the compiled display package. The package can occupy an
+     EEPROM slot without consuming the primary SRAM used by the framebuffer. */
+  .config_package (NOLOAD) :
+  {
+    . = ALIGN(8);
+    *(.config_package)
+    . = ALIGN(8);
+  } >RAM2
 
   /* The program code and other data goes into FLASH */
   .text :

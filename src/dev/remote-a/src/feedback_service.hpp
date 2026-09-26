@@ -21,6 +21,9 @@ public:
 
     bool init() override;
     void run() override;
+    void setAlert(bool active);
+    void setSleeping(bool active);
+    bool sleepCueComplete() const { return !sleepCueActive_; }
 
 private:
     static void eventThunk(slstm32::EventId, const void*, std::uint8_t, void*);
@@ -32,7 +35,13 @@ private:
     slstm32::drivers::RgbLedDriver& statusLed_;
     slstm32::drivers::ToneDriver& buzzer_;
     std::uint32_t startupEndsAt_{};
+    std::uint32_t nextWakeCueAt_{};
+    std::uint8_t wakeCueBeeps_{};
     bool starting_{};
+    bool alert_{};
+    bool sleeping_{};
+    bool sleepCueActive_{};
+    bool wakeCueActive_{};
 };
 
 } // namespace remote_a

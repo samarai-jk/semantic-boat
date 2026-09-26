@@ -15,6 +15,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(src/lib/slstm32)
+add_subdirectory(src/lib/semantic-link)
+add_subdirectory(src/lib/semantic-display)
 
 if(SEMANTIC_BOAT_DEVICE STREQUAL "remote-a")
     add_subdirectory(src/dev/remote-a)

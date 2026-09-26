@@ -42,6 +42,10 @@ PwmContext rgbContexts[]{
 };
 PwmContext buzzerContext{&htim15, TIM_CHANNEL_2};
 bool rgbTimerConfigured{};
+// The signal LED is on PB12, which has no usable PWM output in this design.
+// TIM2 channel 2 is otherwise unused, so its compare interrupt terminates a
+// short GPIO pulse without blocking the application loop.
+constexpr std::uint32_t signalPulseTicks = 100u; // 100 us at the 1 MHz timer base
 
 void configureTimer(TIM_HandleTypeDef& timer, std::uint32_t timerClock,
                     std::uint32_t targetFrequency, std::uint32_t maximumPeriod) {
@@ -91,7 +95,23 @@ bool configureSignal(void* context) {
 
 void writeOutput(void* context, bool value) {
     const auto& output = *static_cast<OutputContext*>(context);
-    HAL_GPIO_WritePin(output.port, output.pin, value ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    if (!value) {
+        if (rgbTimerConfigured) {
+            __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_CC2);
+            __HAL_TIM_CLEAR_IT(&htim2, TIM_IT_CC2);
+        }
+        HAL_GPIO_WritePin(output.port, output.pin, GPIO_PIN_RESET);
+        return;
+    }
+
+    HAL_GPIO_WritePin(output.port, output.pin, GPIO_PIN_SET);
+    if (!rgbTimerConfigured) return;
+
+    const auto period = __HAL_TIM_GET_AUTORELOAD(&htim2) + 1u;
+    const auto compare = (__HAL_TIM_GET_COUNTER(&htim2) + signalPulseTicks) % period;
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, compare);
+    __HAL_TIM_CLEAR_IT(&htim2, TIM_IT_CC2);
+    __HAL_TIM_ENABLE_IT(&htim2, TIM_IT_CC2);
 }
 
 bool configureRgb(void*) {
@@ -99,6 +119,12 @@ bool configureRgb(void*) {
     auto timerClock = HAL_RCC_GetPCLK1Freq();
     if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) timerClock *= 2u;
     configureTimer(htim2, timerClock, 1000u, 0xffffffffu);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0u);
+    __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_CC2);
+    __HAL_TIM_CLEAR_IT(&htim2, TIM_IT_CC2);
+    HAL_NVIC_SetPriority(TIM2_IRQn, 7u, 0u);
+    HAL_NVIC_ClearPendingIRQ(TIM2_IRQn);
+    HAL_NVIC_EnableIRQ(TIM2_IRQn);
     rgbTimerConfigured = true;
     return true;
 }
@@ -175,3 +201,11 @@ slstm32::drivers::ToneOutputHardware buzzer() {
 }
 
 } // namespace remote_a::hardware
+
+extern "C" void TIM2_IRQHandler(void) {
+    if (__HAL_TIM_GET_FLAG(&htim2, TIM_FLAG_CC2) == RESET ||
+        __HAL_TIM_GET_IT_SOURCE(&htim2, TIM_IT_CC2) == RESET) return;
+    __HAL_TIM_CLEAR_IT(&htim2, TIM_IT_CC2);
+    __HAL_TIM_DISABLE_IT(&htim2, TIM_IT_CC2);
+    HAL_GPIO_WritePin(SIG_LED_0_GPIO_Port, SIG_LED_0_Pin, GPIO_PIN_RESET);
+}

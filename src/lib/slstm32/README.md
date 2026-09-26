@@ -74,6 +74,7 @@ slstm32/
 |   |-- error.hpp             minimal error reporting abstraction
 |   |-- log.hpp               application-provided logging sink
 |   |-- drivers/              generic hardware drivers and bindings
+|   |-- storage/              byte-addressable persistent-storage interface
 |   `-- epd/                  canvas, region queue, and E-paper support
 `-- src/                      non-template implementations
 ```
@@ -242,6 +243,7 @@ storage is normally simplest in embedded firmware.
 | `ToneDriver` | Starts a hardware tone and stops it after a non-blocking duration. |
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |
 | `LatchingRelayDriver` | Drives set/reset coils with non-blocking pulses and queues a changed request while a pulse is active. |
+| `At24c256` | Implements the generic `ByteStorage` interface for a 32 KiB, 64-byte-page AT24C256-compatible EEPROM using board-provided read/write-page callbacks. |
 
 All PWM and RGB values are normalized floats. Board code is responsible for
 mapping them to the timer's actual auto-reload range.
@@ -259,6 +261,9 @@ Use `pressed` or `released` for a single-edge EXTI configuration. This captures
 the edge immediately and avoids losing it by sampling the pin after bounce.
 `ButtonDriver::onInterrupt()` only performs mapping, debounce bookkeeping, and
 event enqueueing; event handlers run later when `EventBus::process()` is called.
+Call `resetDebounce()` when entering a mode that freezes the runtime clock, such
+as MCU sleep, so the first wake edge is not compared with a stale pre-sleep
+timestamp.
 
 ## Services
 

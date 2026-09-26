@@ -7,6 +7,7 @@ add_library(slstm32 STATIC
     src/bare_executor.cpp
     src/event_bus.cpp
     src/drivers/analog_input.cpp
+    src/drivers/at24c256.cpp
     src/drivers/button.cpp
     src/drivers/digital_io.cpp
     src/drivers/latching_relay.cpp

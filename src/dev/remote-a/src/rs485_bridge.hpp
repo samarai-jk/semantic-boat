@@ -16,6 +16,7 @@ public:
     explicit Rs485Bridge(slstm32::drivers::LedDriver& activityLed) : activityLed_(activityLed) {}
     bool init() override;
     void run() override;
+    void setSleeping(bool sleeping);
     void onReceive(UART_HandleTypeDef* uart, std::uint16_t size);
     void onError(UART_HandleTypeDef* uart);
 
@@ -31,6 +32,7 @@ private:
     volatile std::uint16_t head_{};
     volatile std::uint16_t tail_{};
     volatile bool activity_{};
+    bool sleeping_{};
 };
 
 } // namespace remote_a

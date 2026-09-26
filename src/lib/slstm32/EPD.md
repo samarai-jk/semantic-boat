@@ -154,6 +154,16 @@ enough for high-frequency displays. Count only successfully completed partial
 updates, reset the count after a successful full refresh, and do not count
 cancelled transfers.
 
+Before panel sleep, cancel only work that is still before the commit boundary.
+If a refresh is already committed, allow it to finish before issuing the
+controller's sleep command. After wake and controller reinitialization, perform
+a full redraw from the retained application model; do not assume controller RAM
+survived sleep.
+
+If the product shows a final sleeping screen, complete that framebuffer update
+before sending the panel sleep command. The E-paper retains the resulting image
+without panel power.
+
 ## Integration checklist
 
 1. Implement the board-specific `Transport` without blocking longer than the

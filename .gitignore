@@ -95,3 +95,6 @@ stm32-cube/stm32-cube.pdf
 stm32-cube/stm32-cube.txt
 # Excel temp files
 ~$*
+
+# Node.js tools
+node_modules/

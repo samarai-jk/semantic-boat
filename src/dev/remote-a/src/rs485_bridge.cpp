@@ -15,8 +15,28 @@ bool Rs485Bridge::init() {
 }
 
 void Rs485Bridge::startReceive() {
+    if (sleeping_) return;
     (void)HAL_UARTEx_ReceiveToIdle_IT(&huart2, receiveBuffer_.data(),
                                      static_cast<std::uint16_t>(receiveBuffer_.size()));
+}
+
+void Rs485Bridge::setSleeping(bool sleeping) {
+    if (sleeping == sleeping_) return;
+    sleeping_ = sleeping;
+    if (sleeping) {
+        HAL_NVIC_DisableIRQ(USART2_IRQn);
+        (void)HAL_UART_AbortReceive(&huart2);
+        HAL_NVIC_ClearPendingIRQ(USART2_IRQn);
+        __HAL_UART_DISABLE(&huart2);
+        __HAL_RCC_USART2_CLK_DISABLE();
+        return;
+    }
+
+    __HAL_RCC_USART2_CLK_ENABLE();
+    __HAL_UART_ENABLE(&huart2);
+    HAL_NVIC_ClearPendingIRQ(USART2_IRQn);
+    startReceive();
+    HAL_NVIC_EnableIRQ(USART2_IRQn);
 }
 
 void Rs485Bridge::push(const std::uint8_t* data, std::uint16_t size) {
@@ -38,17 +58,18 @@ std::uint16_t Rs485Bridge::pop(std::uint8_t* data, std::uint16_t capacity) {
 }
 
 void Rs485Bridge::onReceive(UART_HandleTypeDef* uart, std::uint16_t size) {
-    if (!uart || uart->Instance != USART2) return;
+    if (sleeping_ || !uart || uart->Instance != USART2) return;
     push(receiveBuffer_.data(), size);
     activity_ = size != 0u;
     startReceive();
 }
 
 void Rs485Bridge::onError(UART_HandleTypeDef* uart) {
-    if (uart && uart->Instance == USART2) startReceive();
+    if (!sleeping_ && uart && uart->Instance == USART2) startReceive();
 }
 
 void Rs485Bridge::run() {
+    if (sleeping_) return;
     if (activity_) {
         activity_ = false;
         activityLed_.pulse(50u);

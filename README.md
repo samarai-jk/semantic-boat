@@ -10,6 +10,7 @@ reusable drivers live outside generated code.
 - `src/dev/<device>/cmx/` — CubeMX `.ioc`, generated HAL/CMSIS code, and generated CMake target
 - `src/dev/<device>/` — hand-written C++ firmware for one device
 - `src/lib/slstm32/` — heap-free reusable STM32 application framework and drivers
+- `src/lib/semantic-display/` — portable configured-display compiler and runtime
 - `src/lib/` — other first- or third-party libraries
 
 Only code inside CubeMX `USER CODE` sections should be hand-edited under
@@ -36,6 +37,9 @@ script\build.bat remote-a flash
 
 The build emits an ELF file plus `.hex` and `.bin` images beneath
 `build/remote-a/debug/`.
+
+Display configuration, EEPROM storage, and SWD upload are documented in
+[`src/lib/semantic-display/README.md`](src/lib/semantic-display/README.md).
 
 ## Debugging remote-a
 

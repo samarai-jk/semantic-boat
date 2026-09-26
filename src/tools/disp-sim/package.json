@@ -1,0 +1,18 @@
+{
+  "name": "@semantic-boat/disp-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Serial data simulator for Semantic Boat displays",
+  "scripts": {
+    "start": "node src/index.js",
+    "ports": "node src/index.js --list",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0"
+  }
+}

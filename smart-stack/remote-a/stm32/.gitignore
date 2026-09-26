@@ -1,0 +1,87 @@
+# ----- Build artifacts (C/C++ / Embedded) -----
+# Primary build directories
+/build/
+/out/
+/bin/
+/obj/
+/Debug/
+/Release/
+
+# Object / dependency / lists
+*.o
+*.obj
+*.d
+*.dep
+*.lst
+*.list
+
+# Archives / libraries
+*.a
+*.la
+*.lib
+
+# Link / images
+*.elf
+*.hex
+*.bin
+*.map
+*.srec
+*.s19
+
+# Precompiled / intermediate
+*.gch
+*.pch
+*.i
+*.ii
+*.su
+
+# Assembly and disassembly outputs
+*.asm
+*.s
+*.dis
+
+# Logs and misc
+*.log
+*.tmp
+*.bak
+*.bkp
+*.old
+
+# ----- STM32 / CubeMX hints -----
+# Keep .ioc tracked (project configuration), do NOT ignore it.
+# If CubeMX creates backups alongside, ignore common backup names:
+*.ioc-backup
+MXProjectConfig.prefs
+
+# Optional: OpenOCD/GDB scratch files
+openocd.log
+.gdbhistory
+
+# ----- IDE/editor noise -----
+# VS Code transient DBs/caches (keep .vscode itself if you commit tasks/launch)
+.vscode/.browse.VC.db*
+.vscode/ipch/
+.vscode/targets.log
+
+# CLion/JetBrains
+.idea/
+cmake-build-*/
+
+# Visual Studio (in case someone opens it there)
+.vs/
+
+# clangd/ccls caches
+.cache/
+.clangd/
+
+# ----- OS junk -----
+# macOS
+.DS_Store
+.AppleDouble
+.apdisk
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+# Linux
+*~

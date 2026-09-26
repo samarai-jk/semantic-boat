@@ -1,0 +1,17 @@
+{
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/remote-a/debug/compile_commands.json",
+  "C_Cpp.default.compilerPath": "${env:USERPROFILE}/scoop/apps/gcc-arm-none-eabi/current/bin/arm-none-eabi-g++.exe",
+  "C_Cpp.default.intelliSenseMode": "windows-gcc-arm",
+  "C_Cpp.default.cStandard": "c11",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.errorSquiggles": "enabled",
+  "C_Cpp.intelliSenseEngine": "default",
+  "cmake.configureOnOpen": false,
+  "cmake.useCMakePresets": "always",
+  "files.associations": {
+    "*.s": "arm"
+  },
+  "files.exclude": {
+    "**/build": true
+  }
+}

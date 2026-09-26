@@ -1,0 +1,45 @@
+{
+  "configurations": [
+    {
+      "name": "remote-a (GNU Arm)",
+      "compileCommands": "${workspaceFolder}/build/remote-a/debug/compile_commands.json",
+      "compilerPath": "${env:USERPROFILE}/scoop/apps/gcc-arm-none-eabi/current/bin/arm-none-eabi-g++.exe",
+      "compilerArgs": [
+        "-mcpu=cortex-m4",
+        "-mfpu=fpv4-sp-d16",
+        "-mfloat-abi=hard"
+      ],
+      "defines": [
+        "DEBUG",
+        "USE_HAL_DRIVER",
+        "STM32L431xx"
+      ],
+      "includePath": [
+        "${workspaceFolder}/src/dev/remote-a/include",
+        "${workspaceFolder}/src/dev/remote-a/src",
+        "${workspaceFolder}/src/dev/remote-a/cmx/Core/Inc",
+        "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/STM32L4xx_HAL_Driver/Inc",
+        "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/STM32L4xx_HAL_Driver/Inc/Legacy",
+        "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/CMSIS/Device/ST/STM32L4xx/Include",
+        "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/CMSIS/Include",
+        "${workspaceFolder}/src/lib/slstm32/include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/src/dev/remote-a/include",
+          "${workspaceFolder}/src/dev/remote-a/src",
+          "${workspaceFolder}/src/dev/remote-a/cmx/Core/Inc",
+          "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/STM32L4xx_HAL_Driver/Inc",
+          "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/CMSIS/Device/ST/STM32L4xx/Include",
+          "${workspaceFolder}/src/dev/remote-a/cmx/Drivers/CMSIS/Include",
+          "${workspaceFolder}/src/lib/slstm32/include"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      },
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-arm"
+    }
+  ],
+  "version": 4
+}

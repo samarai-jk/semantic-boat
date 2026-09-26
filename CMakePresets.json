@@ -1,0 +1,29 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "remote-a-debug",
+      "displayName": "remote-a (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/remote-a/debug",
+      "toolchainFile": "${sourceDir}/src/dev/remote-a/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEMANTIC_BOAT_DEVICE": "remote-a"
+      }
+    },
+    {
+      "name": "remote-a-release",
+      "inherits": "remote-a-debug",
+      "displayName": "remote-a (Release)",
+      "binaryDir": "${sourceDir}/build/remote-a/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "remote-a-debug", "configurePreset": "remote-a-debug" },
+    { "name": "remote-a-release", "configurePreset": "remote-a-release" }
+  ]
+}

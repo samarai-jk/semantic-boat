@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.22)
+
+set(SEMANTIC_BOAT_DEVICE "remote-a" CACHE STRING "Firmware device to build")
+set_property(CACHE SEMANTIC_BOAT_DEVICE PROPERTY STRINGS remote-a)
+
+string(REPLACE "-" "_" SEMANTIC_BOAT_DEVICE_TARGET "${SEMANTIC_BOAT_DEVICE}")
+project(semantic_boat_${SEMANTIC_BOAT_DEVICE_TARGET} LANGUAGES C CXX ASM)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+add_subdirectory(src/lib/slstm32)
+
+if(SEMANTIC_BOAT_DEVICE STREQUAL "remote-a")
+    add_subdirectory(src/dev/remote-a)
+else()
+    message(FATAL_ERROR "Unknown SEMANTIC_BOAT_DEVICE: ${SEMANTIC_BOAT_DEVICE}")
+endif()

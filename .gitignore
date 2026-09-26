@@ -66,12 +66,23 @@ build/
 # Ignore CubeMX generated vendor libraries
 Drivers/
 Middlewares/
+# Device firmware must remain buildable from a clean checkout.
+!src/dev/**/cmx/Drivers/
+!src/dev/**/cmx/Drivers/**
 # IDE / Editor specific
 .vscode/
 .idea/
 *.swp
 *~
 .history
+
+# Shared Semantic Boat VS Code build/debug configuration.
+!/.vscode/
+!/.vscode/launch.json
+!/.vscode/tasks.json
+!/.vscode/extensions.json
+!/.vscode/c_cpp_properties.json
+!/.vscode/settings.json
 /doc
 /in
 /bomist

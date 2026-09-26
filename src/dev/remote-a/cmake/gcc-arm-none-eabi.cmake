@@ -1,0 +1,25 @@
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+set(TOOLCHAIN_PREFIX arm-none-eabi-)
+set(CMAKE_C_COMPILER ${TOOLCHAIN_PREFIX}gcc)
+set(CMAKE_CXX_COMPILER ${TOOLCHAIN_PREFIX}g++)
+set(CMAKE_ASM_COMPILER ${TOOLCHAIN_PREFIX}gcc)
+set(CMAKE_OBJCOPY ${TOOLCHAIN_PREFIX}objcopy CACHE FILEPATH "objcopy")
+set(CMAKE_SIZE ${TOOLCHAIN_PREFIX}size CACHE FILEPATH "size")
+
+set(MCU_FLAGS "-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
+set(CMAKE_C_FLAGS_INIT "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -fstack-usage")
+set(CMAKE_CXX_FLAGS_INIT "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -fstack-usage -fno-exceptions -fno-rtti -fno-threadsafe-statics")
+set(CMAKE_ASM_FLAGS_INIT "${MCU_FLAGS} -x assembler-with-cpp")
+set(CMAKE_C_FLAGS_DEBUG_INIT "-O0 -g3")
+set(CMAKE_CXX_FLAGS_DEBUG_INIT "-O0 -g3")
+set(CMAKE_C_FLAGS_RELEASE_INIT "-Os -g0")
+set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Os -g0")
+
+get_filename_component(REMOTE_A_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(LINKER_SCRIPT "${REMOTE_A_DIR}/cmx/STM32L431xx_FLASH.ld")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${MCU_FLAGS} -T\"${LINKER_SCRIPT}\" --specs=nano.specs --specs=nosys.specs -Wl,--gc-sections -Wl,--print-memory-usage")
+
+set(CMAKE_EXECUTABLE_SUFFIX ".elf")

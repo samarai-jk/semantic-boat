@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build remote-a (Debug)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "args": [
+        "remote-a",
+        "debug",
+        "refresh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Build remote-a (Release)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "args": [
+        "remote-a",
+        "release",
+        "refresh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Flash remote-a (Debug)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "args": [
+        "remote-a",
+        "debug",
+        "refresh",
+        "flash"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    }
+  ]
+}

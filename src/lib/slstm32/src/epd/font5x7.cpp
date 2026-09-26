@@ -1,0 +1,86 @@
+#include "slstm32/epd/font5x7.hpp"
+
+namespace slstm32::epd {
+namespace {
+
+const std::uint8_t* glyph(char character) {
+    static constexpr std::uint8_t space[5]{};
+    static constexpr std::uint8_t digits[10][5] = {
+        {0x3e,0x51,0x49,0x45,0x3e},{0x00,0x42,0x7f,0x40,0x00},
+        {0x42,0x61,0x51,0x49,0x46},{0x21,0x41,0x45,0x4b,0x31},
+        {0x18,0x14,0x12,0x7f,0x10},{0x27,0x45,0x45,0x45,0x39},
+        {0x3c,0x4a,0x49,0x49,0x30},{0x01,0x71,0x09,0x05,0x03},
+        {0x36,0x49,0x49,0x49,0x36},{0x06,0x49,0x49,0x29,0x1e}
+    };
+    static constexpr std::uint8_t uppercase[26][5] = {
+        {0x7e,0x11,0x11,0x11,0x7e},{0x7f,0x49,0x49,0x49,0x36},
+        {0x3e,0x41,0x41,0x41,0x22},{0x7f,0x41,0x41,0x22,0x1c},
+        {0x7f,0x49,0x49,0x49,0x41},{0x7f,0x09,0x09,0x09,0x01},
+        {0x3e,0x41,0x49,0x49,0x7a},{0x7f,0x08,0x08,0x08,0x7f},
+        {0x00,0x41,0x7f,0x41,0x00},{0x20,0x40,0x41,0x3f,0x01},
+        {0x7f,0x08,0x14,0x22,0x41},{0x7f,0x40,0x40,0x40,0x40},
+        {0x7f,0x02,0x0c,0x02,0x7f},{0x7f,0x04,0x08,0x10,0x7f},
+        {0x3e,0x41,0x41,0x41,0x3e},{0x7f,0x09,0x09,0x09,0x06},
+        {0x3e,0x41,0x51,0x21,0x5e},{0x7f,0x09,0x19,0x29,0x46},
+        {0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7f,0x01,0x01},
+        {0x3f,0x40,0x40,0x40,0x3f},{0x1f,0x20,0x40,0x20,0x1f},
+        {0x3f,0x40,0x38,0x40,0x3f},{0x63,0x14,0x08,0x14,0x63},
+        {0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43}
+    };
+    static constexpr std::uint8_t period[5] = {0x00,0x60,0x60,0x00,0x00};
+    static constexpr std::uint8_t colon[5] = {0x00,0x36,0x36,0x00,0x00};
+    static constexpr std::uint8_t dash[5] = {0x08,0x08,0x08,0x08,0x08};
+
+    if (character >= 'a' && character <= 'z') character = static_cast<char>(character - 'a' + 'A');
+    if (character >= '0' && character <= '9') return digits[character - '0'];
+    if (character >= 'A' && character <= 'Z') return uppercase[character - 'A'];
+    if (character == '.') return period;
+    if (character == ':') return colon;
+    if (character == '-') return dash;
+    return space;
+}
+
+} // namespace
+
+void Font5x7::drawChar(MonochromeCanvas& canvas, std::uint16_t x, std::uint16_t y,
+                       char character, bool black, std::uint8_t scale) {
+    if (scale == 0u) return;
+    const auto* data = glyph(character);
+    for (std::uint8_t column = 0; column < 5u; ++column) {
+        for (std::uint8_t row = 0; row < 7u; ++row) {
+            if (((data[column] >> row) & 1u) == 0u) continue;
+            for (std::uint8_t dy = 0; dy < scale; ++dy) {
+                for (std::uint8_t dx = 0; dx < scale; ++dx) {
+                    canvas.setPixel(static_cast<std::uint16_t>(x + column * scale + dx),
+                                    static_cast<std::uint16_t>(y + row * scale + dy), black);
+                }
+            }
+        }
+    }
+}
+
+void Font5x7::drawText(MonochromeCanvas& canvas, std::uint16_t x, std::uint16_t y,
+                       const char* text, bool black, std::uint8_t scale) {
+    if (!text || scale == 0u) return;
+    const auto advance = static_cast<std::uint16_t>(6u * scale);
+    while (*text) {
+        drawChar(canvas, x, y, *text++, black, scale);
+        x = static_cast<std::uint16_t>(x + advance);
+    }
+}
+
+std::uint16_t Font5x7::textWidth(const char* text, std::uint8_t scale) {
+    if (!text || !*text || scale == 0u) return 0u;
+    std::uint16_t length{};
+    while (text[length]) ++length;
+    return static_cast<std::uint16_t>(length * 6u * scale - scale);
+}
+
+void Font5x7::drawCentered(MonochromeCanvas& canvas, std::uint16_t y, const char* text,
+                           bool black, std::uint8_t scale) {
+    const auto textSize = textWidth(text, scale);
+    const auto x = textSize < canvas.width() ? static_cast<std::uint16_t>((canvas.width() - textSize) / 2u) : 0u;
+    drawText(canvas, x, y, text, black, scale);
+}
+
+} // namespace slstm32::epd

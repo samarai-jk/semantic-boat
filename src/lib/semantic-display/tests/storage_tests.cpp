@@ -1,5 +1,6 @@
 #include "semantic_display/compiler.hpp"
 #include "semantic_display/storage.hpp"
+#include "slstm32/storage/redundant_blob_store.hpp"
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -67,4 +68,27 @@ int main() {
     memory.bytes[store.layout().slotOffset(1u) + store.layout().slotHeaderBytes + 10u] ^= 0x80u;
     assert(store.load(loaded.data(), loaded.size(), loadedInfo));
     assert(loadedInfo.slot == 0u && loadedInfo.generation == 1u);
+
+    slstm32::storage::RedundantBlobStore settings{
+        memory, static_cast<std::uint32_t>(store.layout().settingsOffset()),
+        store.layout().settingsBytes};
+    const std::uint8_t settingsA[]{1u, 1u, 0u};
+    const std::uint8_t settingsB[]{1u, 2u, 1u};
+    std::uint8_t loadedSettings[8]{};
+    std::size_t loadedSettingsSize{};
+    assert(!settings.load(loadedSettings, sizeof loadedSettings, loadedSettingsSize));
+    assert(settings.commit(settingsA, sizeof settingsA));
+    assert(settings.load(loadedSettings, sizeof loadedSettings, loadedSettingsSize));
+    assert(loadedSettingsSize == sizeof settingsA &&
+           std::memcmp(loadedSettings, settingsA, sizeof settingsA) == 0);
+    assert(settings.commit(settingsB, sizeof settingsB));
+    assert(settings.load(loadedSettings, sizeof loadedSettings, loadedSettingsSize));
+    assert(std::memcmp(loadedSettings, settingsB, sizeof settingsB) == 0);
+
+    // Corrupt the newest settings slot; the previous committed generation is
+    // still valid, just like the larger configuration store.
+    memory.bytes[store.layout().settingsOffset() +
+                 slstm32::storage::RedundantBlobStore::slotBytes + 16u] ^= 0x80u;
+    assert(settings.load(loadedSettings, sizeof loadedSettings, loadedSettingsSize));
+    assert(std::memcmp(loadedSettings, settingsA, sizeof settingsA) == 0);
 }

@@ -25,6 +25,24 @@ enum class MessageType : std::uint8_t {
     valueUnavailable = 0x12u,
     ping = 0x20u,
     pong = 0x21u,
+    configListRequest = 0x30u,
+    configListBegin = 0x31u,
+    configListItem = 0x32u,
+    configListEnd = 0x33u,
+    configRequest = 0x34u,
+    configBegin = 0x35u,
+    configChunk = 0x36u,
+    configEnd = 0x37u,
+    alertUpdate = 0x40u,
+    alertRemove = 0x41u,
+    alertAction = 0x42u,
+    alertSilence = 0x43u,
+};
+
+enum class AlertAction : std::uint8_t {
+    acknowledge = 0u,
+    snooze = 1u,
+    silence = 2u,
 };
 
 enum class DecodeResult : std::uint8_t { none, message, error };

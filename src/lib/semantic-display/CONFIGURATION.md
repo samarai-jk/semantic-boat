@@ -45,7 +45,8 @@ and a larger example is [examples/remote-test-v1.json](examples/remote-test-v1.j
               "cell": { "column": 0, "row": 0 },
               "label": "SOG",
               "display_unit": "kn",
-              "decimals": 1
+              "decimals": 1,
+              "max_digits": 6
             },
             {
               "type": "local-clock",
@@ -137,7 +138,11 @@ its permanent development `REFRESH` action even when an uploaded configuration
 has no `button_labels`. A label in JSON alone does not imply behavior. When no
 per-button labels or available actions exist, a larger generic previous
 page/next page help line is shown. Up/down section controls are intentionally
-not shown in this bottom-button footer.
+not shown in this bottom-button footer. When multiple sections exist, the right
+edge of the top bar shows an up arrow when a logically previous section exists,
+and the right edge of the bottom bar shows a down arrow when a logically next
+section exists. The first and last sections therefore show only one arrow even
+though section navigation itself wraps around.
 
 ## Grid and widgets
 
@@ -148,7 +153,12 @@ There is no arbitrary-pixel positioning in v1.
 Supported widgets are:
 
 - `value`: shows a number or short string. It requires `source`; numeric values
-  may set `display_unit` and `decimals`.
+  may set `display_unit`, `decimals`, and `max_digits`. `max_digits` is the
+  maximum formatted character count, including a minus sign and decimal point,
+  and defaults to 6. The renderer chooses a fixed bitmap-font scale that fits
+  that many characters inside the widget. The scale therefore stays unchanged
+  as live values change. Values longer than the configured maximum are clipped
+  with a trailing dot rather than changing font size.
 - `text`: shows static text and requires `text`.
 - `local-clock`: asks the device's local RTC formatter for a value. It does not
   use Signal K and is intentionally distinct from a normal server-backed clock
@@ -158,9 +168,11 @@ Any other `type` compiles as an unknown widget. The runtime draws a placeholder
 containing `UNKNOWN WIDGET` and the requested type name, while all supported
 pages and widgets continue to operate.
 
-Current built-in numeric conversions are `m/s` to `kn`, radians to degrees, and
-kelvin to Celsius. A connector should keep incoming values in the source unit;
-display conversion belongs to the widget/runtime.
+Current built-in numeric conversions are `m/s` to `kn`, radians to degrees,
+kelvin to Celsius, metres to nautical miles, pascals to hectopascals or bar,
+hertz to RPM, seconds to hours, ratio to percent, and cubic metres per second
+to litres per hour. A connector should keep incoming values in the source
+unit; display conversion belongs to the widget/runtime.
 
 ## History
 
@@ -235,8 +247,8 @@ every boot once the corresponding EEPROM package has been committed. Set
 `OPENOCD` and `OPENOCD_SCRIPTS` if OpenOCD is not installed at the defaults used
 by the repository scripts.
 
-The current remote-a development build has
-`useDevelopmentDisplayConfiguration` enabled in its composition root. With no
-valid SWD staging image it installs the embedded fake-data test configuration
-and refreshes that package when the embedded JSON changes. Setting the constant
-to false selects the small local-clock/no-config factory page for production.
+The current remote-a build has `useDevelopmentDisplayConfiguration` disabled
+in its composition root. With no valid EEPROM package or SWD staging image it
+installs the unmistakable local-clock/status default page. The same built-in
+configuration is always available as `DEFAULT (LOCAL)` in configuration
+selection.

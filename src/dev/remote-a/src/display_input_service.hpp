@@ -9,14 +9,19 @@
 
 namespace remote_a {
 
+struct DisplayInputActions {
+    void* context{};
+    void (*openSetup)(void* context){};
+};
+
 class DisplayInputService final : public slstm32::Service {
 public:
     DisplayInputService(slstm32::Runtime runtime, slstm32::EventBus& events,
                         slstm32::drivers::ButtonDriver& buttons,
                         semantic_display::DisplayService& display,
-                        FeedbackService& feedback)
+                        FeedbackService& feedback, DisplayInputActions actions = {})
         : runtime_(runtime), events_(events), buttons_(buttons), display_(display),
-          feedback_(feedback) {}
+          feedback_(feedback), actions_(actions) {}
     bool init() override;
     void run() override;
 
@@ -28,8 +33,11 @@ private:
     slstm32::drivers::ButtonDriver& buttons_;
     semantic_display::DisplayService& display_;
     FeedbackService& feedback_;
+    DisplayInputActions actions_;
     std::uint32_t upPressedAt_{};
+    std::uint32_t downPressedAt_{};
     bool upHoldPending_{};
+    bool downHoldPending_{};
     bool wakeReleasePending_{};
     std::uint8_t upHoldStage_{};
     std::uint8_t wakeButtonId_{};

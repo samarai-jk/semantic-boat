@@ -1,0 +1,54 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "Environment",
+  "sections": [
+    {
+      "id": "wind",
+      "title": "WIND",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "aws", "provider": "signalk", "path": "environment.wind.speedApparent", "unit": "m/s", "stale_ms": 5000},
+        {"id": "awa", "provider": "signalk", "path": "environment.wind.angleApparent", "unit": "rad", "stale_ms": 5000},
+        {"id": "tws", "provider": "signalk", "path": "environment.wind.speedTrue", "unit": "m/s", "stale_ms": 5000},
+        {"id": "twd", "provider": "signalk", "path": "environment.wind.directionTrue", "unit": "rad", "stale_ms": 5000}
+      ],
+      "pages": [
+        {
+          "id": "wind-data",
+          "title": "WIND DATA",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "aws", "cell": {"column": 0, "row": 0}, "label": "APPARENT SPEED", "display_unit": "kn", "decimals": 1},
+            {"type": "value", "source": "awa", "cell": {"column": 1, "row": 0}, "label": "APPARENT ANGLE", "display_unit": "deg", "decimals": 0},
+            {"type": "value", "source": "tws", "cell": {"column": 0, "row": 1}, "label": "TRUE SPEED", "display_unit": "kn", "decimals": 1},
+            {"type": "value", "source": "twd", "cell": {"column": 1, "row": 1}, "label": "TRUE DIRECTION", "display_unit": "deg", "decimals": 0}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "weather",
+      "title": "WEATHER",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "air", "provider": "signalk", "path": "environment.outside.temperature", "unit": "K", "stale_ms": 10000},
+        {"id": "water", "provider": "signalk", "path": "environment.water.temperature", "unit": "K", "stale_ms": 10000},
+        {"id": "pressure", "provider": "signalk", "path": "environment.outside.pressure", "unit": "Pa", "stale_ms": 10000},
+        {"id": "humidity", "provider": "signalk", "path": "environment.outside.humidity", "unit": "ratio", "stale_ms": 10000}
+      ],
+      "pages": [
+        {
+          "id": "weather-data",
+          "title": "WEATHER DATA",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "air", "cell": {"column": 0, "row": 0}, "label": "AIR", "display_unit": "C", "decimals": 1},
+            {"type": "value", "source": "water", "cell": {"column": 1, "row": 0}, "label": "WATER", "display_unit": "C", "decimals": 1},
+            {"type": "value", "source": "pressure", "cell": {"column": 0, "row": 1}, "label": "PRESSURE", "display_unit": "hPa", "decimals": 0},
+            {"type": "value", "source": "humidity", "cell": {"column": 1, "row": 1}, "label": "HUMIDITY", "display_unit": "%", "decimals": 0}
+          ]
+        }
+      ]
+    }
+  ]
+}

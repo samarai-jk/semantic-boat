@@ -1,0 +1,64 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "System",
+  "sections": [
+    {
+      "id": "server",
+      "title": "SIGNAL K SERVER",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "server-uptime", "provider": "signalk", "path": "system.server.uptime", "unit": "s", "stale_ms": 10000},
+        {"id": "cpu", "provider": "signalk", "path": "system.server.cpuLoad", "unit": "ratio", "stale_ms": 10000},
+        {"id": "memory", "provider": "signalk", "path": "system.server.memoryUsed", "unit": "ratio", "stale_ms": 10000},
+        {"id": "clients", "provider": "signalk", "path": "system.server.connectedClients", "stale_ms": 10000}
+      ],
+      "pages": [
+        {
+          "id": "health",
+          "title": "SERVER HEALTH",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "server-uptime", "cell": {"column": 0, "row": 0}, "label": "UPTIME", "display_unit": "h", "decimals": 1},
+            {"type": "value", "source": "cpu", "cell": {"column": 1, "row": 0}, "label": "CPU", "display_unit": "%", "decimals": 0},
+            {"type": "value", "source": "memory", "cell": {"column": 0, "row": 1}, "label": "MEMORY", "display_unit": "%", "decimals": 0},
+            {"type": "value", "source": "clients", "cell": {"column": 1, "row": 1}, "label": "CLIENTS", "decimals": 0}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "title": "REMOTE CLIENT",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "link", "provider": "device", "path": "system.client.linkStatus", "stale_ms": 10000},
+        {"id": "latency", "provider": "device", "path": "system.client.linkLatency", "unit": "ms", "stale_ms": 10000},
+        {"id": "values", "provider": "device", "path": "system.client.receivedValues", "unit": "Hz", "stale_ms": 10000},
+        {"id": "client-uptime", "provider": "device", "path": "system.client.uptime", "unit": "s", "stale_ms": 10000},
+        {"id": "firmware", "provider": "device", "path": "system.client.firmwareVersion", "stale_ms": 60000}
+      ],
+      "pages": [
+        {
+          "id": "link",
+          "title": "LINK",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "link", "cell": {"column": 0, "row": 0}, "label": "STATUS"},
+            {"type": "value", "source": "latency", "cell": {"column": 1, "row": 0}, "label": "LATENCY", "display_unit": "ms", "decimals": 0},
+            {"type": "value", "source": "values", "cell": {"column": 0, "row": 1}, "label": "VALUES", "display_unit": "Hz", "decimals": 1},
+            {"type": "value", "source": "client-uptime", "cell": {"column": 1, "row": 1}, "label": "UPTIME", "display_unit": "h", "decimals": 1}
+          ]
+        },
+        {
+          "id": "software",
+          "title": "SOFTWARE",
+          "grid": {"columns": 2, "rows": 1, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "firmware", "cell": {"column": 0, "row": 0}, "label": "FIRMWARE"},
+            {"type": "local-clock", "cell": {"column": 1, "row": 0}, "label": "LOCAL TIME"}
+          ]
+        }
+      ]
+    }
+  ]
+}

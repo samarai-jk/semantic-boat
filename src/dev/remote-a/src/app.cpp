@@ -1,6 +1,9 @@
 #include "remote_a/app.h"
+#include "alarm_service.hpp"
 #include "board.hpp"
 #include "config_staging.hpp"
+#include "configuration_service.hpp"
+#include "device_settings.hpp"
 #include "display_config.hpp"
 #include "display_input_service.hpp"
 #include "display_link_service.hpp"
@@ -13,6 +16,7 @@
 #include "semantic_display/display.hpp"
 #include "semantic_display/history.hpp"
 #include "semantic_display/storage.hpp"
+#include "setup_service.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/at24c256.hpp"
@@ -68,12 +72,16 @@ slstm32::epd::MonochromeCanvas canvas{frameBuffer.data(), frameBuffer.size(),
 
 constexpr semantic_display::ConfigStorageLayout configStorageLayout{};
 constexpr std::size_t compiledConfigCapacity = configStorageLayout.maxPackageBytes();
+// Keep enough RAM1 free for ConfigCompiler, whose section parser currently has
+// a roughly 6 KiB stack frame. SWD staging retains its independent 16 KiB
+// source limit; only live Semantic Link downloads use this smaller buffer.
+constexpr std::size_t downloadedConfigCapacity = 8u * 1024u;
 constexpr std::size_t historyCapacity = 1024u;
 constexpr std::size_t sourceCapacity = 64u;
-// Development firmware keeps the embedded fake-data configuration current when
-// no SWD-staged user configuration exists. Set false for a production image
-// that should boot the small factory/no-config page instead.
-constexpr bool useDevelopmentDisplayConfiguration = true;
+// Development firmware uses the embedded fake-data configuration only when no
+// persisted or SWD-staged user configuration exists. Set false for a production
+// image that should boot the small factory/no-config page instead.
+constexpr bool useDevelopmentDisplayConfiguration = false;
 // A missing/unwritable EEPROM is useful diagnostic information in production,
 // but should not cover the development UI when the embedded test package is
 // intentionally allowed to run from RAM.
@@ -83,6 +91,7 @@ constexpr bool showDevelopmentStorageWarnings = false;
 constexpr std::uint32_t fullRefreshAfterPartialUpdates = 5400u;
 __attribute__((section(".config_package")))
 std::array<std::uint8_t, compiledConfigCapacity> compiledConfig{};
+std::array<char, downloadedConfigCapacity> downloadedConfig{};
 std::array<std::uint8_t, historyCapacity> historyMemory{};
 std::array<semantic_display::ValueSlot, sourceCapacity> values{};
 semantic_display::PackageView displayPackage{};
@@ -90,6 +99,18 @@ semantic_display::DataStore dataStore{values.data(), values.size()};
 semantic_display::HistoryStore historyStore{historyMemory.data(), historyMemory.size()};
 slstm32::drivers::At24c256 configEeprom{remote_a::eepromHardware()};
 semantic_display::ConfigStore configStore{configEeprom, configStorageLayout};
+remote_a::DeviceSettingsStore deviceSettingsStore{
+    configEeprom,
+    static_cast<std::uint32_t>(configStorageLayout.settingsOffset()),
+    configStorageLayout.settingsBytes};
+semantic_display::ConfigCompiler configCompiler{{
+    remote_a::maxStagedConfigBytes,
+    compiledConfigCapacity,
+    historyCapacity,
+    255u,
+    16u,
+    static_cast<std::uint16_t>(values.size()),
+}};
 
 bool formatLocalClock(void*, char* output, std::size_t capacity) {
     if (!output || capacity < 6u) return false;
@@ -113,6 +134,12 @@ void modalChanged(void* context, bool visible, semantic_display::ModalSeverity s
                                  severity == semantic_display::ModalSeverity::alarm));
 }
 
+void modalPresented(void* context, semantic_display::ModalSeverity severity) {
+    if (severity != semantic_display::ModalSeverity::error &&
+        severity != semantic_display::ModalSeverity::alarm) return;
+    static_cast<remote_a::FeedbackService*>(context)->playAttentionCue();
+}
+
 bool displayActionAvailable(void*, semantic_display::InputAction action,
                             std::uint16_t, std::uint16_t);
 bool executeDisplayAction(void*, semantic_display::InputAction action,
@@ -124,7 +151,7 @@ semantic_display::DisplayService display{
     runtime, epdPanel, canvas, dataStore, historyStore,
     {nullptr, &formatLocalClock},
     {100u, 333u, fullRefreshAfterPartialUpdates, 60000u},
-    {&feedback, &modalChanged},
+    {&feedback, &modalChanged, &modalPresented},
     {},
     {nullptr, &displayActionAvailable, &executeDisplayAction, &displayActionLabel}};
 
@@ -135,20 +162,35 @@ bool displayActionAvailable(void*, semantic_display::InputAction action,
 
 bool executeDisplayAction(void*, semantic_display::InputAction action,
                           std::uint16_t, std::uint16_t) {
-    if (action != semantic_display::InputAction::action2) return false;
-    display.requestFullRefresh();
+    if (action == semantic_display::InputAction::action2) display.requestFullRefresh();
     return false;
 }
 
 std::string_view displayActionLabel(void*, semantic_display::InputAction action,
                                     std::uint16_t, std::uint16_t) {
-    return action == semantic_display::InputAction::action2
-        ? std::string_view{"REFRESH"} : std::string_view{};
+    if (action == semantic_display::InputAction::action2) return "REFRESH";
+    return {};
 }
 
-remote_a::DisplayInputService displayInput{runtime, events, buttons, display, feedback};
 remote_a::DisplayLinkService displayLink{runtime, dataTransport, displayPackage,
                                          dataStore, display};
+remote_a::AlarmService alarmService{display, feedback, displayLink};
+remote_a::ConfigurationService configurationService{
+    runtime, displayLink, display, configCompiler, configStore, displayPackage,
+    compiledConfig.data(), compiledConfig.size(),
+    downloadedConfig.data(), downloadedConfig.size(),
+    &remote_a::factoryDisplayConfiguration};
+remote_a::SetupService setupService{
+    display, feedback, dataTransport, configurationService, alarmService,
+    deviceSettingsStore};
+
+void openSetup(void* context) {
+    static_cast<remote_a::SetupService*>(context)->open();
+}
+
+remote_a::DisplayInputService displayInput{
+    runtime, events, buttons, display, feedback,
+    {&setupService, &openSetup}};
 
 void disableInactiveDataUart() {
 #if REMOTE_A_USE_STLINK_DATA_LINK
@@ -184,9 +226,12 @@ struct StatusLed;
 struct Buzzer;
 struct DisplayPanel;
 struct DataTransport;
+struct Setup;
 struct Feedback;
 struct DisplayRuntime;
 struct DisplayInput;
+struct Configuration;
+struct Alarms;
 struct DisplayLink;
 } // namespace component
 
@@ -201,35 +246,38 @@ auto application = slstm32::makeApplication(
     slstm32::makeServiceSet(
         slstm32::bind<component::Feedback>(feedback),
         slstm32::bind<component::DisplayRuntime>(display),
+        slstm32::bind<component::Alarms>(alarmService),
+        slstm32::bind<component::Configuration>(configurationService),
+        slstm32::bind<component::Setup>(setupService),
         slstm32::bind<component::DisplayInput>(displayInput),
         slstm32::bind<component::DisplayLink>(displayLink)));
 
 } // namespace
 
 extern "C" void remote_a_app_init(void) {
-    const semantic_display::ConfigCompiler compiler{{
-        remote_a::maxStagedConfigBytes,
-        compiledConfigCapacity,
-        historyCapacity,
-        255u,
-        16u,
-        static_cast<std::uint16_t>(values.size()),
-    }};
     semantic_display::StoredConfigInfo stored{};
-    bool loaded = configStore.load(compiledConfig.data(), compiledConfig.size(), stored);
+    const bool eepromDetected = remote_a::eepromReady();
+    bool loaded = eepromDetected &&
+        configStore.load(compiledConfig.data(), compiledConfig.size(), stored);
     const auto staged = remote_a::stagedConfiguration();
     const char* warningTitle = nullptr;
     const char* warningMessage = nullptr;
     std::size_t packageSize = loaded ? stored.packageSize : 0u;
 
+    if (!eepromDetected) {
+        warningTitle = "EEPROM NOT FOUND";
+        warningMessage = "AT24C256 DID NOT RESPOND AT I2C ADDRESS 0X52.";
+    }
+
     if (staged.valid && (!loaded || stored.sourceCrc32 != staged.sourceCrc32)) {
-        const auto result = compiler.compile(staged.json, compiledConfig.data(), compiledConfig.size());
+        const auto result = configCompiler.compile(staged.json, compiledConfig.data(), compiledConfig.size());
         if (result) {
             packageSize = result.packageSize;
             semantic_display::StoredConfigInfo committed{};
+            remote_a::clearEepromIoError();
             if (!configStore.commit(compiledConfig.data(), packageSize, committed)) {
                 warningTitle = "STORAGE ERROR";
-                warningMessage = "CONFIG RUNS FROM RAM BUT EEPROM COMMIT FAILED.";
+                warningMessage = remote_a::eepromIoErrorMessage();
             }
         } else {
             warningTitle = "CONFIG ERROR";
@@ -239,52 +287,52 @@ extern "C" void remote_a_app_init(void) {
         }
     }
 
-    if (!staged.valid && useDevelopmentDisplayConfiguration) {
+    if (!staged.valid && useDevelopmentDisplayConfiguration && !loaded) {
         const auto source = remote_a::testDisplayConfiguration();
-        const auto sourceCrc = semantic_display::crc32(
-            reinterpret_cast<const std::uint8_t*>(source.data()), source.size());
-        if (!loaded || stored.sourceCrc32 != sourceCrc) {
-            const auto result = compiler.compile(source, compiledConfig.data(),
-                                                 compiledConfig.size());
-            if (!result) Error_Handler();
-            packageSize = result.packageSize;
-            semantic_display::StoredConfigInfo committed{};
-            if (!configStore.commit(compiledConfig.data(), packageSize, committed) &&
-                showDevelopmentStorageWarnings && !warningTitle) {
-                warningTitle = "EEPROM OFFLINE";
-                warningMessage = "USING VOLATILE TEST CONFIGURATION.";
-            }
+        const auto result = configCompiler.compile(source, compiledConfig.data(),
+                                             compiledConfig.size());
+        if (!result) Error_Handler();
+        packageSize = result.packageSize;
+        semantic_display::StoredConfigInfo committed{};
+        remote_a::clearEepromIoError();
+        if (!configStore.commit(compiledConfig.data(), packageSize, committed) &&
+            showDevelopmentStorageWarnings && !warningTitle) {
+            warningTitle = "STORAGE ERROR";
+            warningMessage = remote_a::eepromIoErrorMessage();
         }
     }
 
     if (packageSize == 0u) {
-        auto result = compiler.compile(staged.valid || !useDevelopmentDisplayConfiguration
+        auto result = configCompiler.compile(staged.valid || !useDevelopmentDisplayConfiguration
                                            ? remote_a::factoryDisplayConfiguration()
                                            : remote_a::testDisplayConfiguration(),
                                        compiledConfig.data(), compiledConfig.size());
         if (!result) {
-            result = compiler.compile(remote_a::factoryDisplayConfiguration(), compiledConfig.data(),
+            result = configCompiler.compile(remote_a::factoryDisplayConfiguration(), compiledConfig.data(),
                                       compiledConfig.size());
         }
         if (!result) Error_Handler();
         packageSize = result.packageSize;
         semantic_display::StoredConfigInfo committed{};
+        remote_a::clearEepromIoError();
         if (!configStore.commit(compiledConfig.data(), packageSize, committed) &&
             (!useDevelopmentDisplayConfiguration || showDevelopmentStorageWarnings) &&
             !warningTitle) {
-            warningTitle = "EEPROM OFFLINE";
-            warningMessage = "USING VOLATILE CONFIGURATION.";
+            warningTitle = "STORAGE ERROR";
+            warningMessage = remote_a::eepromIoErrorMessage();
         }
     }
 
     displayPackage = {compiledConfig.data(), packageSize};
     if (!display.setPackage(displayPackage)) Error_Handler();
+    setupService.setStorageAvailable(eepromDetected);
     if (!configureDataUart()) Error_Handler();
     disableInactiveDataUart();
     if (!application.init()) Error_Handler();
     if (warningTitle) {
         display.showModal(warningTitle, warningMessage, semantic_display::ModalSeverity::error);
     }
+    feedback.setOperational();
 }
 
 extern "C" void remote_a_app_run(void) {

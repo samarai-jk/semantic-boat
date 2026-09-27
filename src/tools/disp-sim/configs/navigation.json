@@ -1,0 +1,54 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "Navigation",
+  "sections": [
+    {
+      "id": "navigation",
+      "title": "NAVIGATION",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "sog", "provider": "signalk", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 5000},
+        {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "stale_ms": 5000},
+        {"id": "cog", "provider": "signalk", "path": "navigation.courseOverGroundTrue", "unit": "rad", "stale_ms": 5000},
+        {"id": "heading", "provider": "signalk", "path": "navigation.headingTrue", "unit": "rad", "stale_ms": 5000},
+        {"id": "depth", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "stale_ms": 10000},
+        {"id": "waypoint-distance", "provider": "signalk", "path": "navigation.courseGreatCircle.nextPoint.distanceToWaypoint", "unit": "m", "stale_ms": 10000},
+        {"id": "waypoint-bearing", "provider": "signalk", "path": "navigation.courseGreatCircle.nextPoint.bearingTrue", "unit": "rad", "stale_ms": 10000},
+        {"id": "eta", "provider": "signalk", "path": "navigation.courseGreatCircle.nextPoint.estimatedTimeOfArrival", "stale_ms": 60000}
+      ],
+      "pages": [
+        {
+          "id": "overview",
+          "title": "OVERVIEW",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "sog", "cell": {"column": 0, "row": 0, "row_span": 2}, "label": "SOG", "display_unit": "kn", "decimals": 1},
+            {"type": "value", "source": "cog", "cell": {"column": 1, "row": 0}, "label": "COG", "display_unit": "deg", "decimals": 0},
+            {"type": "value", "source": "depth", "cell": {"column": 1, "row": 1}, "label": "DEPTH", "display_unit": "m", "decimals": 1}
+          ]
+        },
+        {
+          "id": "motion",
+          "title": "MOTION",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "sog", "cell": {"column": 0, "row": 0}, "label": "SOG", "display_unit": "kn", "decimals": 1},
+            {"type": "value", "source": "stw", "cell": {"column": 1, "row": 0}, "label": "STW", "display_unit": "kn", "decimals": 1},
+            {"type": "value", "source": "cog", "cell": {"column": 0, "row": 1}, "label": "COG", "display_unit": "deg", "decimals": 0},
+            {"type": "value", "source": "heading", "cell": {"column": 1, "row": 1}, "label": "HEADING", "display_unit": "deg", "decimals": 0}
+          ]
+        },
+        {
+          "id": "waypoint",
+          "title": "WAYPOINT",
+          "grid": {"columns": 3, "rows": 1, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "waypoint-distance", "cell": {"column": 0, "row": 0}, "label": "DISTANCE", "display_unit": "nm", "decimals": 1},
+            {"type": "value", "source": "waypoint-bearing", "cell": {"column": 1, "row": 0}, "label": "BEARING", "display_unit": "deg", "decimals": 0},
+            {"type": "value", "source": "eta", "cell": {"column": 2, "row": 0}, "label": "ETA"}
+          ]
+        }
+      ]
+    }
+  ]
+}

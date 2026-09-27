@@ -55,6 +55,14 @@ void UartTransport::setSleeping(bool sleeping) {
     HAL_NVIC_EnableIRQ(irq);
 }
 
+void UartTransport::setActivityIndicatorEnabled(bool enabled) {
+    activityIndicatorEnabled_ = enabled;
+    if (!enabled) {
+        activity_ = false;
+        activityLed_.off();
+    }
+}
+
 std::size_t UartTransport::read(std::uint8_t* data, std::size_t capacity) {
     if (!data) return 0u;
     std::size_t count{};
@@ -94,7 +102,7 @@ void UartTransport::onError(UART_HandleTypeDef* uart) {
 void UartTransport::run() {
     if (!activity_) return;
     activity_ = false;
-    activityLed_.pulse(activityLedPulseMs);
+    if (activityIndicatorEnabled_) activityLed_.pulse(activityLedPulseMs);
 }
 
 } // namespace remote_a

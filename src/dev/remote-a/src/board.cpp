@@ -154,13 +154,14 @@ bool configureBuzzer(void* context) {
     return true;
 }
 
-bool startTone(void* context, std::uint32_t frequencyHz) {
+bool startTone(void* context, std::uint32_t frequencyHz, float level) {
     auto& pwm = *static_cast<PwmContext*>(context);
-    if (frequencyHz == 0u) return false;
+    if (frequencyHz == 0u || level <= 0.0f) return false;
+    if (level > 1.0f) level = 1.0f;
     auto timerClock = HAL_RCC_GetPCLK2Freq();
     if ((RCC->CFGR & RCC_CFGR_PPRE2) != RCC_CFGR_PPRE2_DIV1) timerClock *= 2u;
     configureTimer(*pwm.timer, timerClock, frequencyHz, 0xffffu);
-    writePwm(context, 0.5f);
+    writePwm(context, 0.5f * level);
     return startPwm(context);
 }
 

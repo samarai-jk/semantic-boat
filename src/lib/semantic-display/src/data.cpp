@@ -62,6 +62,13 @@ float convertUnit(float value, std::string_view sourceUnit, std::string_view dis
     if (sourceUnit == "m/s" && displayUnit == "kn") return value * 1.94384449f;
     if (sourceUnit == "rad" && displayUnit == "deg") return value * 57.2957795f;
     if (sourceUnit == "K" && (displayUnit == "C" || displayUnit == "degC")) return value - 273.15f;
+    if (sourceUnit == "m" && displayUnit == "nm") return value / 1852.0f;
+    if (sourceUnit == "Pa" && displayUnit == "hPa") return value / 100.0f;
+    if (sourceUnit == "Pa" && displayUnit == "bar") return value / 100000.0f;
+    if (sourceUnit == "Hz" && displayUnit == "rpm") return value * 60.0f;
+    if (sourceUnit == "s" && displayUnit == "h") return value / 3600.0f;
+    if (sourceUnit == "ratio" && displayUnit == "%") return value * 100.0f;
+    if (sourceUnit == "m3/s" && displayUnit == "L/h") return value * 3600000.0f;
     return value;
 }
 

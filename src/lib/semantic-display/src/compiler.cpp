@@ -660,6 +660,7 @@ private:
         Token type{}, source{}, label{}, unit{}, text{};
         std::uint8_t column{}, row{}, columnSpan{1u}, rowSpan{1u};
         std::uint32_t decimals{};
+        std::uint32_t maxDigits{defaultValueMaxDigits};
         if (!reader_.consume('}')) {
             bool done{};
             while (!done) {
@@ -672,6 +673,9 @@ private:
                 else if (key.equals("text")) { if (!reader_.string(text)) return false; }
                 else if (key.equals("decimals")) {
                     if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false;
+                } else if (key.equals("max_digits")) {
+                    if (!reader_.unsignedInteger(maxDigits) || maxDigits == 0u ||
+                        maxDigits > maximumValueMaxDigits) return false;
                 } else if (key.equals("cell")) {
                     if (!parseCell(column, row, columnSpan, rowSpan)) return false;
                 } else if (!reader_.skipValue()) return false;
@@ -710,7 +714,7 @@ private:
         payload[14] = label.size;
         payload[15] = unit.size;
         payload[16] = text.size;
-        payload[17] = 0u;
+        payload[17] = static_cast<std::uint8_t>(maxDigits);
         auto* cursor = payload + 18u;
         auto append = [&cursor](const Token& token) {
             std::memcpy(cursor, token.bytes, token.size); cursor += token.size;

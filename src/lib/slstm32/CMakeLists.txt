@@ -18,6 +18,7 @@ add_library(slstm32 STATIC
     src/epd/font5x7.cpp
     src/epd/monochrome_canvas.cpp
     src/epd/waveshare_3in7.cpp
+    src/storage/redundant_blob_store.cpp
 )
 
 target_include_directories(slstm32 PUBLIC include)

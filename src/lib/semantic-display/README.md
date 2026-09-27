@@ -133,13 +133,42 @@ overlapping widget cells are compile errors.
 
 Modals are runtime UI, not config widgets. `showModal()` displays an
 acknowledgeable information, warning, error, or alarm overlay. The optional
-`ModalNotification` callback lets device policy drive an LED or buzzer without
+`ModalNotification::changed` callback reports visibility changes immediately;
+`ModalNotification::presented` fires after the EPD update containing the modal
+has completed. These callbacks let device policy drive an LED or buzzer without
 putting hardware behavior in this library.
+
+Safety-oriented full-screen alert presentation and the fixed-queue policy are
+documented separately in [ALARMS.md](ALARMS.md).
 
 `showTransientModal()` provides a device-owned temporary overlay for status
 such as a shutdown countdown. It is separate from the application modal, so
 dismissing the temporary overlay restores any underlying alarm or error. A
 transient modal may supply its own bottom prompt.
+
+### Selection modals
+
+`showSelection()` is a generic fixed-memory list picker for configuration
+browsers and simple settings menus. The caller supplies a `SelectionList` with
+an item count, an item-text callback, and a completion callback; item strings
+remain owned by the caller. Previous Section and Next Section move the cursor
+up and down without wrapping. Previous Page is an unlabelled alternative
+Cancel, and Next Page is an unlabelled alternative Select. Action 1 always
+cancels and Action 2 always selects. Only the Cancel and Select action-button
+captions are drawn.
+
+The completion callback receives exactly one terminal result:
+`SelectionResult::selected` with the selected index, or
+`SelectionResult::cancelled`. Directional navigation is handled inside the
+modal and does not create caller-visible intermediate results. No heap
+allocation is used.
+
+While any modal or selection dialog is visible, source values and history
+samples continue to be ingested, but they do not schedule background EPD
+updates. Dialog input therefore competes only with the dialog's own refresh.
+Closing the dialog schedules one complete page render using the newest stored
+values. Services receiving short high-volume transfers may additionally use
+`setRenderingPaused()`; resuming likewise schedules a complete page render.
 
 ## Host tests
 

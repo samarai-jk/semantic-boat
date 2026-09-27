@@ -20,6 +20,7 @@ public:
     bool init() override;
     void run() override;
     void setSleeping(bool sleeping);
+    void setActivityIndicatorEnabled(bool enabled);
     std::size_t read(std::uint8_t* data, std::size_t capacity);
     bool write(const std::uint8_t* data, std::size_t size);
     void onReceive(UART_HandleTypeDef* uart, std::uint16_t size);
@@ -42,6 +43,7 @@ private:
     volatile std::uint32_t droppedBytes_{};
     volatile bool activity_{};
     bool sleeping_{};
+    bool activityIndicatorEnabled_{true};
 };
 
 } // namespace remote_a

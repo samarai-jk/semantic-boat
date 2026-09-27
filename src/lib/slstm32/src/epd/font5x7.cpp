@@ -40,6 +40,14 @@ const std::uint8_t* glyph(char character) {
     return space;
 }
 
+std::uint16_t scaled(std::uint16_t value, std::uint8_t numerator,
+                     std::uint8_t denominator) {
+    if (numerator == 0u || denominator == 0u) return 0u;
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint32_t>(value) * numerator + denominator - 1u) /
+        denominator);
+}
+
 } // namespace
 
 void Font5x7::drawChar(MonochromeCanvas& canvas, std::uint16_t x, std::uint16_t y,
@@ -74,6 +82,41 @@ std::uint16_t Font5x7::textWidth(const char* text, std::uint8_t scale) {
     std::uint16_t length{};
     while (text[length]) ++length;
     return static_cast<std::uint16_t>(length * 6u * scale - scale);
+}
+
+void Font5x7::drawTextScaled(MonochromeCanvas& canvas, std::uint16_t x,
+                             std::uint16_t y, const char* text, bool black,
+                             std::uint8_t numerator, std::uint8_t denominator) {
+    if (!text || numerator == 0u || denominator == 0u) return;
+    const auto glyphWidth = scaled(5u, numerator, denominator);
+    const auto glyphHeight = scaled(7u, numerator, denominator);
+    const auto advance = scaled(6u, numerator, denominator);
+    while (*text) {
+        const auto* data = glyph(*text++);
+        for (std::uint16_t column = 0u; column < glyphWidth; ++column) {
+            const auto sourceColumn = static_cast<std::uint8_t>(
+                static_cast<std::uint32_t>(column) * denominator / numerator);
+            for (std::uint16_t row = 0u; row < glyphHeight; ++row) {
+                const auto sourceRow = static_cast<std::uint8_t>(
+                    static_cast<std::uint32_t>(row) * denominator / numerator);
+                if (((data[sourceColumn] >> sourceRow) & 1u) != 0u) {
+                    canvas.setPixel(static_cast<std::uint16_t>(x + column),
+                                    static_cast<std::uint16_t>(y + row), black);
+                }
+            }
+        }
+        x = static_cast<std::uint16_t>(x + advance);
+    }
+}
+
+std::uint16_t Font5x7::textWidthScaled(const char* text, std::uint8_t numerator,
+                                       std::uint8_t denominator) {
+    if (!text || !*text || numerator == 0u || denominator == 0u) return 0u;
+    std::uint16_t length{};
+    while (text[length]) ++length;
+    const auto glyphWidth = scaled(5u, numerator, denominator);
+    const auto advance = scaled(6u, numerator, denominator);
+    return static_cast<std::uint16_t>((length - 1u) * advance + glyphWidth);
 }
 
 void Font5x7::drawCentered(MonochromeCanvas& canvas, std::uint16_t y, const char* text,

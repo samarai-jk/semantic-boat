@@ -12,6 +12,18 @@ export const MessageType = Object.freeze({
   VALUE_UNAVAILABLE: 0x12,
   PING: 0x20,
   PONG: 0x21,
+  CONFIG_LIST_REQUEST: 0x30,
+  CONFIG_LIST_BEGIN: 0x31,
+  CONFIG_LIST_ITEM: 0x32,
+  CONFIG_LIST_END: 0x33,
+  CONFIG_REQUEST: 0x34,
+  CONFIG_BEGIN: 0x35,
+  CONFIG_CHUNK: 0x36,
+  CONFIG_END: 0x37,
+  ALERT_UPDATE: 0x40,
+  ALERT_REMOVE: 0x41,
+  ALERT_ACTION: 0x42,
+  ALERT_SILENCE: 0x43,
 });
 
 export function crc16Ccitt(data) {
@@ -23,6 +35,17 @@ export function crc16Ccitt(data) {
     }
   }
   return crc;
+}
+
+export function crc32(data) {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc & 1) !== 0 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function cobsEncode(data) {
@@ -166,6 +189,43 @@ export function textValuePayload(sourceIndex, value) {
   payload[2] = text.length;
   text.copy(payload, 3);
   return payload;
+}
+
+export function alertUpdatePayload(level, occurrence, id, title, message) {
+  const idBytes = Buffer.from(id, 'utf8');
+  const titleBytes = Buffer.from(title, 'utf8');
+  const messageBytes = Buffer.from(message, 'utf8');
+  if (!Number.isInteger(level) || level < 0 || level > 3) throw new RangeError('invalid alert level');
+  if (idBytes.length === 0 || idBytes.length > 255 || titleBytes.length > 255 ||
+      messageBytes.length > 255) throw new RangeError('invalid alert text length');
+  const payload = Buffer.alloc(9 + idBytes.length + titleBytes.length + messageBytes.length);
+  payload[0] = level;
+  payload[1] = 0;
+  payload.writeUInt32LE(occurrence >>> 0, 2);
+  payload[6] = idBytes.length;
+  payload[7] = titleBytes.length;
+  payload[8] = messageBytes.length;
+  idBytes.copy(payload, 9);
+  titleBytes.copy(payload, 9 + idBytes.length);
+  messageBytes.copy(payload, 9 + idBytes.length + titleBytes.length);
+  if (payload.length > MAX_PAYLOAD_SIZE) throw new RangeError('alert payload exceeds 240 bytes');
+  return payload;
+}
+
+export function alertIdPayload(id) {
+  const encoded = Buffer.from(id, 'utf8');
+  if (encoded.length === 0 || encoded.length > 239) throw new RangeError('invalid alert ID');
+  return Buffer.concat([Buffer.from([encoded.length]), encoded]);
+}
+
+export function parseAlertAction(payload) {
+  if (payload.length < 7 || payload[5] === 0 || payload[5] !== payload.length - 6 ||
+      payload[0] > 2) throw new Error('malformed alert action');
+  return {
+    action: payload[0],
+    occurrence: payload.readUInt32LE(1),
+    id: payload.subarray(6).toString('utf8'),
+  };
 }
 
 export function parseSubscription(payload) {

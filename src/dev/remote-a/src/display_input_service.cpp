@@ -9,6 +9,7 @@ constexpr std::uint32_t releaseSettleMs = 50u;
 constexpr std::uint32_t sleepPromptMs = 1000u;
 constexpr std::uint32_t sleepCountdownMs = 2000u;
 constexpr std::uint32_t sleepHoldMs = 3000u;
+constexpr std::uint32_t setupHoldMs = 1000u;
 
 } // namespace
 
@@ -29,6 +30,7 @@ void DisplayInputService::eventThunk(slstm32::EventId, const void* payload,
 void DisplayInputService::onButton(std::uint8_t id) {
     if (display_.sleepActive()) {
         upHoldPending_ = false;
+        downHoldPending_ = false;
         upHoldStage_ = 0u;
         if (display_.wake()) {
             // Consume the whole physical wake press. In particular, do not
@@ -44,18 +46,45 @@ void DisplayInputService::onButton(std::uint8_t id) {
     if (wakeReleasePending_) return;
 
     using semantic_display::InputAction;
+    if (display_.alertVisible()) {
+        // Alerts own the four horizontal controls and suppress both long-press
+        // device gestures. Vertical buttons are deliberately inert here.
+        upHoldPending_ = false;
+        downHoldPending_ = false;
+        upHoldStage_ = 0u;
+        if (id == 2u) display_.handle(InputAction::previousPage);
+        else if (id == 3u) display_.handle(InputAction::nextPage);
+        else if (id == 4u) display_.handle(InputAction::action1);
+        else if (id == 5u) display_.handle(InputAction::action2);
+        return;
+    }
+    if (display_.selectionVisible() && (id == 0u || id == 1u)) {
+        // Selection lists use the vertical buttons only for cursor movement.
+        // Act on the press edge so the sleep/configuration hold gestures do
+        // not add a one-second delay to each move.
+        upHoldPending_ = false;
+        downHoldPending_ = false;
+        upHoldStage_ = 0u;
+        display_.handle(id == 0u ? InputAction::previousSection
+                                 : InputAction::nextSection);
+        return;
+    }
     if (id != 0u && upHoldPending_) {
         upHoldPending_ = false;
         upHoldStage_ = 0u;
         display_.dismissTransientModal();
     }
+    if (id != 1u) downHoldPending_ = false;
     switch (id) {
     case 0u:
         upPressedAt_ = runtime_.millis();
         upHoldPending_ = true;
         upHoldStage_ = 0u;
         break;
-    case 1u: display_.handle(InputAction::nextSection); break;
+    case 1u:
+        downPressedAt_ = runtime_.millis();
+        downHoldPending_ = true;
+        break;
     case 2u: display_.handle(InputAction::previousPage); break;
     case 3u: display_.handle(InputAction::nextPage); break;
     case 4u: display_.handle(InputAction::action1); break;
@@ -69,7 +98,20 @@ void DisplayInputService::run() {
         if (!buttons_.pressed(wakeButtonId_)) wakeReleasePending_ = false;
         return;
     }
-    if (!upHoldPending_ || display_.sleepActive()) return;
+    if (display_.sleepActive()) return;
+    if (downHoldPending_) {
+        const auto elapsed = static_cast<std::uint32_t>(runtime_.millis() - downPressedAt_);
+        if (elapsed >= releaseSettleMs && !buttons_.pressed(1u)) {
+            downHoldPending_ = false;
+            display_.handle(semantic_display::InputAction::nextSection);
+        } else if (elapsed >= setupHoldMs && buttons_.pressed(1u)) {
+            downHoldPending_ = false;
+            if (actions_.openSetup) {
+                actions_.openSetup(actions_.context);
+            }
+        }
+    }
+    if (!upHoldPending_) return;
     const auto elapsed = static_cast<std::uint32_t>(runtime_.millis() - upPressedAt_);
     if (elapsed < releaseSettleMs) return;
     if (!buttons_.pressed(0u)) {

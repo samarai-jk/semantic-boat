@@ -240,10 +240,16 @@ storage is normally simplest in embedded firmware.
 | `LedDriver` | Digital LED with steady, pulse, and blink modes. Timing is non-blocking. |
 | `PwmOutputDriver` | Controls one normalized PWM duty value in the range 0.0 to 1.0. |
 | `RgbLedDriver` | Controls red, green, and blue PWM bindings; supports common-anode inversion and non-blocking blinking. |
-| `ToneDriver` | Starts a hardware tone and stops it after a non-blocking duration. |
+| `ToneDriver` | Starts a hardware tone at a normalized output level and stops it after a non-blocking duration. |
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |
 | `LatchingRelayDriver` | Drives set/reset coils with non-blocking pulses and queues a changed request while a pulse is active. |
 | `At24c256` | Implements the generic `ByteStorage` interface for a 32 KiB, 64-byte-page AT24C256-compatible EEPROM using board-provided read/write-page callbacks. |
+
+`storage::RedundantBlobStore` persists blobs of up to 40 bytes in two
+alternating 64-byte slots. CRC validation and a commit marker written last keep
+the previous generation usable if power is lost during a settings write. It is
+intended for small device preferences, calibration values, and similar setup
+data rather than large application packages.
 
 All PWM and RGB values are normalized floats. Board code is responsible for
 mapping them to the timer's actual auto-reload range.

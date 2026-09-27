@@ -29,6 +29,39 @@ void DisplayLinkService::transportRestored() {
     lastAnnouncementAt_ = runtime_.millis();
 }
 
+bool DisplayLinkService::requestConfigList() {
+    return send(semantic_link::MessageType::configListRequest);
+}
+
+bool DisplayLinkService::requestConfig(std::string_view name) {
+    if (name.empty() || name.size() > 0xffu || name.size() + 1u >
+        semantic_link::maxPayloadSize) return false;
+    std::array<std::uint8_t, semantic_link::maxPayloadSize> payload{};
+    payload[0] = static_cast<std::uint8_t>(name.size());
+    std::memcpy(payload.data() + 1u, name.data(), name.size());
+    return send(semantic_link::MessageType::configRequest,
+                payload.data(), name.size() + 1u);
+}
+
+bool DisplayLinkService::sendAlertAction(semantic_link::AlertAction action,
+                                         std::uint32_t occurrence,
+                                         std::string_view id) {
+    if (id.empty() || id.size() > 0xffu || id.size() + 6u >
+        semantic_link::maxPayloadSize) return false;
+    std::array<std::uint8_t, semantic_link::maxPayloadSize> payload{};
+    payload[0] = static_cast<std::uint8_t>(action);
+    semantic_link::writeU32(payload.data() + 1u, occurrence);
+    payload[5] = static_cast<std::uint8_t>(id.size());
+    std::memcpy(payload.data() + 6u, id.data(), id.size());
+    return send(semantic_link::MessageType::alertAction,
+                payload.data(), id.size() + 6u);
+}
+
+void DisplayLinkService::packageChanged() {
+    subscribedSection_ = semantic_display::noIndex;
+    sendSubscriptions();
+}
+
 bool DisplayLinkService::send(semantic_link::MessageType type,
                               const std::uint8_t* payload, std::size_t payloadSize) {
     std::array<std::uint8_t, semantic_link::maxEncodedFrameSize> frame{};
@@ -115,6 +148,80 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
     }
     if (message.type == semantic_link::MessageType::ping && size == 4u) {
         (void)send(semantic_link::MessageType::pong, payload, size);
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configListBegin && size == 4u) {
+        if (configReceiver_.listBegin) {
+            configReceiver_.listBegin(configReceiver_.context,
+                semantic_link::readU16(payload), semantic_link::readU16(payload + 2u));
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configListItem && size >= 5u &&
+        payload[4] == size - 5u) {
+        if (configReceiver_.listItem) {
+            configReceiver_.listItem(configReceiver_.context,
+                semantic_link::readU16(payload), semantic_link::readU16(payload + 2u),
+                {reinterpret_cast<const char*>(payload + 5u), payload[4]});
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configListEnd && size == 2u) {
+        if (configReceiver_.listEnd) {
+            configReceiver_.listEnd(configReceiver_.context,
+                                    semantic_link::readU16(payload));
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configBegin && size >= 11u &&
+        payload[10] == size - 11u) {
+        if (configReceiver_.configBegin) {
+            configReceiver_.configBegin(configReceiver_.context,
+                semantic_link::readU16(payload), semantic_link::readU32(payload + 2u),
+                semantic_link::readU32(payload + 6u),
+                {reinterpret_cast<const char*>(payload + 11u), payload[10]});
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configChunk && size >= 6u) {
+        if (configReceiver_.configChunk) {
+            configReceiver_.configChunk(configReceiver_.context,
+                semantic_link::readU16(payload), semantic_link::readU32(payload + 2u),
+                payload + 6u, size - 6u);
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::configEnd && size == 2u) {
+        if (configReceiver_.configEnd) {
+            configReceiver_.configEnd(configReceiver_.context,
+                                      semantic_link::readU16(payload));
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::alertUpdate && size >= 9u) {
+        const auto idSize = payload[6];
+        const auto titleSize = payload[7];
+        const auto messageSize = payload[8];
+        const auto stringsSize = static_cast<std::size_t>(idSize) + titleSize + messageSize;
+        if (payload[0] <= 3u && stringsSize == size - 9u && idSize != 0u &&
+            alertReceiver_.update) {
+            const auto* text = reinterpret_cast<const char*>(payload + 9u);
+            alertReceiver_.update(alertReceiver_.context, payload[0],
+                semantic_link::readU32(payload + 2u),
+                {text, idSize}, {text + idSize, titleSize},
+                {text + idSize + titleSize, messageSize});
+        }
+        return;
+    }
+    if ((message.type == semantic_link::MessageType::alertRemove ||
+         message.type == semantic_link::MessageType::alertSilence) &&
+        size >= 2u && payload[0] == size - 1u && payload[0] != 0u) {
+        const std::string_view id{reinterpret_cast<const char*>(payload + 1u), payload[0]};
+        if (message.type == semantic_link::MessageType::alertRemove) {
+            if (alertReceiver_.remove) alertReceiver_.remove(alertReceiver_.context, id);
+        } else if (alertReceiver_.silence) {
+            alertReceiver_.silence(alertReceiver_.context, id);
+        }
         return;
     }
     if (size < 2u) return;

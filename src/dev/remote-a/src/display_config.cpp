@@ -75,15 +75,16 @@ constexpr auto testConfiguration = R"json({
 
 constexpr auto factoryConfiguration = R"json({
   "schema":"semantic-display/v1",
-  "name":"Factory configuration",
+  "name":"Local default",
   "sections":[{
-    "id":"device","title":"DEVICE",
+    "id":"local-default","title":"LOCAL DEFAULT",
     "button_labels":{"action_2":"REFRESH"},
     "pages":[{
-      "id":"no-config","title":"NO CONFIG","grid":{"columns":1,"rows":2,"gap":4},
+      "id":"default","title":"DEFAULT CONFIG","grid":{"columns":1,"rows":3,"gap":4},
       "widgets":[
-        {"type":"text","cell":{"column":0,"row":0},"text":"NO USER CONFIG"},
-        {"type":"local-clock","cell":{"column":0,"row":1},"label":"DEVICE TIME"}
+        {"type":"text","cell":{"column":0,"row":0},"text":"LOCAL DEFAULT"},
+        {"type":"local-clock","cell":{"column":0,"row":1},"label":"LOCAL TIME"},
+        {"type":"text","cell":{"column":0,"row":2},"text":"NO SERVER CONFIG"}
       ]
     }]
   }]

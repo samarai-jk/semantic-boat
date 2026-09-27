@@ -39,7 +39,8 @@ constexpr auto configuration = R"json(
               "cell": {"column": 0, "row": 0, "column_span": 2, "row_span": 3},
               "label": "SOG",
               "display_unit": "kn",
-              "decimals": 1
+              "decimals": 1,
+              "max_digits": 6
             },
             {
               "type": "future-gauge",
@@ -93,6 +94,9 @@ int main() {
         semantic_display::WidgetView widget{};
         if (!package.widget(record, widget)) continue;
         if (widget.sourceIndex != semantic_display::noIndex) ++resolvedWidgets;
+        if (widget.type == semantic_display::WidgetType::value) {
+            assert(widget.maxDigits == 6u);
+        }
         if (widget.type == semantic_display::WidgetType::unknown) {
             ++unknownWidgets;
             assert(widget.typeName == "future-gauge");

@@ -15,15 +15,19 @@ option(REMOTE_A_USE_STLINK_DATA_LINK "Use the ST-Link virtual COM port for displ
 add_subdirectory(cmx/cmake/stm32cubemx ${CMAKE_CURRENT_BINARY_DIR}/stm32cubemx)
 
 target_sources(${REMOTE_A_TARGET} PRIVATE
+    src/alarm_service.cpp
     src/app.cpp
     src/board.cpp
     src/config_staging.cpp
+    src/configuration_service.cpp
+    src/device_settings.cpp
     src/display_config.cpp
     src/display_input_service.cpp
     src/display_link_service.cpp
     src/feedback_service.cpp
     src/hal_eeprom.cpp
     src/hal_epd_transport.cpp
+    src/setup_service.cpp
     src/uart_transport.cpp
 )
 target_include_directories(${REMOTE_A_TARGET} PRIVATE include src)

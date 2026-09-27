@@ -11,6 +11,8 @@ inline constexpr std::uint16_t packageFormatVersion = 1u;
 inline constexpr std::size_t packageHeaderSize = 32u;
 inline constexpr std::uint16_t noIndex = 0xffffu;
 inline constexpr std::size_t historySeriesOverheadBytes = 32u;
+inline constexpr std::uint8_t defaultValueMaxDigits = 6u;
+inline constexpr std::uint8_t maximumValueMaxDigits = 32u;
 
 enum class RecordType : std::uint8_t { source = 1u, section = 2u, page = 3u, widget = 4u };
 enum class WidgetType : std::uint8_t { text = 1u, value = 2u, localClock = 3u, unknown = 0xffu };
@@ -82,6 +84,7 @@ struct WidgetView {
     std::uint8_t columnSpan{1u};
     std::uint8_t rowSpan{1u};
     std::int8_t decimals{};
+    std::uint8_t maxDigits{defaultValueMaxDigits};
     std::string_view typeName{};
     std::string_view sourceId{};
     std::string_view label{};

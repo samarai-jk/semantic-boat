@@ -1,0 +1,41 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "Engine",
+  "sections": [
+    {
+      "id": "engine",
+      "title": "ENGINE",
+      "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "rpm", "provider": "signalk", "path": "propulsion.main.revolutions", "unit": "Hz", "stale_ms": 5000},
+        {"id": "coolant", "provider": "signalk", "path": "propulsion.main.coolantTemperature", "unit": "K", "stale_ms": 10000},
+        {"id": "oil", "provider": "signalk", "path": "propulsion.main.oilPressure", "unit": "Pa", "stale_ms": 10000},
+        {"id": "alternator", "provider": "signalk", "path": "propulsion.main.alternatorVoltage", "unit": "V", "stale_ms": 10000},
+        {"id": "fuel", "provider": "signalk", "path": "propulsion.main.fuel.rate", "unit": "m3/s", "stale_ms": 10000},
+        {"id": "hours", "provider": "signalk", "path": "propulsion.main.runTime", "unit": "s", "stale_ms": 60000}
+      ],
+      "pages": [
+        {
+          "id": "overview",
+          "title": "ENGINE OVERVIEW",
+          "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "rpm", "cell": {"column": 0, "row": 0, "row_span": 2}, "label": "ENGINE SPEED", "display_unit": "rpm", "decimals": 0},
+            {"type": "value", "source": "coolant", "cell": {"column": 1, "row": 0}, "label": "COOLANT", "display_unit": "C", "decimals": 0},
+            {"type": "value", "source": "oil", "cell": {"column": 1, "row": 1}, "label": "OIL PRESSURE", "display_unit": "bar", "decimals": 1}
+          ]
+        },
+        {
+          "id": "consumption",
+          "title": "ENGINE DATA",
+          "grid": {"columns": 3, "rows": 1, "gap": 4},
+          "widgets": [
+            {"type": "value", "source": "fuel", "cell": {"column": 0, "row": 0}, "label": "FUEL RATE", "display_unit": "L/h", "decimals": 1},
+            {"type": "value", "source": "alternator", "cell": {"column": 1, "row": 0}, "label": "ALTERNATOR", "display_unit": "V", "decimals": 1},
+            {"type": "value", "source": "hours", "cell": {"column": 2, "row": 0}, "label": "ENGINE HOURS", "display_unit": "h", "decimals": 1}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -163,7 +163,8 @@ bool PackageView::widget(const RecordView& record, WidgetView& result) const {
     const auto labelLength = *current++;
     const auto unitLength = *current++;
     const auto textLength = *current++;
-    ++current; // flags, reserved for v1
+    const auto storedMaxDigits = *current++;
+    result.maxDigits = storedMaxDigits != 0u ? storedMaxDigits : defaultValueMaxDigits;
     return takeString(current, end, typeLength, result.typeName) &&
            takeString(current, end, sourceLength, result.sourceId) &&
            takeString(current, end, labelLength, result.label) &&

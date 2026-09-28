@@ -4,6 +4,7 @@
 #include "config_staging.hpp"
 #include "configuration_service.hpp"
 #include "device_settings.hpp"
+#include "device_metrics_service.hpp"
 #include "display_config.hpp"
 #include "display_input_service.hpp"
 #include "display_link_service.hpp"
@@ -183,6 +184,9 @@ remote_a::ConfigurationService configurationService{
 remote_a::SetupService setupService{
     display, feedback, dataTransport, configurationService, alarmService,
     deviceSettingsStore};
+remote_a::DeviceMetricsService deviceMetrics{
+    runtime, displayPackage, dataStore, historyStore, display, events,
+    dataTransport, displayLink};
 
 void openSetup(void* context) {
     static_cast<remote_a::SetupService*>(context)->open();
@@ -233,6 +237,7 @@ struct DisplayInput;
 struct Configuration;
 struct Alarms;
 struct DisplayLink;
+struct DeviceMetrics;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -250,11 +255,13 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Configuration>(configurationService),
         slstm32::bind<component::Setup>(setupService),
         slstm32::bind<component::DisplayInput>(displayInput),
-        slstm32::bind<component::DisplayLink>(displayLink)));
+        slstm32::bind<component::DisplayLink>(displayLink),
+        slstm32::bind<component::DeviceMetrics>(deviceMetrics)));
 
 } // namespace
 
 extern "C" void remote_a_app_init(void) {
+    remote_a::DeviceMetricsService::beginStackMonitoring();
     semantic_display::StoredConfigInfo stored{};
     const bool eepromDetected = remote_a::eepromReady();
     bool loaded = eepromDetected &&
@@ -369,6 +376,12 @@ extern "C" void remote_a_app_run(void) {
         HAL_ResumeTick();
     }
     __enable_irq();
+}
+
+extern "C" void remote_a_app_tick(void) {
+    // Enforce short tone deadlines even while foreground display composition
+    // or another synchronous peripheral operation is in progress.
+    buzzer.onTick();
 }
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {

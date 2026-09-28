@@ -79,14 +79,80 @@ constexpr auto factoryConfiguration = R"json({
   "sections":[{
     "id":"local-default","title":"LOCAL DEFAULT",
     "button_labels":{"action_2":"REFRESH"},
-    "pages":[{
-      "id":"default","title":"DEFAULT CONFIG","grid":{"columns":1,"rows":3,"gap":4},
-      "widgets":[
-        {"type":"text","cell":{"column":0,"row":0},"text":"LOCAL DEFAULT"},
-        {"type":"local-clock","cell":{"column":0,"row":1},"label":"LOCAL TIME"},
-        {"type":"text","cell":{"column":0,"row":2},"text":"NO SERVER CONFIG"}
-      ]
-    }]
+    "sources":[
+      {"id":"uptime","provider":"device","path":"system.uptime","unit":"s"},
+      {"id":"cpu-clock","provider":"device","path":"system.cpu.clock","unit":"MHz"},
+      {"id":"flash-used","provider":"device","path":"memory.flash.used","unit":"KiB"},
+      {"id":"flash-free","provider":"device","path":"memory.flash.free","unit":"KiB"},
+      {"id":"flash-util","provider":"device","path":"memory.flash.utilization","unit":"%"},
+      {"id":"ram-static","provider":"device","path":"memory.ram.static","unit":"KiB"},
+      {"id":"ram-headroom","provider":"device","path":"memory.ram.headroom","unit":"KiB"},
+      {"id":"heap-used","provider":"device","path":"memory.heap.used","unit":"KiB"},
+      {"id":"stack-peak","provider":"device","path":"memory.stack.peak","unit":"KiB"},
+      {"id":"ram2-used","provider":"device","path":"memory.ram2.used","unit":"KiB"},
+      {"id":"ram2-free","provider":"device","path":"memory.ram2.free","unit":"KiB"},
+      {"id":"config-size","provider":"device","path":"display.config.bytes","unit":"KiB"},
+      {"id":"history-used","provider":"device","path":"display.history.bytes","unit":"KiB"},
+      {"id":"source-count","provider":"device","path":"display.sources","unit":""},
+      {"id":"section-count","provider":"device","path":"display.sections","unit":""},
+      {"id":"page-count","provider":"device","path":"display.pages","unit":""},
+      {"id":"widget-count","provider":"device","path":"display.widgets","unit":""},
+      {"id":"partial-count","provider":"device","path":"display.partial.refreshes","unit":""},
+      {"id":"uart-dropped","provider":"device","path":"communication.uart.dropped","unit":""},
+      {"id":"event-dropped","provider":"device","path":"system.events.dropped","unit":""},
+      {"id":"link-status","provider":"device","path":"communication.link.status","unit":""}
+    ],
+    "pages":[
+      {
+        "id":"status","title":"LOCAL STATUS","grid":{"columns":2,"rows":2,"gap":4},
+        "widgets":[
+          {"type":"local-clock","cell":{"column":0,"row":0},"label":"LOCAL TIME"},
+          {"type":"value","source":"uptime","cell":{"column":1,"row":0},"label":"UPTIME","display_unit":"h","decimals":1,"max_digits":7},
+          {"type":"value","source":"link-status","cell":{"column":0,"row":1},"label":"SERVER LINK","max_digits":8},
+          {"type":"value","source":"cpu-clock","cell":{"column":1,"row":1},"label":"CPU CLOCK","display_unit":"MHz","decimals":0,"max_digits":3}
+        ]
+      },
+      {
+        "id":"memory","title":"MEMORY","grid":{"columns":2,"rows":3,"gap":4},
+        "widgets":[
+          {"type":"value","source":"ram-headroom","cell":{"column":0,"row":0},"label":"RAM HEADROOM","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"ram-static","cell":{"column":1,"row":0},"label":"RAM STATIC","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"stack-peak","cell":{"column":0,"row":1},"label":"STACK PEAK","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"heap-used","cell":{"column":1,"row":1},"label":"HEAP USED","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"ram2-used","cell":{"column":0,"row":2},"label":"RAM2 USED","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"ram2-free","cell":{"column":1,"row":2},"label":"RAM2 FREE","display_unit":"KiB","decimals":1,"max_digits":5}
+        ]
+      },
+      {
+        "id":"firmware","title":"FIRMWARE","grid":{"columns":2,"rows":2,"gap":4},
+        "widgets":[
+          {"type":"value","source":"flash-used","cell":{"column":0,"row":0},"label":"FLASH USED","display_unit":"KiB","decimals":1,"max_digits":6},
+          {"type":"value","source":"flash-free","cell":{"column":1,"row":0},"label":"FLASH FREE","display_unit":"KiB","decimals":1,"max_digits":6},
+          {"type":"value","source":"flash-util","cell":{"column":0,"row":1},"label":"FLASH USED","display_unit":"%","decimals":1,"max_digits":5},
+          {"type":"text","cell":{"column":1,"row":1},"text":"LOCAL DEFAULT\nNO SERVER CONFIG"}
+        ]
+      },
+      {
+        "id":"display","title":"DISPLAY CONFIG","grid":{"columns":2,"rows":3,"gap":4},
+        "widgets":[
+          {"type":"value","source":"config-size","cell":{"column":0,"row":0},"label":"COMPILED CONFIG","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"history-used","cell":{"column":1,"row":0},"label":"HISTORY RAM","display_unit":"KiB","decimals":1,"max_digits":5},
+          {"type":"value","source":"source-count","cell":{"column":0,"row":1},"label":"SOURCES","decimals":0,"max_digits":3},
+          {"type":"value","source":"section-count","cell":{"column":1,"row":1},"label":"SECTIONS","decimals":0,"max_digits":3},
+          {"type":"value","source":"page-count","cell":{"column":0,"row":2},"label":"PAGES","decimals":0,"max_digits":3},
+          {"type":"value","source":"widget-count","cell":{"column":1,"row":2},"label":"WIDGETS","decimals":0,"max_digits":3}
+        ]
+      },
+      {
+        "id":"health","title":"RUNTIME HEALTH","grid":{"columns":2,"rows":2,"gap":4},
+        "widgets":[
+          {"type":"value","source":"uart-dropped","cell":{"column":0,"row":0},"label":"UART DROPPED","decimals":0,"max_digits":7},
+          {"type":"value","source":"event-dropped","cell":{"column":1,"row":0},"label":"EVENTS DROPPED","decimals":0,"max_digits":7},
+          {"type":"value","source":"partial-count","cell":{"column":0,"row":1},"label":"PARTIAL REFRESHES","decimals":0,"max_digits":7},
+          {"type":"text","cell":{"column":1,"row":1},"text":"LOCAL DEFAULT"}
+        ]
+      }
+    ]
   }]
 })json";
 

@@ -132,8 +132,9 @@ constexpr auto json = R"json({
   ],
   "sections":[
     {"id":"one","pages":[
-      {"id":"a","grid":{"columns":1,"rows":1},"widgets":[
-        {"type":"value","source":"history","cell":{"column":0,"row":0}}
+      {"id":"a","grid":{"columns":2,"rows":1},"widgets":[
+        {"type":"value","source":"history","cell":{"column":0,"row":0}},
+        {"type":"value","source":"history","cell":{"column":1,"row":0}}
       ]},
       {"id":"b","grid":{"columns":1,"rows":1},"widgets":[
         {"type":"not-installed","cell":{"column":0,"row":0}}
@@ -192,6 +193,11 @@ int main() {
     assert(display.activeSection() == 0u && display.activePage() == 0u);
     assert(logicalPixelIsBlack(frame, 464u, 16u));
     assert(!logicalPixelIsBlack(frame, 464u, 262u));
+    assert(!logicalPixelIsBlack(frame, 7u, 40u));
+    assert(!logicalPixelIsBlack(frame, 237u, 40u));
+    assert(logicalPixelIsBlack(frame, 238u, 40u));
+    assert(logicalPixelIsBlack(frame, 241u, 40u));
+    assert(!logicalPixelIsBlack(frame, 242u, 40u));
 
     display.handle(semantic_display::InputAction::action1);
     assert(actionCalls == 0u);
@@ -224,6 +230,10 @@ int main() {
     assert(modalPresentedCalls == 0u);
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::prepared);
+    // A modal is rendered as an independent screen. The normal page's black
+    // status bars must not survive outside the dialog bounds.
+    assert(!logicalPixelIsBlack(frame, 464u, 16u));
+    assert(!logicalPixelIsBlack(frame, 464u, 262u));
     assert(modalPresentedCalls == 0u);
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::refreshing);
@@ -265,6 +275,10 @@ int main() {
     assert(display.showSelection("SELECT", {nullptr, 3u, &selectionItem,
                                              &selectionCompleted}));
     assert(display.selectionVisible());
+    display.run();
+    assert(panel.state == slstm32::epd::UpdateState::prepared);
+    assert(!logicalPixelIsBlack(frame, 464u, 16u));
+    assert(!logicalPixelIsBlack(frame, 464u, 262u));
     display.handle(semantic_display::InputAction::nextSection);
     display.handle(semantic_display::InputAction::nextSection);
     display.handle(semantic_display::InputAction::action2);
@@ -317,6 +331,15 @@ int main() {
     assert(panel.state == slstm32::epd::UpdateState::refreshing);
     panel.state = slstm32::epd::UpdateState::idle;
     display.run();
+
+    // A producer may update data/history without making a diagnostic value
+    // drive an EPD refresh. The latest value is picked up by the next normal
+    // page render.
+    now += 100u;
+    assert(data.setNumber(source, 9.0f, now));
+    display.sourceUpdated(source, false);
+    display.run();
+    assert(panel.state == slstm32::epd::UpdateState::idle);
 
     // Dialogs render once, then incoming data continues into the data/history
     // stores without scheduling competing EPD work. Dismissal redraws the

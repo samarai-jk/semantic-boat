@@ -6,6 +6,7 @@ namespace remote_a {
 namespace {
 
 constexpr std::uint32_t transferTimeoutMs = 10000u;
+constexpr std::uint32_t requestTimeoutMs = 3000u;
 constexpr char localDefaultName[] = "DEFAULT (LOCAL)";
 
 void copyName(char* destination, std::size_t capacity, std::string_view source) {
@@ -33,18 +34,42 @@ bool ConfigurationService::init() {
 }
 
 void ConfigurationService::run() {
-    if (!transferActive_) return;
     const auto now = runtime_.millis();
+    if (listRequestPending_ &&
+        static_cast<std::uint32_t>(now - listRequestedAt_) >= requestTimeoutMs) {
+        listRequestPending_ = false;
+        listRequestTimedOut_ = true;
+        display_.showModal("LINK ERROR", "APP LIST REQUEST TIMED OUT.",
+                           semantic_display::ModalSeverity::error);
+    }
+    if (configRequestPending_ &&
+        static_cast<std::uint32_t>(now - configRequestedAt_) >= requestTimeoutMs) {
+        configRequestPending_ = false;
+        configRequestTimedOut_ = true;
+        display_.showModal("LINK ERROR", "APP REQUEST TIMED OUT.",
+                           semantic_display::ModalSeverity::error);
+    }
+    if (!transferActive_) return;
     if (static_cast<std::uint32_t>(now - lastTransferAt_) < transferTimeoutMs) return;
     transferError("CONFIGURATION TRANSFER TIMED OUT.");
 }
 
 void ConfigurationService::requestList() {
     display_.dismissSelection();
+    listRequestPending_ = false;
+    listRequestTimedOut_ = false;
+    if (!link_.connected()) {
+        display_.showModal("LINK ERROR", "SERVER IS NOT CONNECTED.",
+                           semantic_display::ModalSeverity::error);
+        return;
+    }
     if (!link_.requestConfigList()) {
         display_.showModal("LINK ERROR", "CONFIGURATION LIST REQUEST FAILED.",
                            semantic_display::ModalSeverity::error);
+        return;
     }
+    listRequestPending_ = true;
+    listRequestedAt_ = runtime_.millis();
 }
 
 void ConfigurationService::receiveListBegin(void* context, std::uint16_t listId,
@@ -80,6 +105,11 @@ void ConfigurationService::receiveConfigEnd(void* context, std::uint16_t transfe
 }
 
 void ConfigurationService::listBegin(std::uint16_t listId, std::uint16_t) {
+    listRequestPending_ = false;
+    if (listRequestTimedOut_) {
+        display_.dismissModal();
+        listRequestTimedOut_ = false;
+    }
     display_.dismissSelection();
     listId_ = listId;
     copyName(names_[0].bytes, sizeof names_[0].bytes, localDefaultName);
@@ -122,10 +152,16 @@ void ConfigurationService::selectionCompleted(
         self.loadDefault();
         return;
     }
-    if (index >= self.nameCount_ || !self.link_.requestConfig(self.names_[index].bytes)) {
+    self.configRequestPending_ = false;
+    self.configRequestTimedOut_ = false;
+    if (index >= self.nameCount_ || !self.link_.connected() ||
+        !self.link_.requestConfig(self.names_[index].bytes)) {
         self.display_.showModal("LINK ERROR", "CONFIGURATION REQUEST FAILED.",
                                 semantic_display::ModalSeverity::error);
+        return;
     }
+    self.configRequestPending_ = true;
+    self.configRequestedAt_ = self.runtime_.millis();
 }
 
 void ConfigurationService::loadDefault() {
@@ -153,6 +189,11 @@ void ConfigurationService::loadDefault() {
 
 void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t size,
                                        std::uint32_t crc, std::string_view name) {
+    configRequestPending_ = false;
+    if (configRequestTimedOut_) {
+        display_.dismissModal();
+        configRequestTimedOut_ = false;
+    }
     display_.dismissSelection();
     display_.setRenderingPaused(true);
     transferId_ = transferId;

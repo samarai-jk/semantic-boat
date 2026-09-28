@@ -92,9 +92,15 @@ private:
     std::uint32_t expectedBytes_{};
     std::uint32_t expectedCrc_{};
     std::uint32_t lastTransferAt_{};
+    std::uint32_t listRequestedAt_{};
+    std::uint32_t configRequestedAt_{};
     std::uint16_t listId_{};
     std::uint16_t transferId_{};
     bool listActive_{};
+    bool listRequestPending_{};
+    bool listRequestTimedOut_{};
+    bool configRequestPending_{};
+    bool configRequestTimedOut_{};
     bool transferActive_{};
     bool transferFailed_{};
 };

@@ -54,6 +54,7 @@ public:
     bool sendAlertAction(semantic_link::AlertAction action, std::uint32_t occurrence,
                          std::string_view id);
     void packageChanged();
+    bool connected() const { return peerSeen_; }
 
 private:
     bool send(semantic_link::MessageType type, const std::uint8_t* payload = nullptr,
@@ -73,6 +74,7 @@ private:
     AlertMessageReceiver alertReceiver_{};
     std::uint16_t subscribedSection_{semantic_display::noIndex};
     std::uint32_t lastAnnouncementAt_{};
+    std::uint32_t lastPeerAt_{};
     bool peerSeen_{};
     std::uint8_t sequence_{};
 };

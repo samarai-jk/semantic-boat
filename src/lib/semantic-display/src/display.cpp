@@ -16,6 +16,7 @@ constexpr std::uint16_t headerHeight = 30u;
 constexpr std::uint16_t footerHeight = 28u;
 constexpr std::uint16_t outerGap = 4u;
 constexpr std::uint16_t sectionIndicatorWidth = 18u;
+constexpr std::uint16_t widgetSeparatorWidth = 4u;
 constexpr std::uint8_t maximumValueScale = 7u;
 constexpr std::uint16_t widgetVerticalPadding = 8u;
 constexpr std::uint16_t compactWidgetHeight = 80u;
@@ -417,11 +418,12 @@ bool DisplayService::pageHasLocalClock() const {
     return false;
 }
 
-void DisplayService::sourceUpdated(std::uint16_t sourceIndex) {
+void DisplayService::sourceUpdated(std::uint16_t sourceIndex, bool requestRender) {
     const auto* value = data_.get(sourceIndex);
     if (value && value->type == ValueType::number) {
         (void)history_.ingest(sourceIndex, value->number, value->updatedAt);
     }
+    if (!requestRender) return;
     // Continue updating the data store and histories while an overlay is up,
     // but do not let high-rate values compete with dialog interaction for the
     // EPD. Dismissing every dialog invalidates the complete normal screen.
@@ -595,7 +597,6 @@ void DisplayService::drawCentered(std::uint16_t x, std::uint16_t width, std::uin
 void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
                                   std::uint16_t x, std::uint16_t y,
                                   std::uint16_t width, std::uint16_t height) {
-    canvas_.drawRect(x, y, width, height, true, 1u);
     const bool compact = height < compactWidgetHeight;
     const auto auxiliaryTextHeight = compact ? compactTextHeight : regularTextHeight;
     const auto innerWidth = width > 8u ? static_cast<std::uint16_t>(width - 8u) : width;
@@ -695,12 +696,83 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     }
 }
 
+void DisplayService::renderWidgetSeparators(const PageView& page,
+                                             std::uint16_t contentX,
+                                             std::uint16_t contentY,
+                                             std::uint16_t cellWidth,
+                                             std::uint16_t cellHeight,
+                                             std::uint16_t gap) {
+    const auto gridX = [=](std::uint16_t column) {
+        return static_cast<std::uint16_t>(contentX + column * (cellWidth + gap));
+    };
+    const auto gridY = [=](std::uint16_t row) {
+        return static_cast<std::uint16_t>(contentY + row * (cellHeight + gap));
+    };
+    const auto spanSize = [](std::uint16_t cells, std::uint16_t cellSize,
+                             std::uint16_t cellGap) {
+        return static_cast<std::uint16_t>(cells * cellSize +
+                                          (cells - 1u) * cellGap);
+    };
+    const auto separatorInset = static_cast<std::uint16_t>(
+        (gap - widgetSeparatorWidth) / 2u);
+
+    RecordView leftRecord{};
+    if (!package_.first(leftRecord)) return;
+    do {
+        WidgetView first{};
+        if (!package_.widget(leftRecord, first) || first.pageIndex != page.pageIndex) continue;
+        const auto firstRight = static_cast<std::uint16_t>(first.column + first.columnSpan);
+        const auto firstBottom = static_cast<std::uint16_t>(first.row + first.rowSpan);
+
+        RecordView rightRecord{};
+        if (!package_.first(rightRecord)) return;
+        do {
+            WidgetView second{};
+            if (!package_.widget(rightRecord, second) ||
+                second.pageIndex != page.pageIndex) continue;
+
+            if (firstRight == second.column) {
+                const auto start = first.row > second.row ? first.row : second.row;
+                const auto firstEnd = static_cast<std::uint16_t>(first.row + first.rowSpan);
+                const auto secondEnd = static_cast<std::uint16_t>(second.row + second.rowSpan);
+                const auto end = firstEnd < secondEnd ? firstEnd : secondEnd;
+                if (start < end) {
+                    canvas_.fillRect(static_cast<std::uint16_t>(
+                                         gridX(firstRight) - gap + separatorInset),
+                                     gridY(start), widgetSeparatorWidth,
+                                     spanSize(static_cast<std::uint16_t>(end - start),
+                                              cellHeight, gap), true);
+                }
+            }
+
+            if (firstBottom == second.row) {
+                const auto start = first.column > second.column
+                    ? first.column : second.column;
+                const auto firstEnd = static_cast<std::uint16_t>(
+                    first.column + first.columnSpan);
+                const auto secondEnd = static_cast<std::uint16_t>(
+                    second.column + second.columnSpan);
+                const auto end = firstEnd < secondEnd ? firstEnd : secondEnd;
+                if (start < end) {
+                    canvas_.fillRect(gridX(start),
+                                     static_cast<std::uint16_t>(
+                                         gridY(firstBottom) - gap + separatorInset),
+                                     spanSize(static_cast<std::uint16_t>(end - start),
+                                              cellWidth, gap),
+                                     widgetSeparatorWidth, true);
+                }
+            }
+        } while (package_.next(rightRecord));
+    } while (package_.next(leftRecord));
+}
+
 void DisplayService::renderModal(const ModalState& modal) {
     const auto width = static_cast<std::uint16_t>(canvas_.width() > 360u ? 360u : canvas_.width() - 20u);
     const auto height = static_cast<std::uint16_t>(canvas_.height() > 190u ? 190u : canvas_.height() - 20u);
     const auto x = static_cast<std::uint16_t>((canvas_.width() - width) / 2u);
     const auto y = static_cast<std::uint16_t>((canvas_.height() - height) / 2u);
-    canvas_.fillRect(x, y, width, height, false);
+    // render() already cleared the full dialog screen. Avoid repainting this
+    // large white rectangle pixel-by-pixel on the MCU.
     canvas_.drawRect(x, y, width, height, true, 3u);
     canvas_.fillRect(static_cast<std::uint16_t>(x + 3u), static_cast<std::uint16_t>(y + 3u),
                      static_cast<std::uint16_t>(width - 6u), 28u, true);
@@ -752,7 +824,8 @@ void DisplayService::renderSelection() {
     const auto first = selected >= visibleRows
         ? selected - visibleRows + 1u : 0u;
 
-    canvas_.fillRect(x, y, width, height, false);
+    // render() already cleared the full dialog screen. Avoid repainting this
+    // large white rectangle pixel-by-pixel on every selection movement.
     canvas_.drawRect(x, y, width, height, true, 3u);
     canvas_.fillRect(static_cast<std::uint16_t>(x + 3u),
                      static_cast<std::uint16_t>(y + 3u),
@@ -876,6 +949,26 @@ void DisplayService::render() {
         renderAlert();
         return;
     }
+    // Dialogs are self-contained screens. Rebuilding the application page
+    // underneath them is both invisible and surprisingly expensive for large
+    // packages: every widget/source lookup and separator scan used to run on
+    // each menu movement. Apart from wasting CPU, that delayed the cooperative
+    // tone driver and stretched a 40 ms key click into an audible long beep.
+    if (selection_.visible) {
+        canvas_.clear(false);
+        renderSelection();
+        return;
+    }
+    if (transientModal_.visible) {
+        canvas_.clear(false);
+        renderModal(transientModal_);
+        return;
+    }
+    if (modal_.visible) {
+        canvas_.clear(false);
+        renderModal(modal_);
+        return;
+    }
     PageView page{};
     SectionView section{};
     if (!pageByIndex(activePage_, page) || !sectionByIndex(activeSection_, section)) return;
@@ -950,8 +1043,9 @@ void DisplayService::render() {
     const auto contentWidth = safeWidth;
     const auto contentHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight -
                                                            footerHeight - 2u * outerGap);
-    const auto horizontalGaps = static_cast<std::uint16_t>((page.columns - 1u) * page.gap);
-    const auto verticalGaps = static_cast<std::uint16_t>((page.rows - 1u) * page.gap);
+    const auto gap = page.gap < widgetSeparatorWidth ? widgetSeparatorWidth : page.gap;
+    const auto horizontalGaps = static_cast<std::uint16_t>((page.columns - 1u) * gap);
+    const auto verticalGaps = static_cast<std::uint16_t>((page.rows - 1u) * gap);
     const auto cellWidth = static_cast<std::uint16_t>((contentWidth - horizontalGaps) / page.columns);
     const auto cellHeight = static_cast<std::uint16_t>((contentHeight - verticalGaps) / page.rows);
 
@@ -959,17 +1053,15 @@ void DisplayService::render() {
     if (package_.first(record)) do {
         WidgetView widget{};
         if (!package_.widget(record, widget) || widget.pageIndex != activePage_) continue;
-        const auto x = static_cast<std::uint16_t>(contentX + widget.column * (cellWidth + page.gap));
-        const auto y = static_cast<std::uint16_t>(contentY + widget.row * (cellHeight + page.gap));
+        const auto x = static_cast<std::uint16_t>(contentX + widget.column * (cellWidth + gap));
+        const auto y = static_cast<std::uint16_t>(contentY + widget.row * (cellHeight + gap));
         const auto width = static_cast<std::uint16_t>(widget.columnSpan * cellWidth +
-                                                       (widget.columnSpan - 1u) * page.gap);
+                                                       (widget.columnSpan - 1u) * gap);
         const auto height = static_cast<std::uint16_t>(widget.rowSpan * cellHeight +
-                                                        (widget.rowSpan - 1u) * page.gap);
+                                                        (widget.rowSpan - 1u) * gap);
         renderWidget(page, widget, x, y, width, height);
     } while (package_.next(record));
-    if (selection_.visible) renderSelection();
-    else if (transientModal_.visible) renderModal(transientModal_);
-    else if (modal_.visible) renderModal(modal_);
+    renderWidgetSeparators(page, contentX, contentY, cellWidth, cellHeight, gap);
 }
 
 void DisplayService::run() {

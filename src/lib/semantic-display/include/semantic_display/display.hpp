@@ -88,7 +88,7 @@ public:
     bool init() override;
     void run() override;
     void handle(InputAction action);
-    void sourceUpdated(std::uint16_t sourceIndex);
+    void sourceUpdated(std::uint16_t sourceIndex, bool requestRender = true);
     void requestFullRefresh();
     void requestSleep();
     bool wake();
@@ -115,6 +115,7 @@ public:
     bool alertVisible() const { return alert_.visible; }
     bool sleeping() const { return sleeping_; }
     bool sleepActive() const { return sleeping_ || sleepRequested_; }
+    std::uint32_t partialRefreshCount() const { return partialRefreshCount_; }
 
 private:
     struct ModalState {
@@ -163,6 +164,9 @@ private:
     void renderWidget(const PageView& page, const WidgetView& widget,
                       std::uint16_t x, std::uint16_t y,
                       std::uint16_t width, std::uint16_t height);
+    void renderWidgetSeparators(const PageView& page, std::uint16_t contentX,
+                                std::uint16_t contentY, std::uint16_t cellWidth,
+                                std::uint16_t cellHeight, std::uint16_t gap);
     void renderModal(const ModalState& modal);
     void renderSelection();
     void renderAlert();

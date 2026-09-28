@@ -61,6 +61,12 @@ FLASH (rx)     : ORIGIN = 0x8000000, LENGTH = 240K
 CONFIG (r)     : ORIGIN = 0x803C000, LENGTH = 16K
 }
 
+__flash_start__ = ORIGIN(FLASH);
+__flash_end__ = ORIGIN(FLASH) + LENGTH(FLASH);
+__ram_start__ = ORIGIN(RAM);
+__ram2_start__ = ORIGIN(RAM2);
+__ram2_end__ = ORIGIN(RAM2) + LENGTH(RAM2);
+
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM);    /* end of RAM */
 /* Generate a link error if heap and stack don't fit into RAM */
@@ -86,6 +92,7 @@ SECTIONS
     *(.config_package)
     . = ALIGN(8);
   } >RAM2
+  __ram2_static_end__ = .;
 
   /* The program code and other data goes into FLASH */
   .text :
@@ -197,6 +204,7 @@ SECTIONS
   PROVIDE( __data_source = LOADADDR(.data) );
   PROVIDE( __data_source_end = __tdata_source_end );
   PROVIDE( __data_source_size = __data_source_end - __data_source );
+  __flash_image_end__ = LOADADDR(.tdata) + SIZEOF(.tdata);
   /* Uninitialized data section */
   .tbss (NOLOAD) : ALIGN(4)
   {
@@ -232,6 +240,7 @@ SECTIONS
     __bss_end__ = _ebss;
       PROVIDE( __bss_end = .);
   } >RAM
+  __ram_static_end__ = _ebss;
   PROVIDE( __non_tls_bss_start = ADDR(.bss) );
 
   PROVIDE( __bss_start = __tbss_start );

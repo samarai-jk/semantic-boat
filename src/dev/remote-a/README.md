@@ -36,8 +36,46 @@ The communication LED remains an activity indicator and is not used for
 alarms. An automatic day/night LED mode is intentionally deferred until server
 data can provide the required ambient state.
 
-For development, Action 1 is temporarily labelled **Error** and opens a test
-error dialog. Action 2 remains the full-display **Refresh** action.
+Action 2 remains the full-display **Refresh** action in the factory application.
+
+## Local metrics
+
+When no downloaded application is stored, the factory application identifies
+itself as **LOCAL DEFAULT** and shows local status, memory, firmware, display
+configuration, and runtime-health pages. These values are ordinary display
+sources with provider `device`; they are produced inside the firmware and are
+never included in subscriptions sent to the server.
+
+Available paths are:
+
+- `system.uptime` and `system.cpu.clock`;
+- `memory.flash.used`, `memory.flash.free`, and
+  `memory.flash.utilization`;
+- `memory.ram.static`, `memory.ram.headroom`, `memory.heap.used`, and
+  `memory.stack.peak`;
+- `memory.ram2.used` and `memory.ram2.free`;
+- `display.config.bytes`, `display.history.bytes`, `display.sources`,
+  `display.sections`, `display.pages`, `display.widgets`, and
+  `display.partial.refreshes`;
+- `communication.uart.dropped`, `communication.link.status`, and
+  `system.events.dropped`.
+
+Flash and RAM quantities are published in KiB. `memory.ram.static` is the
+link-time `.data` plus `.bss` footprint in primary RAM. Heap and stack share
+the remaining primary RAM. `memory.ram.headroom` is the untouched gap between
+the current heap break and the deepest stack address observed since application
+initialization. `memory.stack.peak` is a paint-pattern high-water measurement;
+it includes configuration compilation, but not the early reset and CubeMX HAL
+initialization that happen before the application starts monitoring.
+
+`memory.heap.used` measures the newlib heap obtained through `_sbrk`. The
+application currently uses fixed-capacity storage and does not intentionally
+allocate from that heap, so it should normally remain zero. A future library
+that calls `malloc` or `new` will make the value grow.
+
+Metrics are sampled once per second but do not continuously request EPD
+refreshes. Navigating to a page or using **Refresh** renders the latest sample;
+a server-link state transition may request one immediate redraw.
 
 ## Signal K alerts
 

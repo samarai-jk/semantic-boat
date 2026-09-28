@@ -10,6 +10,8 @@ constexpr std::uint8_t displayRole = 1u;
 constexpr char deviceName[] = "remote-a";
 constexpr std::uint8_t permanentSourceFlag = 0x01u;
 constexpr std::uint32_t announcementRetryMs = 1000u;
+constexpr std::uint32_t peerTimeoutMs = 12000u;
+constexpr std::string_view localProvider{"device"};
 
 } // namespace
 
@@ -24,6 +26,7 @@ bool DisplayLinkService::init() {
 void DisplayLinkService::transportRestored() {
     decoder_.reset();
     peerSeen_ = false;
+    lastPeerAt_ = 0u;
     sendHello();
     sendSubscriptions();
     lastAnnouncementAt_ = runtime_.millis();
@@ -86,6 +89,7 @@ void DisplayLinkService::sendSubscriptions() {
         do {
             semantic_display::SourceView source{};
             if (!package_.source(record, source) ||
+                source.provider == localProvider ||
                 !semantic_display::sourceIsSubscribed(source, section)) continue;
             const auto payloadSize = 9u + source.provider.size() + source.path.size();
             if (source.provider.size() <= 0xffu && source.path.size() <= 0xffu &&
@@ -102,6 +106,7 @@ void DisplayLinkService::sendSubscriptions() {
         do {
             semantic_display::SourceView source{};
             if (!package_.source(record, source) ||
+                source.provider == localProvider ||
                 !semantic_display::sourceIsSubscribed(source, section)) continue;
             const auto payloadSize = 9u + source.provider.size() + source.path.size();
             if (source.provider.size() > 0xffu || source.path.size() > 0xffu ||
@@ -123,8 +128,10 @@ void DisplayLinkService::sendSubscriptions() {
 }
 
 bool DisplayLinkService::accepts(std::uint16_t sourceIndex) const {
-    return sourceIndex < data_.size() &&
-        semantic_display::sourceIsSubscribed(package_, sourceIndex, display_.activeSection());
+    semantic_display::SourceView source{};
+    return sourceIndex < data_.size() && package_.sourceByIndex(sourceIndex, source) &&
+        source.provider != localProvider &&
+        semantic_display::sourceIsSubscribed(source, display_.activeSection());
 }
 
 void DisplayLinkService::handle(const semantic_link::MessageView& message) {
@@ -132,6 +139,7 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
     const auto size = message.payloadSize;
     const auto firstPeerFrame = !peerSeen_;
     peerSeen_ = true;
+    lastPeerAt_ = runtime_.millis();
     if (firstPeerFrame) {
         // The gateway may have attached after our one-shot startup frames were
         // sent. Re-announce the complete state for any first valid peer frame,
@@ -246,8 +254,12 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
 }
 
 void DisplayLinkService::run() {
-    if (display_.activeSection() != subscribedSection_) sendSubscriptions();
     const auto now = runtime_.millis();
+    if (peerSeen_ && static_cast<std::uint32_t>(now - lastPeerAt_) >= peerTimeoutMs) {
+        peerSeen_ = false;
+        lastAnnouncementAt_ = now - announcementRetryMs;
+    }
+    if (display_.activeSection() != subscribedSection_) sendSubscriptions();
     if (!peerSeen_ &&
         static_cast<std::uint32_t>(now - lastAnnouncementAt_) >= announcementRetryMs) {
         sendHello();

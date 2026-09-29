@@ -204,7 +204,7 @@ real fixed memory are supplied by each firmware in `CompileLimits`:
 
 The compiler returns a precise error instead of accepting a document that the
 runtime cannot hold. The current remote-a composition allows up to 64 sources,
-1,024 history bytes, 16,192 compiled-package bytes, 16,368 staged JSON bytes,
+1,024 history bytes, 8,192 compiled-package bytes, 16,368 staged JSON bytes,
 255 bytes per decoded string, and 16 JSON nesting levels. These are code
 constants, not schema promises, and may be tuned for another MCU.
 
@@ -219,13 +219,16 @@ address after reboot.
 The default 32 KiB EEPROM layout is:
 
 ```text
-slot A: 64-byte header + up to 16,192 package bytes
-slot B: 64-byte header + up to 16,192 package bytes
+slot A: 64-byte header + package bytes
+slot B: 64-byte header + package bytes
 settings: 256 bytes reserved at the end
 ```
 
 The two slots provide atomic replacement and fallback. Settings are reserved
-for future device-local preferences and are not part of the display JSON.
+for device-local preferences and are not part of the display JSON. The physical
+slot capacity is 16,192 bytes, while the current Remote-A runtime deliberately
+limits compiled packages to 8,192 bytes so half of RAM2 remains available to
+future firmware features.
 
 ## Uploading through SWD
 

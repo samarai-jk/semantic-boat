@@ -414,4 +414,10 @@ int main() {
     assert(display.activeSection() == 0u && display.activePage() == 1u);
     display.handle(semantic_display::InputAction::nextSection);
     assert(display.activeSection() == 0u && display.activePage() == 1u);
+
+    display.requestShutdown();
+    assert(!display.wake());
+    display.run();
+    assert(display.sleeping());
+    assert(panel.sleepCalls == 2u);
 }

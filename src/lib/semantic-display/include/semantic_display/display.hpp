@@ -38,6 +38,11 @@ struct LocalClock {
     bool (*format)(void* context, char* output, std::size_t capacity){};
 };
 
+struct HeaderStatus {
+    void* context{};
+    std::string_view (*text)(void* context){};
+};
+
 struct DisplayPolicy {
     std::uint32_t inputSettleMs{100u};
     std::uint32_t minimumDataRenderIntervalMs{333u};
@@ -79,10 +84,11 @@ public:
                    HistoryStore& history, LocalClock clock = {},
                    DisplayPolicy policy = {}, ModalNotification notification = {},
                    NavigationNotification navigationNotification = {},
-                   ActionHandler actionHandler = {})
+                   ActionHandler actionHandler = {}, HeaderStatus headerStatus = {})
         : runtime_(runtime), panel_(panel), canvas_(canvas), data_(data), history_(history),
           clock_(clock), policy_(policy), notification_(notification),
-          navigationNotification_(navigationNotification), actionHandler_(actionHandler) {}
+          navigationNotification_(navigationNotification), actionHandler_(actionHandler),
+          headerStatus_(headerStatus) {}
 
     bool setPackage(PackageView package);
     bool init() override;
@@ -91,6 +97,7 @@ public:
     void sourceUpdated(std::uint16_t sourceIndex, bool requestRender = true);
     void requestFullRefresh();
     void requestSleep();
+    void requestShutdown();
     bool wake();
     void showModal(const char* title, const char* message, ModalSeverity severity,
                    bool requiresAcknowledgement = true);
@@ -105,6 +112,7 @@ public:
     void updateAlertQueue(std::uint8_t count, std::uint16_t overflowCount);
     void dismissAlert();
     void setRenderingPaused(bool paused);
+    void setHeaderStatus(HeaderStatus status) { headerStatus_ = status; }
 
     std::uint16_t activeSection() const { return activeSection_; }
     std::uint16_t activePage() const { return activePage_; }
@@ -184,6 +192,7 @@ private:
     ModalNotification notification_;
     NavigationNotification navigationNotification_;
     ActionHandler actionHandler_;
+    HeaderStatus headerStatus_;
     PackageView package_{};
     ModalState modal_{};
     ModalState transientModal_{};
@@ -202,6 +211,7 @@ private:
     bool activeFullRefresh_{};
     bool forceFullRefresh_{};
     bool sleepRequested_{};
+    bool shutdownRequested_{};
     bool sleeping_{};
     bool initialized_{};
     bool renderingPaused_{};

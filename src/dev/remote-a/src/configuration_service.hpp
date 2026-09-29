@@ -14,6 +14,11 @@
 
 namespace remote_a {
 
+struct ConfigurationActions {
+    void* context{};
+    void (*reset)(void* context){};
+};
+
 class ConfigurationService final : public slstm32::Service {
 public:
     static constexpr std::size_t maxConfigurations = 16u;
@@ -25,14 +30,14 @@ public:
                          semantic_display::DisplayService& display,
                          semantic_display::ConfigCompiler& compiler,
                          semantic_display::ConfigStore& store,
-                         semantic_display::PackageView& package,
                          std::uint8_t* packageBuffer, std::size_t packageCapacity,
                          char* sourceBuffer, std::size_t sourceCapacity,
-                         FallbackConfiguration fallback)
+                         FallbackConfiguration fallback,
+                         ConfigurationActions actions = {})
         : runtime_(runtime), link_(link), display_(display), compiler_(compiler), store_(store),
-          package_(package), packageBuffer_(packageBuffer),
-          packageCapacity_(packageCapacity), sourceBuffer_(sourceBuffer),
-          sourceCapacity_(sourceCapacity), fallback_(fallback) {}
+          packageBuffer_(packageBuffer), packageCapacity_(packageCapacity),
+          sourceBuffer_(sourceBuffer), sourceCapacity_(sourceCapacity),
+          fallback_(fallback), actions_(actions) {}
 
     bool init() override;
     void run() override;
@@ -70,8 +75,7 @@ private:
                      const std::uint8_t* data, std::size_t size);
     void configEnd(std::uint16_t transferId);
     void loadDefault();
-    bool activate(std::size_t packageSize);
-    void restoreFallback();
+    bool compileAndStore(std::string_view source);
     void transferError(const char* message);
 
     slstm32::Runtime runtime_;
@@ -79,12 +83,12 @@ private:
     semantic_display::DisplayService& display_;
     semantic_display::ConfigCompiler& compiler_;
     semantic_display::ConfigStore& store_;
-    semantic_display::PackageView& package_;
     std::uint8_t* packageBuffer_{};
     std::size_t packageCapacity_{};
     char* sourceBuffer_{};
     std::size_t sourceCapacity_{};
     FallbackConfiguration fallback_{};
+    ConfigurationActions actions_{};
     std::array<Name, maxConfigurations> names_{};
     Name transferName_{};
     std::size_t nameCount_{};
@@ -96,6 +100,8 @@ private:
     std::uint32_t configRequestedAt_{};
     std::uint16_t listId_{};
     std::uint16_t transferId_{};
+    std::uint32_t failedOffset_{};
+    std::uint32_t failedExpectedOffset_{};
     bool listActive_{};
     bool listRequestPending_{};
     bool listRequestTimedOut_{};

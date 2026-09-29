@@ -1,5 +1,6 @@
 #include "configuration_service.hpp"
 #include "hal_eeprom.hpp"
+#include <cstdio>
 #include <cstring>
 
 namespace remote_a {
@@ -20,7 +21,7 @@ void copyName(char* destination, std::size_t capacity, std::string_view source) 
 
 bool ConfigurationService::init() {
     if (!runtime_.millis || !packageBuffer_ || packageCapacity_ == 0u || !sourceBuffer_ ||
-        sourceCapacity_ == 0u || !fallback_) return false;
+        sourceCapacity_ == 0u || !fallback_ || !actions_.reset) return false;
     link_.setConfigReceiver({
         this,
         &receiveListBegin,
@@ -166,25 +167,9 @@ void ConfigurationService::selectionCompleted(
 
 void ConfigurationService::loadDefault() {
     display_.setRenderingPaused(true);
-    const auto source = fallback_();
-    const auto result = compiler_.compile(source, packageBuffer_, packageCapacity_);
-    if (!result) {
-        transferError(result.message);
-        return;
-    }
-    if (!activate(result.packageSize)) {
-        transferError("DEFAULT CONFIGURATION COULD NOT BE ACTIVATED.");
-        return;
-    }
-
-    semantic_display::StoredConfigInfo committed{};
-    clearEepromIoError();
-    const auto persisted = store_.commit(packageBuffer_, result.packageSize, committed);
-    display_.setRenderingPaused(false);
-    if (!persisted) {
-        display_.showModal("STORAGE ERROR", eepromIoErrorMessage(),
-                           semantic_display::ModalSeverity::error);
-    }
+    link_.unsubscribe();
+    if (!compileAndStore(fallback_())) return;
+    actions_.reset(actions_.context);
 }
 
 void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t size,
@@ -200,6 +185,8 @@ void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t s
     expectedBytes_ = size;
     expectedCrc_ = crc;
     receivedBytes_ = 0u;
+    failedOffset_ = 0u;
+    failedExpectedOffset_ = 0u;
     transferActive_ = true;
     lastTransferAt_ = runtime_.millis();
     transferFailed_ = size == 0u || size > sourceCapacity_ || name.empty() ||
@@ -215,7 +202,28 @@ void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t s
 void ConfigurationService::configChunk(std::uint16_t transferId, std::uint32_t offset,
                                        const std::uint8_t* data, std::size_t size) {
     if (!transferActive_ || transferId != transferId_ || transferFailed_) return;
-    if (!data || offset != receivedBytes_ || size > expectedBytes_ - receivedBytes_) {
+    if (!data || offset > expectedBytes_ || size > expectedBytes_ - offset) {
+        failedOffset_ = offset;
+        failedExpectedOffset_ = static_cast<std::uint32_t>(receivedBytes_);
+        transferFailed_ = true;
+        return;
+    }
+    if (offset < receivedBytes_) {
+        // Repeated frames are harmless on an asynchronous link as long as the
+        // bytes are identical and entirely within the accepted prefix.
+        if (size <= receivedBytes_ - offset &&
+            std::memcmp(sourceBuffer_ + offset, data, size) == 0) {
+            lastTransferAt_ = runtime_.millis();
+            return;
+        }
+        failedOffset_ = offset;
+        failedExpectedOffset_ = static_cast<std::uint32_t>(receivedBytes_);
+        transferFailed_ = true;
+        return;
+    }
+    if (offset != receivedBytes_) {
+        failedOffset_ = offset;
+        failedExpectedOffset_ = static_cast<std::uint32_t>(receivedBytes_);
         transferFailed_ = true;
         return;
     }
@@ -224,22 +232,19 @@ void ConfigurationService::configChunk(std::uint16_t transferId, std::uint32_t o
     lastTransferAt_ = runtime_.millis();
 }
 
-bool ConfigurationService::activate(std::size_t packageSize) {
-    semantic_display::PackageView candidate{packageBuffer_, packageSize};
-    if (!candidate.valid()) return false;
-    package_ = candidate;
-    if (!display_.setPackage(package_)) return false;
-    link_.packageChanged();
-    return true;
-}
-
-void ConfigurationService::restoreFallback() {
-    semantic_display::StoredConfigInfo stored{};
-    if (store_.load(packageBuffer_, packageCapacity_, stored) &&
-        activate(stored.packageSize)) return;
-    const auto source = fallback_();
+bool ConfigurationService::compileAndStore(std::string_view source) {
     const auto result = compiler_.compile(source, packageBuffer_, packageCapacity_);
-    if (result) (void)activate(result.packageSize);
+    if (!result) {
+        transferError(result.message);
+        return false;
+    }
+    semantic_display::StoredConfigInfo committed{};
+    clearEepromIoError();
+    if (!store_.commit(packageBuffer_, result.packageSize, committed)) {
+        transferError(eepromIoErrorMessage());
+        return false;
+    }
+    return true;
 }
 
 void ConfigurationService::transferError(const char* message) {
@@ -253,8 +258,22 @@ void ConfigurationService::transferError(const char* message) {
 void ConfigurationService::configEnd(std::uint16_t transferId) {
     if (!transferActive_ || transferId != transferId_) return;
     transferActive_ = false;
-    if (transferFailed_ || receivedBytes_ != expectedBytes_) {
-        transferError("CONFIGURATION TRANSFER WAS INCOMPLETE.");
+    if (transferFailed_) {
+        char message[96]{};
+        std::snprintf(message, sizeof message,
+                      "CONFIG CHUNK AT %lu; EXPECTED %lu.",
+                      static_cast<unsigned long>(failedOffset_),
+                      static_cast<unsigned long>(failedExpectedOffset_));
+        transferError(message);
+        return;
+    }
+    if (receivedBytes_ != expectedBytes_) {
+        char message[96]{};
+        std::snprintf(message, sizeof message,
+                      "RECEIVED %lu OF %lu CONFIG BYTES.",
+                      static_cast<unsigned long>(receivedBytes_),
+                      static_cast<unsigned long>(expectedBytes_));
+        transferError(message);
         return;
     }
     const auto actualCrc = semantic_display::crc32(
@@ -264,28 +283,13 @@ void ConfigurationService::configEnd(std::uint16_t transferId) {
         return;
     }
 
-    const auto result = compiler_.compile(
-        {sourceBuffer_, receivedBytes_}, packageBuffer_, packageCapacity_);
-    if (!result) {
-        restoreFallback();
-        transferError(result.message);
-        return;
-    }
-    if (!activate(result.packageSize)) {
-        restoreFallback();
-        transferError("COMPILED CONFIGURATION COULD NOT BE ACTIVATED.");
-        return;
-    }
-
-    semantic_display::StoredConfigInfo committed{};
-    clearEepromIoError();
-    const auto persisted = store_.commit(packageBuffer_, result.packageSize, committed);
-    display_.setRenderingPaused(false);
+    // The download is complete. Stop server data before the deliberately
+    // synchronous compile/EEPROM phase; on failure the link service will
+    // publish the active subscriptions again on its next run.
+    link_.unsubscribe();
+    if (!compileAndStore({sourceBuffer_, receivedBytes_})) return;
     display_.dismissTransientModal();
-    if (!persisted) {
-        display_.showModal("STORAGE ERROR", eepromIoErrorMessage(),
-                           semantic_display::ModalSeverity::error);
-    }
+    actions_.reset(actions_.context);
 }
 
 } // namespace remote_a

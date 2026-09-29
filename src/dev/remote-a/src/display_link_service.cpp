@@ -61,8 +61,26 @@ bool DisplayLinkService::sendAlertAction(semantic_link::AlertAction action,
 }
 
 void DisplayLinkService::packageChanged() {
+    if (shuttingDown_) return;
     subscribedSection_ = semantic_display::noIndex;
     sendSubscriptions();
+}
+
+void DisplayLinkService::unsubscribe() {
+    // An empty snapshot atomically replaces the server's active subscriptions.
+    std::uint8_t begin[4]{};
+    semantic_link::writeU16(begin, semantic_display::noIndex);
+    semantic_link::writeU16(begin + 2u, 0u);
+    (void)send(semantic_link::MessageType::subscriptionsBegin, begin, sizeof begin);
+    (void)send(semantic_link::MessageType::subscriptionsEnd);
+    subscribedSection_ = semantic_display::noIndex;
+}
+
+void DisplayLinkService::shutdown() {
+    if (shuttingDown_) return;
+    unsubscribe();
+    shuttingDown_ = true;
+    peerSeen_ = false;
 }
 
 bool DisplayLinkService::send(semantic_link::MessageType type,
@@ -254,6 +272,7 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
 }
 
 void DisplayLinkService::run() {
+    if (shuttingDown_) return;
     const auto now = runtime_.millis();
     if (peerSeen_ && static_cast<std::uint32_t>(now - lastPeerAt_) >= peerTimeoutMs) {
         peerSeen_ = false;
@@ -272,6 +291,7 @@ void DisplayLinkService::run() {
         semantic_link::MessageView message{};
         if (decoder_.push(bytes[index], message) == semantic_link::DecodeResult::message) {
             handle(message);
+            if (shuttingDown_) return;
         }
     }
 }

@@ -5,10 +5,12 @@ namespace remote_a {
 namespace {
 
 constexpr std::string_view mainItems[]{"SETTINGS", "APPS"};
-constexpr std::string_view settingItems[]{"BEEP VOLUME", "LED MODE", "SHOW ALARM LEVELS"};
+constexpr std::string_view settingItems[]{
+    "BEEP VOLUME", "LED MODE", "SHOW ALARM LEVELS", "DEVELOPER MODE", "RESET"};
 constexpr std::string_view beepItems[]{"OFF", "MIN", "MEDIUM", "MAX"};
 constexpr std::string_view ledItems[]{"NORMAL", "SUBDUED", "OFF"};
 constexpr std::string_view alertLevelItems[]{"INFO +", "WARNING +", "ALARM +", "EMERGENCY ONLY"};
+constexpr std::string_view developerModeItems[]{"OFF", "ON"};
 
 template <std::size_t Size>
 std::string_view itemAt(const std::string_view (&items)[Size], std::size_t index) {
@@ -29,9 +31,18 @@ void SetupService::open() {
         {this, 2u, &mainItem, &mainCompleted});
 }
 
+bool SetupService::setSleeping(bool sleeping) {
+    if (settings_.sleeping == sleeping) return true;
+    const bool previous = settings_.sleeping;
+    settings_.sleeping = sleeping;
+    if (persist()) return true;
+    settings_.sleeping = previous;
+    return false;
+}
+
 void SetupService::openSettings() {
     (void)display_.showSelection("SETTINGS",
-        {this, 3u, &settingsItem, &settingsCompleted});
+        {this, 5u, &settingsItem, &settingsCompleted});
 }
 
 void SetupService::openBeepVolume() {
@@ -50,6 +61,12 @@ void SetupService::openAlertLevel() {
     (void)display_.showSelection("SHOW ALARM LEVELS",
         {this, 4u, &alertLevelItem, &alertLevelCompleted},
         static_cast<std::size_t>(settings_.minimumAlertLevel));
+}
+
+void SetupService::openDeveloperMode() {
+    (void)display_.showSelection("DEVELOPER MODE",
+        {this, 2u, &developerModeItem, &developerModeCompleted},
+        settings_.developerMode ? 1u : 0u);
 }
 
 std::string_view SetupService::mainItem(void*, std::size_t index) {
@@ -72,6 +89,10 @@ std::string_view SetupService::alertLevelItem(void*, std::size_t index) {
     return itemAt(alertLevelItems, index);
 }
 
+std::string_view SetupService::developerModeItem(void*, std::size_t index) {
+    return itemAt(developerModeItems, index);
+}
+
 void SetupService::mainCompleted(void* context, semantic_display::SelectionResult result,
                                  std::size_t index) {
     auto& self = *static_cast<SetupService*>(context);
@@ -92,7 +113,29 @@ void SetupService::settingsCompleted(void* context,
         self.openLedMode();
     } else if (index == 2u) {
         self.openAlertLevel();
+    } else if (index == 3u) {
+        self.openDeveloperMode();
+    } else if (index == 4u && self.actions_.reset) {
+        self.actions_.reset(self.actions_.context);
     }
+}
+
+void SetupService::developerModeCompleted(
+    void* context, semantic_display::SelectionResult result, std::size_t index) {
+    auto& self = *static_cast<SetupService*>(context);
+    if (result == semantic_display::SelectionResult::cancelled) {
+        self.openSettings();
+        return;
+    }
+    if (index >= 2u) return;
+    const bool enabled = index != 0u;
+    if (self.settings_.developerMode == enabled) {
+        self.openSettings();
+        return;
+    }
+    self.settings_.developerMode = enabled;
+    self.apply();
+    if (self.persist()) self.openSettings();
 }
 
 void SetupService::alertLevelCompleted(void* context,
@@ -154,6 +197,9 @@ void SetupService::apply() {
     feedback_.setSettings(settings_);
     transport_.setActivityIndicatorEnabled(settings_.ledMode == LedMode::normal);
     alarms_.setMinimumLevel(settings_.minimumAlertLevel);
+    if (actions_.developerModeChanged) {
+        actions_.developerModeChanged(actions_.context, settings_.developerMode);
+    }
 }
 
 bool SetupService::persist() {

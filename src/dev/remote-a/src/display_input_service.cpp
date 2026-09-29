@@ -40,10 +40,22 @@ void DisplayInputService::onButton(std::uint8_t id) {
             wakeReleasePending_ = true;
             display_.dismissTransientModal();
             feedback_.setSleeping(false);
+            if (actions_.setSleeping) {
+                (void)actions_.setSleeping(actions_.context, false);
+            }
         }
         return;
     }
     if (wakeReleasePending_) return;
+
+    if ((id == 0u || id == 1u) && buttons_.pressed(0u) && buttons_.pressed(1u)) {
+        upHoldPending_ = false;
+        downHoldPending_ = false;
+        upHoldStage_ = 0u;
+        display_.dismissTransientModal();
+        if (actions_.reset) actions_.reset(actions_.context);
+        return;
+    }
 
     using semantic_display::InputAction;
     if (display_.alertVisible()) {
@@ -134,6 +146,7 @@ void DisplayInputService::run() {
     if (elapsed < sleepHoldMs) return;
     upHoldPending_ = false;
     upHoldStage_ = 0u;
+    if (actions_.setSleeping && !actions_.setSleeping(actions_.context, true)) return;
     buttons_.resetDebounce();
     feedback_.setSleeping(true);
     display_.showTransientModal("SLEEPING", "",

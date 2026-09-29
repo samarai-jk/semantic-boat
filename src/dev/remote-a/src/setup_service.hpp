@@ -12,19 +12,28 @@
 
 namespace remote_a {
 
+struct SetupActions {
+    void* context{};
+    void (*reset)(void* context){};
+    void (*developerModeChanged)(void* context, bool enabled){};
+};
+
 class SetupService final : public slstm32::Service {
 public:
     SetupService(semantic_display::DisplayService& display,
                  FeedbackService& feedback, UartTransport& transport,
                  ConfigurationService& configurations,
-                 AlarmService& alarms, DeviceSettingsStore& store)
+                 AlarmService& alarms, DeviceSettingsStore& store,
+                 SetupActions actions = {})
         : display_(display), feedback_(feedback), transport_(transport),
-          configurations_(configurations), alarms_(alarms), store_(store) {}
+          configurations_(configurations), alarms_(alarms), store_(store),
+          actions_(actions) {}
 
     bool init() override;
     void run() override {}
     void open();
     void setStorageAvailable(bool available) { storageAvailable_ = available; }
+    bool setSleeping(bool sleeping);
     const DeviceSettings& settings() const { return settings_; }
 
 private:
@@ -33,17 +42,21 @@ private:
     static std::string_view beepItem(void*, std::size_t index);
     static std::string_view ledItem(void*, std::size_t index);
     static std::string_view alertLevelItem(void*, std::size_t index);
+    static std::string_view developerModeItem(void*, std::size_t index);
     static void mainCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void settingsCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void beepCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void ledCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void alertLevelCompleted(void*, semantic_display::SelectionResult,
                                     std::size_t index);
+    static void developerModeCompleted(void*, semantic_display::SelectionResult,
+                                       std::size_t index);
 
     void openSettings();
     void openBeepVolume();
     void openLedMode();
     void openAlertLevel();
+    void openDeveloperMode();
     void apply();
     bool persist();
 
@@ -53,6 +66,7 @@ private:
     ConfigurationService& configurations_;
     AlarmService& alarms_;
     DeviceSettingsStore& store_;
+    SetupActions actions_{};
     DeviceSettings settings_{};
     bool storageAvailable_{};
 };

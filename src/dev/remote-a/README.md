@@ -14,8 +14,16 @@ and Next or Action 2 to select.
 The initial settings are:
 
 - beep volume: **Min**;
-- LED mode: **Normal**.
-- minimum shown alert level: **Info**.
+- LED mode: **Normal**;
+- minimum shown alert level: **Info**;
+- developer mode: **Off**.
+
+**Reset** performs an orderly software reset. The same operation is available
+from anywhere while awake by pressing Up (`BTN0`) and Down (`BTN1`) together.
+All reset causes use one shutdown service: it unsubscribes from server data,
+closes the UART transport, silences feedback, puts the E-paper controller to
+sleep, and only then resets the MCU. Future reset features should call that
+service rather than resetting the MCU directly.
 
 Beep volume applies to button, sleep, and wake cues. The passive buzzer is
 driven from TIM15 PWM. Off disables ordinary tones; Min, Medium, and Max use
@@ -23,6 +31,13 @@ driven from TIM15 PWM. Off disables ordinary tones; Min, Medium, and Max use
 frequency dependent, so these deliberately broad steps should be evaluated on
 the assembled device. Once startup has completed successfully, the device plays
 a short welcome beep at the configured ordinary volume.
+
+Sleep state is stored with the device settings before the device enters sleep.
+If power is removed while sleeping, the next boot skips the display, link,
+services, and startup sound. It only flashes the blue channel of status LED0
+at 1% duty for 100 ms and immediately enters Stop 2. Pressing any button
+clears the stored sleep state and resets into the normal startup path. Older
+settings records predate the sleep flag and are treated as awake.
 
 Normal LED mode enables the green communication/activity indicator and drives
 the RGB status LED at 1% duty. Subdued mode disables the activity indicator
@@ -77,13 +92,34 @@ Metrics are sampled once per second but do not continuously request EPD
 refreshes. Navigating to a page or using **Refresh** renders the latest sample;
 a server-link state transition may request one immediate redraw.
 
+Enabling **Developer mode** adds the compact status `Rnn.n Snn.n` to the right
+side of the top bar on every application. `R` is the safe primary-RAM headroom
+in KiB between the heap and the deepest observed stack address; `S` is the
+observed peak stack usage in KiB. The measurement is allocation-free. Stack
+painting is scanned only when Developer mode is enabled or the active page
+subscribes to a local memory metric.
+
+## Installing applications
+
+The active compiled package occupies a fixed 8 KiB RAM2 buffer. Download and
+compilation do not reserve another permanent RAM buffer: once a configuration
+transfer begins, normal display rendering is paused and the 16.4 KiB E-paper
+framebuffer is reused as separate 8 KiB JSON-input and compiled-output areas.
+The old active package remains valid until the new package has been committed
+to EEPROM. A successful commit uses the orderly reset path described above;
+startup then loads the new package. This keeps installation-only memory out of
+normal runtime while preserving the previous application on transfer, compile,
+or storage failure.
+
 ## Signal K alerts
 
 Incoming Info, Warning, Alarm, and Emergency notifications use a dedicated
-full-screen presentation which pre-empts pages, setup dialogs, and paused normal
-rendering. The implementation retains up to eight identified notifications and
-deduplicates repeated protocol frames. Alarm behavior and the four horizontal
-button actions are detailed in
+full-screen presentation which pre-empts pages and setup dialogs. While the
+framebuffer is exclusively reserved for a configuration download, alerts remain
+queued and are presented after the reservation ends or the device reconnects
+following installation. The implementation retains up to eight identified
+notifications and deduplicates repeated protocol frames. Alarm behavior and the
+four horizontal button actions are detailed in
 [semantic-display/ALARMS.md](../../lib/semantic-display/ALARMS.md).
 
 Under **Settings**, **Show alarm levels** selects the minimum level shown by

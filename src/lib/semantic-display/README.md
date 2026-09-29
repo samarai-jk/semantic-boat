@@ -168,7 +168,9 @@ samples continue to be ingested, but they do not schedule background EPD
 updates. Dialog input therefore competes only with the dialog's own refresh.
 Closing the dialog schedules one complete page render using the newest stored
 values. Services receiving short high-volume transfers may additionally use
-`setRenderingPaused()`; resuming likewise schedules a complete page render.
+`setRenderingPaused()`. This is an exclusive framebuffer reservation: data and
+alerts continue to be ingested, but no rendering occurs until it is released.
+Resuming schedules a complete page render.
 
 ## Host tests
 

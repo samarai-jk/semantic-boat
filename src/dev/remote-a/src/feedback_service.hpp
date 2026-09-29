@@ -31,6 +31,7 @@ public:
     void setSystemAlertAudible(bool audible);
     void setOperational();
     void setSleeping(bool active);
+    void shutdown();
     void setSettings(DeviceSettings settings);
     bool sleepCueComplete() const { return !sleepCueActive_; }
 

@@ -54,6 +54,8 @@ public:
     bool sendAlertAction(semantic_link::AlertAction action, std::uint32_t occurrence,
                          std::string_view id);
     void packageChanged();
+    void unsubscribe();
+    void shutdown();
     bool connected() const { return peerSeen_; }
 
 private:
@@ -76,6 +78,7 @@ private:
     std::uint32_t lastAnnouncementAt_{};
     std::uint32_t lastPeerAt_{};
     bool peerSeen_{};
+    bool shuttingDown_{};
     std::uint8_t sequence_{};
 };
 

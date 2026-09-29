@@ -27,7 +27,8 @@ const maximumConfigNameBytes = 47;
 // block. This also gives its interrupt receiver a clean boundary between
 // frames instead of streaming maximum-size frames back-to-back.
 const configChunkBytes = 32;
-const configFrameGapMs = 20;
+const configFrameGapMs = 30;
+const reconnectDelayMs = 1000;
 const snoozeDurationMs = 10_000;
 const alertTemplates = Object.freeze({
   i: { level: 0, id: 'sim.system.update', title: 'SERVER MESSAGE',
@@ -167,8 +168,12 @@ async function detectPort() {
 }
 
 function run(options) {
-  const port = new SerialPort({ path: options.path, baudRate: options.baudRate });
-  const decoder = new FrameDecoder();
+  const port = new SerialPort({
+    path: options.path,
+    baudRate: options.baudRate,
+    autoOpen: false,
+  });
+  let decoder = new FrameDecoder();
   const startedAt = Date.now();
   const active = new Map();
   let pending = null;
@@ -182,23 +187,53 @@ function run(options) {
   let unsolicitedListSent = false;
   let listId = 0;
   let transferId = 0;
+  let configTransferActive = false;
   let transmitQueue = Promise.resolve();
+  let reconnectTimer = null;
+  let shuttingDown = false;
   const activeAlerts = new Map();
   let nextTestAlertId = 1;
 
   const send = (type, payload) => {
+    if (!port.isOpen) return Promise.resolve(false);
     const frame = encodeFrame(type, sequence, payload);
     sequence = (sequence + 1) & 0xff;
     transmitQueue = transmitQueue.then(() => new Promise((resolve, reject) => {
+      if (!port.isOpen) {
+        resolve(false);
+        return;
+      }
       port.write(frame, error => error ? reject(error) : resolve());
-    })).then(() => new Promise((resolve, reject) => {
+    })).then(written => written === false ? false : new Promise((resolve, reject) => {
       port.drain(error => error ? reject(error) : resolve());
-    })).then(() => true, error => {
+    })).then(written => written !== false, error => {
       console.warn(`Serial write failed: ${error.message}`);
       return false;
     });
     if (options.verbose) console.log(`TX type=0x${type.toString(16)} bytes=${frame.length}`);
     return transmitQueue;
+  };
+
+  const resetDisplaySession = () => {
+    active.clear();
+    pending = null;
+    pendingSection = 0xffff;
+    expectedSubscriptions = 0;
+    subscriptionSnapshotReceived = false;
+    waitingNoticeShown = false;
+  };
+
+  const scheduleReconnect = () => {
+    if (shuttingDown || reconnectTimer || port.isOpen) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (shuttingDown || port.isOpen) return;
+      port.open(error => {
+        if (!error) return;
+        console.warn(`Serial reconnect failed: ${error.message}`);
+        scheduleReconnect();
+      });
+    }, reconnectDelayMs);
   };
 
   const sendAlert = record => send(MessageType.ALERT_UPDATE,
@@ -334,24 +369,25 @@ function run(options) {
   };
 
   port.on('open', () => {
+    decoder = new FrameDecoder();
+    transmitQueue = Promise.resolve();
+    sequence = 0;
+    receivedBytes = 0;
+    receivedFrames = 0;
+    unsolicitedListSent = false;
+    resetDisplaySession();
     console.log(`Connected to ${options.path} at ${options.baudRate} baud.`);
     console.log('Alert keys: [i] info  [w] warning  [a] alarm  [e] emergency  [x] clear all');
     send(MessageType.HELLO, helloPayload(2, 'disp-sim'));
   });
   port.on('error', error => {
     console.error(`Serial error: ${error.message}`);
-    clearInterval(valueTimer);
-    clearInterval(pingTimer);
-    clearInterval(helloTimer);
-    clearInterval(statusTimer);
-    process.exitCode = 1;
+    scheduleReconnect();
   });
   port.on('close', () => {
-    clearInterval(valueTimer);
-    clearInterval(pingTimer);
-    clearInterval(helloTimer);
-    clearInterval(statusTimer);
-    console.log('Serial port closed.');
+    resetDisplaySession();
+    if (!shuttingDown) console.log('Serial port closed. Waiting for it to return...');
+    scheduleReconnect();
   });
   port.on('data', chunk => {
     receivedBytes += chunk.length;
@@ -364,6 +400,11 @@ function run(options) {
       try {
         if (message.type === MessageType.HELLO) {
           console.log(`Display hello: ${describeHello(message.payload)}`);
+          // A Hello identifies a fresh device session. Source indices from a
+          // previous snapshot cannot safely survive a target reboot. Mark the
+          // snapshot stale so the periodic gateway Hello continues until a
+          // complete replacement snapshot has arrived.
+          resetDisplaySession();
           for (const record of activeAlerts.values()) {
             if (!record.snoozed && !record.acknowledged) {
               void sendAlert(record).then(() => {
@@ -414,9 +455,16 @@ function run(options) {
                    message.payload[0] === message.payload.length - 1) {
           const name = message.payload.subarray(1).toString('utf8');
           console.log(`Display requested configuration ${name}.`);
-          void sendConfiguration(name).catch(error => {
-            console.warn(`Could not send configuration: ${error.message}`);
-          });
+          if (configTransferActive) {
+            console.log('Ignored duplicate configuration request while a transfer is active.');
+          } else {
+            configTransferActive = true;
+            void sendConfiguration(name).catch(error => {
+              console.warn(`Could not send configuration: ${error.message}`);
+            }).finally(() => {
+              configTransferActive = false;
+            });
+          }
         } else if (message.type === MessageType.ALERT_ACTION) {
           handleAlertAction(parseAlertAction(message.payload));
         }
@@ -454,7 +502,9 @@ function run(options) {
 
   const statusTimer = setInterval(() => {
     if (subscriptionSnapshotReceived || waitingNoticeShown) return;
-    if (receivedBytes === 0) {
+    if (!port.isOpen) {
+      console.log(`Waiting for ${options.path}: serial port is unavailable.`);
+    } else if (receivedBytes === 0) {
       console.log('Waiting for remote-a: no bytes received yet.');
     } else if (receivedFrames === 0) {
       console.log(`Received ${receivedBytes} byte(s), but no valid protocol frame (${decoder.errors} decode error(s)). Check baud and firmware version.`);
@@ -480,6 +530,8 @@ function run(options) {
   }
 
   const shutdown = () => {
+    shuttingDown = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     clearInterval(valueTimer);
     clearInterval(pingTimer);
     clearInterval(helloTimer);
@@ -491,6 +543,11 @@ function run(options) {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  port.open(error => {
+    if (!error) return;
+    console.warn(`Could not open ${options.path}: ${error.message}`);
+    scheduleReconnect();
+  });
 }
 
 try {

@@ -381,7 +381,19 @@ void DisplayService::requestSleep() {
     cancelObsoleteTransfer();
 }
 
+void DisplayService::requestShutdown() {
+    shutdownRequested_ = true;
+    if (sleeping_) return;
+    // Unlike user sleep, shutdown must never render a pending screen: callers
+    // may already be reusing the framebuffer as temporary workspace.
+    dirty_ = false;
+    renderingPaused_ = true;
+    sleepRequested_ = true;
+    cancelObsoleteTransfer();
+}
+
 bool DisplayService::wake() {
+    if (shutdownRequested_) return false;
     if (sleepRequested_ && !sleeping_) {
         sleepRequested_ = false;
         requestFullRefresh();
@@ -987,8 +999,24 @@ void DisplayService::render() {
     const auto safeWidth = static_cast<std::uint16_t>(canvas_.width() -
                                                        2u * horizontalSafeMargin);
     const auto statusWidth = static_cast<std::uint16_t>(safeWidth - indicatorWidth);
-    drawCentered(horizontalSafeMargin,
-                 statusWidth, 7u, heading, false, 2u);
+    const auto debugText = headerStatus_.text
+        ? headerStatus_.text(headerStatus_.context) : std::string_view{};
+    constexpr std::uint8_t debugScale = 2u;
+    char debug[24]{}, fittedHeading[sizeof heading]{};
+    copyView(debug, sizeof debug, debugText);
+    const auto debugTextWidth = *debug ? Font5x7::textWidth(debug, debugScale) : 0u;
+    const auto debugWidth = static_cast<std::uint16_t>(
+        debugTextWidth == 0u ? 0u : debugTextWidth + 8u);
+    const auto headingWidth = debugWidth < statusWidth
+        ? static_cast<std::uint16_t>(statusWidth - debugWidth) : statusWidth;
+    copyText(fittedHeading, sizeof fittedHeading, heading);
+    fitText(fittedHeading, sizeof fittedHeading, headingWidth, 2u);
+    drawCentered(horizontalSafeMargin, headingWidth, 7u, fittedHeading, false, 2u);
+    if (debugWidth != 0u && debugWidth < statusWidth) {
+        Font5x7::drawText(canvas_,
+            static_cast<std::uint16_t>(horizontalSafeMargin + headingWidth + 4u),
+            7u, debug, false, debugScale);
+    }
 
     const auto footerY = static_cast<std::uint16_t>(canvas_.height() - footerHeight + 7u);
     const bool action1Available = actionAvailable(InputAction::action1);
@@ -1135,10 +1163,9 @@ void DisplayService::run() {
         }
         return;
     }
-    // Safety alerts may pre-empt a configuration transfer's normal-render
-    // pause. The accumulated application page stays dirty until the alert is
-    // dismissed and ordinary rendering resumes.
-    if (renderingPaused_ && !alert_.visible) return;
+    // A caller may be using the framebuffer as temporary storage. Continue
+    // ingesting data and alerts, but do not touch those bytes until released.
+    if (renderingPaused_) return;
     if (!dirty_ || static_cast<std::int32_t>(now - renderAt_) < 0 ||
         panel_.updateState() != UpdateState::idle) return;
     render();

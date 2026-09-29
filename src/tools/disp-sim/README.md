@@ -45,6 +45,13 @@ The defaults are 115200 baud and a 500 ms update interval for sources whose
 configuration does not request a period. Override them with `--baud` and
 `--interval`; add `--verbose` to log every protocol frame.
 
+The simulator stays running across target power cycles. If the virtual COM port
+disappears, it retries opening the same port once per second. If the port stays
+open, a new display Hello invalidates the old source-index snapshot and resumes
+gateway Hello messages until the replacement subscription snapshot is complete.
+This prevents values from remaining permanently stopped when startup frames are
+lost during a power transition.
+
 ## Display configurations
 
 Put JSON display configurations in [`configs`](configs). The filename is the
@@ -75,8 +82,14 @@ Select. `DEFAULT (LOCAL)` is always the first entry and activates the device's
 built-in local clock/status configuration without contacting the server.
 Selecting a server file only sends a request and returns to the normal display.
 If and when the server independently sends the JSON, the device receives it in
-the background, compiles and activates it, sends a fresh subscription snapshot,
-and attempts to persist the compiled package in EEPROM.
+the background. Rendering is paused once the transfer starts. After the complete
+file is validated, the device compiles it in temporary framebuffer memory and
+persists the compiled package in EEPROM. Before compiling it sends an empty
+subscription snapshot so the server stops all data. It then closes the
+transport and resets. On reconnect it loads the new
+package and sends the corresponding subscription snapshot. A failed transfer,
+compile, or EEPROM commit keeps the old application running and reports an
+error instead of resetting.
 
 The protocol does not require a request. Run with `--push-list` to send the
 directory listing when the display announces itself, demonstrating an
@@ -87,6 +100,8 @@ block value updates.
 The display configuration controls which values are sent. Changing section on
 the device produces a new subscription snapshot and the simulator immediately
 switches its generated source set. Permanent history sources remain active.
+The simulator also treats a zero-count snapshot as an unsubscribe and stops
+generating values while the device is resetting.
 
 With no stored or SWD-staged package, Remote-A runs an unmistakable built-in
 `LOCAL DEFAULT` page containing only local status and clock widgets. At boot it

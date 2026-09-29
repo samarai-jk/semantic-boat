@@ -40,6 +40,9 @@ The build emits an ELF file plus `.hex` and `.bin` images beneath
 
 Display configuration, EEPROM storage, and SWD upload are documented in
 [`src/lib/semantic-display/README.md`](src/lib/semantic-display/README.md).
+The current STM32L431 RAM baseline, runtime `R`/`S` measurements, and guidance
+for the planned CAN/NMEA 2000 device are documented in
+[`doc/firmware-memory-budget.md`](doc/firmware-memory-budget.md).
 
 ## Debugging remote-a
 

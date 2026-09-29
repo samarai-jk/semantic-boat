@@ -61,10 +61,22 @@ gateway creates a pending set. It replaces the active set only after a valid
 hello, reconnection, and section changes. Permanent sources appear in every
 snapshot; section sources appear only when their section is active.
 
+A snapshot whose subscription count is zero is an explicit unsubscribe. The
+gateway replaces the active set with an empty set when it receives the matching
+`Subscriptions end`. A device sends this snapshot before an orderly shutdown or
+reset; the gateway must not retain the previous subscriptions after the device
+goes silent.
+
 The source index is assigned by the compiled display configuration and is only
 stable for that configuration. Gateways must use the current subscription
 snapshot and must not persist source indices across device restarts or
 configuration changes.
+
+A display Hello invalidates the gateway's snapshot from an earlier device
+session. Until a complete replacement snapshot arrives, the gateway should
+periodically announce its own Hello. Both Hello and subscription snapshots are
+idempotent state announcements; this recovery does not introduce an
+acknowledgement or request/response transaction.
 
 ## Configuration discovery and transfer
 
@@ -90,7 +102,7 @@ transfer header must fit the 240-byte frame payload.
 
 Senders should pace chunks for the receiving device rather than relying on
 request/acknowledgement flow control. `disp-sim` uses 32-byte JSON chunks with
-a 20 ms inter-frame gap so every encoded chunk fits Remote-A's 64-byte UART
+a 30 ms inter-frame gap so every encoded chunk fits Remote-A's 64-byte UART
 receive block and leaves ample processing time. This is a gateway
 implementation choice, not another protocol state or handshake.
 
@@ -100,6 +112,16 @@ XOR `0xffffffff`. The device validates the declared size and CRC before passing
 the UTF-8 JSON source to its configuration compiler. Activating and persisting
 the compiled package are device concerns and do not add a synchronous response
 exchange to this protocol.
+
+Remote-A continues normal link processing while the requested JSON is being
+transferred. After the complete transfer has passed size and CRC validation, it
+sends an empty subscription snapshot, compiles the JSON into temporary memory,
+and commits the package to EEPROM. A successful commit starts its ordinary reset
+procedure, which closes the transport, powers down local outputs and the
+E-paper controller, and resets. The freshly booted firmware then loads the
+committed package and announces its new subscriptions. Compile or storage
+failure leaves the old package running and publishes its subscriptions again so
+the error can be shown and another transfer can be attempted.
 
 ## Alerts
 

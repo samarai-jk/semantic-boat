@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <string_view>
 #include "display_link_service.hpp"
 #include "semantic_display/data.hpp"
 #include "semantic_display/display.hpp"
@@ -27,6 +29,10 @@ public:
     static void beginStackMonitoring();
     bool init() override;
     void run() override;
+    void setDeveloperMode(bool enabled);
+    std::string_view headerStatus() const {
+        return developerMode_ ? std::string_view{headerStatus_.data()} : std::string_view{};
+    }
 
 private:
     bool publishNumber(const semantic_display::SourceView& source, float value,
@@ -44,6 +50,8 @@ private:
     UartTransport& transport_;
     DisplayLinkService& link_;
     std::uint32_t updateAt_{};
+    std::array<char, 24> headerStatus_{};
+    bool developerMode_{};
 };
 
 } // namespace remote_a

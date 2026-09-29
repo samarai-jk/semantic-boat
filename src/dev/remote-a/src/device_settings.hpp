@@ -15,6 +15,8 @@ struct DeviceSettings {
     BeepVolume beepVolume{BeepVolume::minimum};
     LedMode ledMode{LedMode::normal};
     semantic_display::AlertLevel minimumAlertLevel{semantic_display::AlertLevel::info};
+    bool developerMode{};
+    bool sleeping{};
 };
 
 class DeviceSettingsStore {

@@ -1,6 +1,7 @@
 #include "device_metrics_service.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <string_view>
 extern "C" {
@@ -94,6 +95,14 @@ bool DeviceMetricsService::init() {
     return true;
 }
 
+void DeviceMetricsService::setDeveloperMode(bool enabled) {
+    if (developerMode_ == enabled) return;
+    developerMode_ = enabled;
+    // Populate the header before the setup dialog closes and reveals the page.
+    // This is a one-off sample; periodic sampling remains in run().
+    if (enabled && runtime_.millis) update(runtime_.millis());
+}
+
 bool DeviceMetricsService::publishNumber(const semantic_display::SourceView& source, float value,
                                          std::uint32_t now) {
     if (!semantic_display::sourceIsSubscribed(source, display_.activeSection())) return false;
@@ -118,14 +127,31 @@ bool DeviceMetricsService::publishText(const semantic_display::SourceView& sourc
 }
 
 void DeviceMetricsService::update(std::uint32_t now) {
-    const auto memory = memorySnapshot();
+    MemorySnapshot memory{};
+    bool memoryReady{};
+    if (developerMode_) {
+        memory = memorySnapshot();
+        memoryReady = true;
+        const auto headroomTenths = static_cast<unsigned>(
+            (memory.ramHeadroom * 10u + 512u) / 1024u);
+        const auto stackTenths = static_cast<unsigned>(
+            (memory.stackPeak * 10u + 512u) / 1024u);
+        std::snprintf(headerStatus_.data(), headerStatus_.size(), "R%u.%u S%u.%u",
+                      headroomTenths / 10u, headroomTenths % 10u,
+                      stackTenths / 10u, stackTenths % 10u);
+    }
     const auto package = package_.info();
     semantic_display::RecordView record{};
     if (!package_.first(record)) return;
     do {
         semantic_display::SourceView source{};
         if (!package_.source(record, source) || source.provider != localProvider) continue;
+        if (!semantic_display::sourceIsSubscribed(source, display_.activeSection())) continue;
         const auto path = source.path;
+        if (!memoryReady && path.size() >= 7u && path.substr(0u, 7u) == "memory.") {
+            memory = memorySnapshot();
+            memoryReady = true;
+        }
         if (path == "system.uptime") {
             (void)publishNumber(source, static_cast<float>(now) / 1000.0f, now);
         } else if (path == "system.cpu.clock") {

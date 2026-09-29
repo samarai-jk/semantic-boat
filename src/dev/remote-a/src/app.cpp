@@ -4,6 +4,7 @@
 #include "config_staging.hpp"
 #include "configuration_service.hpp"
 #include "device_settings.hpp"
+#include "device_shutdown_service.hpp"
 #include "device_metrics_service.hpp"
 #include "display_config.hpp"
 #include "display_input_service.hpp"
@@ -44,6 +45,8 @@ std::uint32_t millis() { return HAL_GetTick(); }
 volatile std::uint32_t criticalDepth{};
 volatile bool buttonInterruptObserved{};
 bool sleepPeripheralsSuspended{};
+bool restoredSleepBoot{};
+remote_a::DeviceSettings restoredSleepSettings{};
 std::uint32_t savedPrimask{};
 
 void enterCritical() {
@@ -72,11 +75,14 @@ slstm32::epd::MonochromeCanvas canvas{frameBuffer.data(), frameBuffer.size(),
     slstm32::epd::Rotation::degrees90};
 
 constexpr semantic_display::ConfigStorageLayout configStorageLayout{};
-constexpr std::size_t compiledConfigCapacity = configStorageLayout.maxPackageBytes();
-// Keep enough RAM1 free for ConfigCompiler, whose section parser currently has
-// a roughly 6 KiB stack frame. SWD staging retains its independent 16 KiB
-// source limit; only live Semantic Link downloads use this smaller buffer.
-constexpr std::size_t downloadedConfigCapacity = 8u * 1024u;
+// The compiled package remains resident in RAM2 while the display is running.
+// Installation uses the otherwise idle EPD framebuffer as two temporary 8 KiB
+// areas, so no download/compilation workspace consumes normal-operation RAM.
+constexpr std::size_t compiledConfigCapacity = 8u * 1024u;
+constexpr std::size_t installationPackageCapacity = 8u * 1024u;
+constexpr std::size_t installationSourceCapacity = 8u * 1024u;
+static_assert(installationPackageCapacity + installationSourceCapacity <=
+              slstm32::epd::Waveshare3In7::bufferSize);
 constexpr std::size_t historyCapacity = 1024u;
 constexpr std::size_t sourceCapacity = 64u;
 // Development firmware uses the embedded fake-data configuration only when no
@@ -87,12 +93,13 @@ constexpr bool useDevelopmentDisplayConfiguration = false;
 // but should not cover the development UI when the embedded test package is
 // intentionally allowed to run from RAM.
 constexpr bool showDevelopmentStorageWarnings = false;
+constexpr float restoredSleepIndicatorDuty = 0.01f;
+constexpr std::uint32_t restoredSleepIndicatorMs = 100u;
 // At the maximum planned 3 Hz UI rate this is about 30 minutes. Set to zero
 // to disable periodic full refreshes entirely.
 constexpr std::uint32_t fullRefreshAfterPartialUpdates = 5400u;
 __attribute__((section(".config_package")))
 std::array<std::uint8_t, compiledConfigCapacity> compiledConfig{};
-std::array<char, downloadedConfigCapacity> downloadedConfig{};
 std::array<std::uint8_t, historyCapacity> historyMemory{};
 std::array<semantic_display::ValueSlot, sourceCapacity> values{};
 semantic_display::PackageView displayPackage{};
@@ -175,26 +182,70 @@ std::string_view displayActionLabel(void*, semantic_display::InputAction action,
 
 remote_a::DisplayLinkService displayLink{runtime, dataTransport, displayPackage,
                                          dataStore, display};
+remote_a::DeviceShutdownService deviceShutdown{
+    displayLink, dataTransport, display, feedback};
 remote_a::AlarmService alarmService{display, feedback, displayLink};
+
+void requestReset(void* context) {
+    static_cast<remote_a::DeviceShutdownService*>(context)->requestReset();
+}
+
 remote_a::ConfigurationService configurationService{
-    runtime, displayLink, display, configCompiler, configStore, displayPackage,
-    compiledConfig.data(), compiledConfig.size(),
-    downloadedConfig.data(), downloadedConfig.size(),
-    &remote_a::factoryDisplayConfiguration};
-remote_a::SetupService setupService{
-    display, feedback, dataTransport, configurationService, alarmService,
-    deviceSettingsStore};
+    runtime, displayLink, display, configCompiler, configStore,
+    frameBuffer.data(), installationPackageCapacity,
+    reinterpret_cast<char*>(frameBuffer.data() + installationPackageCapacity),
+    installationSourceCapacity, &remote_a::factoryDisplayConfiguration,
+    {&deviceShutdown, &requestReset}};
 remote_a::DeviceMetricsService deviceMetrics{
     runtime, displayPackage, dataStore, historyStore, display, events,
     dataTransport, displayLink};
 
+struct SetupActionContext {
+    remote_a::DeviceShutdownService* shutdown;
+    remote_a::DeviceMetricsService* metrics;
+};
+
+SetupActionContext setupActionContext{&deviceShutdown, &deviceMetrics};
+
+void setupReset(void* context) {
+    static_cast<SetupActionContext*>(context)->shutdown->requestReset();
+}
+
+void developerModeChanged(void* context, bool enabled) {
+    static_cast<SetupActionContext*>(context)->metrics->setDeveloperMode(enabled);
+}
+
+std::string_view developerHeaderStatus(void* context) {
+    return static_cast<remote_a::DeviceMetricsService*>(context)->headerStatus();
+}
+
+remote_a::SetupService setupService{
+    display, feedback, dataTransport, configurationService, alarmService,
+    deviceSettingsStore,
+    {&setupActionContext, &setupReset, &developerModeChanged}};
+
+struct DisplayInputActionContext {
+    remote_a::SetupService* setup;
+    remote_a::DeviceShutdownService* shutdown;
+};
+
+DisplayInputActionContext displayInputActionContext{&setupService, &deviceShutdown};
+
 void openSetup(void* context) {
-    static_cast<remote_a::SetupService*>(context)->open();
+    static_cast<DisplayInputActionContext*>(context)->setup->open();
+}
+
+void inputReset(void* context) {
+    static_cast<DisplayInputActionContext*>(context)->shutdown->requestReset();
+}
+
+bool inputSetSleeping(void* context, bool sleeping) {
+    return static_cast<DisplayInputActionContext*>(context)->setup->setSleeping(sleeping);
 }
 
 remote_a::DisplayInputService displayInput{
     runtime, events, buttons, display, feedback,
-    {&setupService, &openSetup}};
+    {&displayInputActionContext, &openSetup, &inputReset, &inputSetSleeping}};
 
 void disableInactiveDataUart() {
 #if REMOTE_A_USE_STLINK_DATA_LINK
@@ -238,6 +289,7 @@ struct Configuration;
 struct Alarms;
 struct DisplayLink;
 struct DeviceMetrics;
+struct Shutdown;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -250,20 +302,37 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::DataTransport>(dataTransport)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Feedback>(feedback),
+        slstm32::bind<component::Setup>(setupService),
+        slstm32::bind<component::DeviceMetrics>(deviceMetrics),
         slstm32::bind<component::DisplayRuntime>(display),
         slstm32::bind<component::Alarms>(alarmService),
         slstm32::bind<component::Configuration>(configurationService),
-        slstm32::bind<component::Setup>(setupService),
         slstm32::bind<component::DisplayInput>(displayInput),
         slstm32::bind<component::DisplayLink>(displayLink),
-        slstm32::bind<component::DeviceMetrics>(deviceMetrics)));
+        slstm32::bind<component::Shutdown>(deviceShutdown)));
 
 } // namespace
 
 extern "C" void remote_a_app_init(void) {
+    const bool eepromDetected = remote_a::eepromReady();
+    if (eepromDetected && deviceSettingsStore.load(restoredSleepSettings) &&
+        restoredSleepSettings.sleeping) {
+        // This is intentionally not an application startup. Initialize only
+        // the wake inputs and the RGB timer long enough to signal that power
+        // was restored, then enter the same Stop 2 state as runtime sleep.
+        buttonInterruptObserved = false;
+        if (!buttons.init() || !statusLed.init()) Error_Handler();
+        statusLed.setColor({0.0f, 0.0f, restoredSleepIndicatorDuty});
+        HAL_Delay(restoredSleepIndicatorMs);
+        statusLed.off();
+        dataTransport.setSleeping(true);
+        disableInactiveDataUart();
+        restoredSleepBoot = true;
+        return;
+    }
+
     remote_a::DeviceMetricsService::beginStackMonitoring();
     semantic_display::StoredConfigInfo stored{};
-    const bool eepromDetected = remote_a::eepromReady();
     bool loaded = eepromDetected &&
         configStore.load(compiledConfig.data(), compiledConfig.size(), stored);
     const auto staged = remote_a::stagedConfiguration();
@@ -332,6 +401,7 @@ extern "C" void remote_a_app_init(void) {
 
     displayPackage = {compiledConfig.data(), packageSize};
     if (!display.setPackage(displayPackage)) Error_Handler();
+    display.setHeaderStatus({&deviceMetrics, &developerHeaderStatus});
     setupService.setStorageAvailable(eepromDetected);
     if (!configureDataUart()) Error_Handler();
     disableInactiveDataUart();
@@ -343,8 +413,32 @@ extern "C" void remote_a_app_init(void) {
 }
 
 extern "C" void remote_a_app_run(void) {
+    if (restoredSleepBoot) {
+        __disable_irq();
+        if (!buttonInterruptObserved) {
+            HAL_SuspendTick();
+            SCB->ICSR = SCB_ICSR_PENDSTCLR_Msk;
+            HAL_DBGMCU_DisableDBGStopMode();
+            HAL_PWREx_EnterSTOP2Mode(PWR_STOPENTRY_WFI);
+            SystemClock_Config();
+            HAL_ResumeTick();
+        }
+        __enable_irq();
+
+        if (!buttonInterruptObserved) return;
+        buttonInterruptObserved = false;
+        restoredSleepSettings.sleeping = false;
+        remote_a::clearEepromIoError();
+        if (deviceSettingsStore.save(restoredSleepSettings)) NVIC_SystemReset();
+        // Avoid a reset loop if the EEPROM cannot be updated. Remaining in
+        // minimal sleep mode lets another button press retry the wake commit.
+        restoredSleepSettings.sleeping = true;
+        return;
+    }
+
     events.process();
     application.run();
+    if (deviceShutdown.active()) return;
     if (!display.sleeping()) {
         if (sleepPeripheralsSuspended) {
             dataTransport.setSleeping(false);

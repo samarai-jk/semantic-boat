@@ -12,6 +12,8 @@ namespace remote_a {
 struct DisplayInputActions {
     void* context{};
     void (*openSetup)(void* context){};
+    void (*reset)(void* context){};
+    bool (*setSleeping)(void* context, bool sleeping){};
 };
 
 class DisplayInputService final : public slstm32::Service {

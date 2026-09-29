@@ -21,6 +21,7 @@ target_sources(${REMOTE_A_TARGET} PRIVATE
     src/config_staging.cpp
     src/configuration_service.cpp
     src/device_settings.cpp
+    src/device_shutdown_service.cpp
     src/device_metrics_service.cpp
     src/display_config.cpp
     src/display_input_service.cpp

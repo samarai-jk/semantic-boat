@@ -151,6 +151,20 @@ void FeedbackService::setSleeping(bool active) {
     updateStatusLed();
 }
 
+void FeedbackService::shutdown() {
+    sleeping_ = true;
+    starting_ = false;
+    alert_ = false;
+    sleepCueActive_ = false;
+    wakeCueActive_ = false;
+    attentionCueActive_ = false;
+    systemAlertActive_ = false;
+    systemAlertAudible_ = false;
+    buzzer_.stop();
+    signalLed_.off();
+    statusLed_.off();
+}
+
 void FeedbackService::setSettings(DeviceSettings settings) {
     settings_ = settings;
     if (!initialized_) return;

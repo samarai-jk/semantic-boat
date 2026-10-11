@@ -5,6 +5,9 @@
       "label": "Build remote-a (Debug)",
       "type": "shell",
       "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
       "args": [
         "remote-a",
         "debug",
@@ -23,6 +26,9 @@
       "label": "Build remote-a (Release)",
       "type": "shell",
       "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
       "args": [
         "remote-a",
         "release",
@@ -38,6 +44,9 @@
       "label": "Flash remote-a (Debug)",
       "type": "shell",
       "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
       "args": [
         "remote-a",
         "debug",

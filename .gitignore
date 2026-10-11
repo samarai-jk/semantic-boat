@@ -69,6 +69,10 @@ Middlewares/
 # Device firmware must remain buildable from a clean checkout.
 !src/dev/**/cmx/Drivers/
 !src/dev/**/cmx/Drivers/**
+!src/lib/slstm32/src/drivers/
+!src/lib/slstm32/src/drivers/**
+!src/lib/slstm32/include/slstm32/drivers/
+!src/lib/slstm32/include/slstm32/drivers/**
 # IDE / Editor specific
 .vscode/
 .idea/

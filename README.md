@@ -35,6 +35,52 @@ script\build.bat remote-a debug refresh
 script\build.bat remote-a flash
 ```
 
+### Linux / Raspberry Pi
+
+On Debian or Raspberry Pi OS, install the native ARM cross-compiler packages:
+
+```sh
+sudo apt-get update
+sudo apt-get install cmake ninja-build gcc-arm-none-eabi \
+	libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib openocd
+```
+
+The shared presets use schema version 6 and require CMake 3.25 or newer.
+The compiler packages above also provide the embedded C/C++ headers, runtime
+libraries, and binutils; a compiler alone is not sufficient.
+
+The Linux wrapper accepts the same arguments as the Windows wrapper and can
+be invoked from any working directory:
+
+```sh
+./script/build.sh remote-a
+./script/build.sh remote-a debug refresh
+```
+
+Release is the default. Without `refresh`, the wrapper performs a clean build;
+`refresh` builds incrementally. VS Code's build tasks select this wrapper on
+Linux and retain the batch wrapper on Windows.
+
+After connecting an ST-Link and the device, build and flash with:
+
+```sh
+./script/build.sh remote-a debug refresh flash
+```
+
+`update` is shorthand for `refresh flash`. OpenOCD uses `interface/stlink.cfg`
+and `target/stm32l4x.cfg`, programs the ELF, verifies it, and resets the device.
+It defaults to the executable on `PATH` and its installed scripts. Set
+`OPENOCD` to override the executable and `OPENOCD_SCRIPTS` to override the
+scripts directory. Debian's OpenOCD package supplies USB udev rules; reconnect
+the probe after installation before diagnosing access errors.
+
+The handwritten `src/lib/slstm32/src/drivers/` and
+`src/lib/slstm32/include/slstm32/drivers/` directories must be committed along
+with the rest of the library. The vendor `Drivers/` ignore rule can also match
+lowercase `drivers/` on Windows; explicit exceptions protect these directories.
+If CMake reports missing driver sources in a fresh checkout, recover and commit
+both directories from the original development machine before building.
+
 The build emits an ELF file plus `.hex` and `.bin` images beneath
 `build/remote-a/debug/`.
 

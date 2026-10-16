@@ -1,0 +1,3 @@
+python-can>=4.6
+# candleLight / gs_usb adapters on Windows (WinUSB, no libusb needed)
+python-can-candle>=1.2; sys_platform == "win32"

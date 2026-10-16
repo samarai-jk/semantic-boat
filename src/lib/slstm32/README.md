@@ -177,6 +177,7 @@ portable library and board-specific code:
 - `DigitalOutputHardware`
 - `PwmOutputHardware`
 - `ToneOutputHardware`
+- `SerialOutputHardware`
 - `AnalogInputHardware`
 
 Each binding contains a `void* context` and plain function pointers. The context
@@ -238,12 +239,18 @@ storage is normally simplest in embedded firmware.
 | `DigitalOutputDriver` | Controls one logical output and remembers its requested state. |
 | `ButtonDriver` | Maps up to 16 interrupt tokens to button IDs, applies per-button debounce, and queues `ButtonEvent` values. Call `onInterrupt()` from the GPIO callback. |
 | `LedDriver` | Digital LED with steady, pulse, and blink modes. Timing is non-blocking. |
+| `PwmLedDriver` | Dimmable LED on a PWM output with the same steady, pulse, and blink modes as `LedDriver`; brightness can change at any time. Output polarity belongs in the binding or timer setup. |
 | `PwmOutputDriver` | Controls one normalized PWM duty value in the range 0.0 to 1.0. |
 | `RgbLedDriver` | Controls red, green, and blue PWM bindings; supports common-anode inversion and non-blocking blinking. |
 | `ToneDriver` | Starts a hardware tone at a normalized output level and stops it after a non-blocking duration. Call `onTick()` from a periodic interrupt when tone deadlines must remain accurate during long foreground work; the board's stop callback must then be interrupt-safe. |
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |
 | `LatchingRelayDriver` | Drives set/reset coils with non-blocking pulses and queues a changed request while a pulse is active. |
+| `SerialLogDriver` | Line-oriented log over a non-blocking serial output (for example a UART polled for TXE). Adds a timestamp and level letter, buffers complete lines in a caller-provided ring, drains it from `run()`, and drops and counts lines that do not fit. `write()` is interrupt-safe with valid critical-section hooks; `flush()` drains synchronously before a reset. `logger()` returns a `Logger` for services. |
 | `At24c256` | Implements the generic `ByteStorage` interface for a 32 KiB, 64-byte-page AT24C256-compatible EEPROM using board-provided read/write-page callbacks. |
+| `At24c256I2cBinding` | Provides those callbacks on an `I2cBus`: 16-bit addressing, page writes, acknowledge polling for the write cycle, and optional read-back verification with a last-error code. |
+| `CanBusDriver` | Queued CAN access through a `CanBusHardware` binding: caller-provided receive and transmit rings, frames moved into hardware mailboxes in order from `run()` and the transmit-complete interrupt, counters for received, transmitted, and dropped frames and hardware overruns, and the controller state (error-active/warning/passive, bus-off) with error counters. |
+| `I2cBus` | Abstract blocking 7-bit I2C master (`probe`, `write`, `read`, `readFrom` with a register prefix) plus register helpers. Boards implement it for a concrete peripheral, including timeouts and bus recovery. `scanI2c()` returns an `I2cAddressSet` of responding addresses. |
+| `Tmp75Driver` | TMP75/TMP175/TMP275 (LM75-style) temperature sensor on an `I2cBus` in 12-bit continuous mode, sampled periodically. A missing sensor is reported through `valid()` and reconfigured when it answers again; it never fails `init()`. |
 
 `storage::RedundantBlobStore` persists blobs of up to 40 bytes in two
 alternating 64-byte slots. CRC validation and a commit marker written last keep
@@ -446,8 +453,11 @@ As with the event bus, ISR use requires valid critical-section hooks.
 
 ## Logging and errors
 
-`Logger` forwards a level and message to an application-owned sink. It performs
-no formatting and owns neither the sink context nor message storage.
+`Logger` forwards a level and message to an application-owned sink. It owns
+neither the sink context nor message storage. `writef()` adds printf-style
+formatting into a 128-byte stack buffer (longer output is truncated). With
+newlib-nano, `%f` requires linking with `-u _printf_float`, which costs
+noticeable flash; prefer integer or fixed-point formatting.
 
 `ErrorReporter` remembers the last `Error` and writes its message through a
 `Logger`. It is deliberately minimal. A firmware may wrap it with persistent

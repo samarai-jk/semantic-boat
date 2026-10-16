@@ -5,7 +5,7 @@ usage() {
     printf '%s\n' \
         'Usage: script/build.sh <firmware> [debug|release] [refresh] [flash|update]' \
         '' \
-        '  firmware - directory name below src/dev, for example remote-a' \
+        '  firmware - directory name below src/dev or src/dev/<board>, for example'         '             remote-a or lab-test-01' \
         '  debug    - use the <firmware>-debug CMake preset' \
         '  release  - use the <firmware>-release CMake preset (default)' \
         '  refresh  - incremental build; otherwise perform a clean build' \
@@ -34,7 +34,14 @@ cd -- "$repo_root"
 firmware="$1"
 shift
 [[ "$firmware" =~ ^[a-zA-Z0-9_-]+$ ]] || fail "Invalid firmware name: $firmware"
-[[ -f "src/dev/$firmware/CMakeLists.txt" ]] || fail "Unknown firmware: $firmware"
+firmware_dir=""
+for candidate in "src/dev/$firmware" src/dev/*/"$firmware"; do
+    if [[ -f "$candidate/CMakeLists.txt" ]]; then
+        firmware_dir="$candidate"
+        break
+    fi
+done
+[[ -n "$firmware_dir" ]] || fail "Unknown firmware: $firmware"
 
 build_type=release
 do_refresh=0
@@ -55,7 +62,7 @@ for tool in cmake ninja arm-none-eabi-gcc arm-none-eabi-g++ arm-none-eabi-objcop
 done
 
 preset="$firmware-$build_type"
-elf_path="build/$firmware/$build_type/src/dev/$firmware/$firmware.elf"
+elf_path="build/$firmware/$build_type/$firmware_dir/$firmware.elf"
 printf '[build.sh] Firmware: %s | type: %s | refresh=%s | flash=%s\n' \
     "$firmware" "$build_type" "$do_refresh" "$do_flash"
 cmake --preset "$preset"
@@ -69,7 +76,7 @@ printf '[build.sh] Build succeeded: %s\n' "$elf_path"
 
 if [[ "$do_flash" -eq 1 ]]; then
     case "$firmware" in
-        remote-a) openocd_target=target/stm32l4x.cfg ;;
+        remote-a|lab-test-01) openocd_target=target/stm32l4x.cfg ;;
         *) fail "No OpenOCD target is configured for $firmware; add its mapping to script/build.sh." ;;
     esac
     openocd="${OPENOCD:-openocd}"
@@ -80,7 +87,11 @@ if [[ "$do_flash" -eq 1 ]]; then
         openocd_arguments+=(-s "$OPENOCD_SCRIPTS")
     fi
     printf '[build.sh] Flashing %s...\n' "$firmware"
-    "$openocd" "${openocd_arguments[@]}" -f interface/stlink.cfg -f "$openocd_target" \
+    # Programming needs no GDB/Tcl/telnet servers; skipping them avoids
+    # failures when another tool already listens on the default ports.
+    "$openocd" "${openocd_arguments[@]}" \
+        -c "gdb_port disabled; tcl_port disabled; telnet_port disabled" \
+        -f interface/stlink.cfg -f "$openocd_target" \
         -c "program {$elf_path} verify reset exit"
     printf '[build.sh] Flash completed successfully.\n'
 fi

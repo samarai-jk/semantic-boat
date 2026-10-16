@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace slstm32::drivers {
@@ -31,6 +32,15 @@ struct ToneOutputHardware {
     bool (*configure)(void*){};
     bool (*start)(void*, std::uint32_t, float){};
     void (*stop)(void*){};
+};
+
+// Byte-serial output such as a UART transmitter. write() must not block: it
+// accepts as many leading bytes as the hardware can take right now (possibly
+// none) and returns that count.
+struct SerialOutputHardware {
+    void* context{};
+    bool (*configure)(void*){};
+    std::size_t (*write)(void*, const std::uint8_t*, std::size_t){};
 };
 
 struct AnalogInputHardware {

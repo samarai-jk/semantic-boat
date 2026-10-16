@@ -31,9 +31,16 @@ if /I "%~1"=="/help" goto :help
 set "FIRMWARE=%~1"
 shift
 
-if not exist "src\dev\%FIRMWARE%\CMakeLists.txt" (
+set "FIRMWARE_DIR="
+if exist "src\dev\%FIRMWARE%\CMakeLists.txt" set "FIRMWARE_DIR=src\dev\%FIRMWARE%"
+if not defined FIRMWARE_DIR (
+  for /d %%B in (src\dev\*) do (
+    if not defined FIRMWARE_DIR if exist "%%B\%FIRMWARE%\CMakeLists.txt" set "FIRMWARE_DIR=%%B\%FIRMWARE%"
+  )
+)
+if not defined FIRMWARE_DIR (
   echo [build.bat] Error: unknown firmware "%FIRMWARE%".
-  echo [build.bat] Expected src\dev\%FIRMWARE%\CMakeLists.txt.
+  echo [build.bat] Expected src\dev\%FIRMWARE%\CMakeLists.txt or src\dev\^<board^>\%FIRMWARE%\CMakeLists.txt.
   popd >NUL 2>&1
   exit /b 1
 )
@@ -78,7 +85,7 @@ goto :parse_args
 :args_done
 set "PRESET=%FIRMWARE%-%BUILD_TYPE%"
 set "BUILD_DIR=build\%FIRMWARE%\%BUILD_TYPE%"
-set "ELF_PATH=%BUILD_DIR%\src\dev\%FIRMWARE%\%FIRMWARE%.elf"
+set "ELF_PATH=%BUILD_DIR%\%FIRMWARE_DIR%\%FIRMWARE%.elf"
 
 where cmake >NUL 2>&1
 if errorlevel 1 (
@@ -121,6 +128,7 @@ if not "%DO_FLASH%"=="1" goto :done
 
 set "OPENOCD_TARGET="
 if /I "%FIRMWARE%"=="remote-a" set "OPENOCD_TARGET=target/stm32l4x.cfg"
+if /I "%FIRMWARE%"=="lab-test-01" set "OPENOCD_TARGET=target/stm32l4x.cfg"
 if not defined OPENOCD_TARGET (
   echo [build.bat] Error: no OpenOCD target is configured for "%FIRMWARE%".
   echo [build.bat] Add its mapping to script\build.bat before flashing.
@@ -146,7 +154,7 @@ if not exist "%OPENOCD_SCRIPTS%\%OPENOCD_TARGET:/=\%" (
 
 set "ELF_OPENOCD=!ELF_PATH:\=/!"
 echo [build.bat] Flashing %FIRMWARE%...
-"%OPENOCD%" -s "%OPENOCD_SCRIPTS%" -f interface/stlink.cfg -f "%OPENOCD_TARGET%" -c "program {!ELF_OPENOCD!} verify reset exit"
+"%OPENOCD%" -s "%OPENOCD_SCRIPTS%" -c "gdb_port disabled; tcl_port disabled; telnet_port disabled" -f interface/stlink.cfg -f "%OPENOCD_TARGET%" -c "program {!ELF_OPENOCD!} verify reset exit"
 if errorlevel 1 (
   echo [build.bat] Error: flash failed.
   popd >NUL 2>&1
@@ -165,7 +173,8 @@ echo.
 :help
 echo Usage: script\build.bat ^<firmware^> [debug^|release] [refresh] [flash^|update]
 echo.
-echo   firmware - directory name below src\dev, for example remote-a
+echo   firmware - directory name below src\dev or src\dev\^<board^>, for example
+echo              remote-a or lab-test-01
 echo   debug    - use the ^<firmware^>-debug CMake preset
 echo   release  - use the ^<firmware^>-release CMake preset ^(default^)
 echo   refresh  - incremental build; without it, perform a clean build

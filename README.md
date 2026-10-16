@@ -27,6 +27,10 @@ cmake --preset remote-a-debug
 cmake --build --preset remote-a-debug
 ```
 
+Firmware names are directory names below `src/dev` or `src/dev/<board>`:
+`remote-a` and `lab-test-01` (can-mcu + host-dev, see
+[`src/dev/can-mcu/lab-test-01/README.md`](src/dev/can-mcu/lab-test-01/README.md)).
+
 On Windows, the root wrapper takes the firmware name first:
 
 ```bat

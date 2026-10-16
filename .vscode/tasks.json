@@ -58,6 +58,87 @@
       },
       "group": "build",
       "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Build lab-test-01 (Debug)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
+      "args": [
+        "lab-test-01",
+        "debug",
+        "refresh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Build lab-test-01 (Release)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
+      "args": [
+        "lab-test-01",
+        "release",
+        "refresh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Flash lab-test-01 (Debug)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\script\\build.bat",
+      "linux": {
+        "command": "${workspaceFolder}/script/build.sh"
+      },
+      "args": [
+        "lab-test-01",
+        "debug",
+        "refresh",
+        "flash"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "Serial log (ST-Link VCP)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\script\\serial-log.ps1"
+      ],
+      "linux": {
+        "command": "${workspaceFolder}/script/serial-log.sh",
+        "args": []
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      }
     }
   ]
 }

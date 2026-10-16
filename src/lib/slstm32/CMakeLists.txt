@@ -6,14 +6,20 @@ endif()
 add_library(slstm32 STATIC
     src/bare_executor.cpp
     src/event_bus.cpp
+    src/log.cpp
     src/drivers/analog_input.cpp
     src/drivers/at24c256.cpp
     src/drivers/button.cpp
+    src/drivers/can_bus.cpp
     src/drivers/digital_io.cpp
+    src/drivers/i2c_bus.cpp
     src/drivers/latching_relay.cpp
     src/drivers/led.cpp
+    src/drivers/pwm_led.cpp
     src/drivers/pwm_output.cpp
     src/drivers/rgb_led.cpp
+    src/drivers/serial_log.cpp
+    src/drivers/tmp75.cpp
     src/drivers/tone.cpp
     src/epd/font5x7.cpp
     src/epd/monochrome_canvas.cpp

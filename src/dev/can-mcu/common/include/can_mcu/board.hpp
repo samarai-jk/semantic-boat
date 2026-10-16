@@ -1,0 +1,44 @@
+#pragma once
+
+#include <cstdint>
+#include "slstm32/drivers/button.hpp"
+#include "slstm32/drivers/hardware.hpp"
+#include "slstm32/log.hpp"
+#include "slstm32/runtime.hpp"
+
+// Board support shared by every firmware built on the can-mcu board. It binds
+// the hardware that is fixed on the can-mcu itself (MCU core, ST-Link VCP,
+// button frontends, ...) to slstm32. Host-specific bindings stay in the
+// device directory. See ../../can-mcu.md for the hardware.
+//
+// Requirements on the device's CubeMX project:
+// - USART1 on PB6/PB7 initialized (ST-Link VCP); the log output polls it.
+// - EXTI interrupts must not be enabled in CubeMX: this layer owns all EXTI
+//   vectors and forwards every line to HAL_GPIO_EXTI_Callback().
+namespace can_mcu {
+
+// Call first in the device's application init, before any logging.
+void init();
+
+slstm32::Runtime runtime();
+
+// Busy-wait based on the DWT cycle counter. Intended for short protocol
+// timing (microseconds), never for application delays.
+void delayMicroseconds(std::uint32_t microseconds);
+
+// Non-blocking transmitter on the ST-Link virtual COM port (USART1).
+slstm32::drivers::SerialOutputHardware vcpOutput();
+
+enum class ButtonFrontend : std::uint8_t { fun0, fun1, fun2, fun3, fun4, fun5, power };
+
+// Interrupt-driven, active-low button on one of the seven frontends. The
+// frontend's 0R bridge must be fitted. The returned interrupt token is the
+// GPIO pin mask passed to HAL_GPIO_EXTI_Callback().
+slstm32::drivers::ButtonConfig buttonFrontend(ButtonFrontend frontend, std::uint8_t id);
+
+const char* resetCause();
+
+// Writes reset cause, clocks, and MCU identity to the log.
+void logBoardInfo(const slstm32::Logger& log);
+
+} // namespace can_mcu

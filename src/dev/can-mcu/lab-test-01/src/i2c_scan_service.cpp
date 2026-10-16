@@ -1,0 +1,82 @@
+#include "i2c_scan_service.hpp"
+
+namespace lab_test_01 {
+namespace {
+
+using slstm32::LogLevel;
+using slstm32::drivers::I2cAddressSet;
+
+// A scan blocks the loop for roughly 20 ms.
+constexpr std::uint32_t rescanPeriodMs = 5000u;
+
+struct KnownAddress {
+    std::uint8_t address;
+    const char* parts;
+};
+
+// Hints only: many parts share addresses. Board devices are exact.
+constexpr KnownAddress knownAddresses[]{
+    {0x10u, "VEML7700 light"},
+    {0x1Eu, "HMC5883L compass"},
+    {0x23u, "BH1750 light"},
+    {0x29u, "TSL2591 light / VL53L0X range"},
+    {0x38u, "AHT20 temp/humidity"},
+    {0x39u, "TSL2561 light / APDS9960"},
+    {0x3Cu, "SSD1306 OLED"},
+    {0x40u, "SHT20 / HTU21D / HDC1080 / INA219"},
+    {0x44u, "SHT3x / SHT4x temp/humidity"},
+    {0x45u, "SHT3x temp/humidity"},
+    {0x48u, "ADS1115 ADC / TMP102 / LM75"},
+    {0x4Fu, "can-mcu TMP75 (board temperature)"},
+    {0x52u, "can-mcu AT24C256 (EEPROM)"},
+    {0x57u, "MAX30102"},
+    {0x5Au, "MLX90614 IR temp / CCS811"},
+    {0x5Cu, "BH1750 light (ADDR high) / AM2320"},
+    {0x61u, "SCD30 CO2"},
+    {0x62u, "SCD4x CO2"},
+    {0x68u, "MPU6050 IMU / DS3231 RTC"},
+    {0x70u, "TCA9548A I2C mux"},
+    {0x76u, "BME280 / BMP280 / BME680"},
+    {0x77u, "BME280 / BMP280 / BME680"},
+};
+
+const char* partsAt(std::uint8_t address) {
+    for (const auto& known : knownAddresses) {
+        if (known.address == address) return known.parts;
+    }
+    return "unknown";
+}
+
+} // namespace
+
+bool I2cScanService::init() {
+    present_ = slstm32::drivers::scanI2c(bus_);
+    log_.writef(LogLevel::info, "i2c: %u device(s) found", static_cast<unsigned>(present_.size()));
+    for (auto address = I2cAddressSet::firstAddress; address <= I2cAddressSet::lastAddress; ++address) {
+        if (present_.contains(address)) logDevice("present", address);
+    }
+    nextScanAt_ = runtime_.millis() + rescanPeriodMs;
+    return true;
+}
+
+void I2cScanService::run() {
+    const auto now = runtime_.millis();
+    if (static_cast<std::int32_t>(now - nextScanAt_) < 0) return;
+    nextScanAt_ = now + rescanPeriodMs;
+    const auto found = slstm32::drivers::scanI2c(bus_);
+    if (found == present_) return;
+    for (auto address = I2cAddressSet::firstAddress; address <= I2cAddressSet::lastAddress; ++address) {
+        const bool before = present_.contains(address);
+        const bool after = found.contains(address);
+        if (!before && after) logDevice("appeared", address);
+        if (before && !after) logDevice("disappeared", address);
+    }
+    present_ = found;
+}
+
+void I2cScanService::logDevice(const char* event, std::uint8_t address) const {
+    log_.writef(LogLevel::info, "i2c 0x%02X %s: %s", static_cast<unsigned>(address), event,
+                partsAt(address));
+}
+
+} // namespace lab_test_01

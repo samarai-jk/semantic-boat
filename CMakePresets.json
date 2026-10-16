@@ -20,10 +20,32 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "lab-test-01-debug",
+      "displayName": "lab-test-01 (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/lab-test-01/debug",
+      "toolchainFile": "${sourceDir}/src/dev/can-mcu/lab-test-01/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEMANTIC_BOAT_DEVICE": "lab-test-01"
+      }
+    },
+    {
+      "name": "lab-test-01-release",
+      "inherits": "lab-test-01-debug",
+      "displayName": "lab-test-01 (Release)",
+      "binaryDir": "${sourceDir}/build/lab-test-01/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
     { "name": "remote-a-debug", "configurePreset": "remote-a-debug" },
-    { "name": "remote-a-release", "configurePreset": "remote-a-release" }
+    { "name": "remote-a-release", "configurePreset": "remote-a-release" },
+    { "name": "lab-test-01-debug", "configurePreset": "lab-test-01-debug" },
+    { "name": "lab-test-01-release", "configurePreset": "lab-test-01-release" }
   ]
 }

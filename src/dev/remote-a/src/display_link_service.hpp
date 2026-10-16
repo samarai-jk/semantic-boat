@@ -57,12 +57,17 @@ public:
     void unsubscribe();
     void shutdown();
     bool connected() const { return peerSeen_; }
+    std::uint32_t droppedBytes() const { return transport_.droppedBytes(); }
+    std::uint32_t receiveErrors() const { return transport_.receiveErrors(); }
+    std::uint32_t lastReceiveError() const { return transport_.lastReceiveError(); }
+    std::uint32_t decodeErrors() const { return decoder_.errorCount(); }
 
 private:
     bool send(semantic_link::MessageType type, const std::uint8_t* payload = nullptr,
               std::size_t payloadSize = 0u);
     void sendHello();
     void sendSubscriptions();
+    void pumpSubscriptions();
     void handle(const semantic_link::MessageView& message);
     bool accepts(std::uint16_t sourceIndex) const;
 
@@ -72,6 +77,12 @@ private:
     semantic_display::DataStore& data_;
     semantic_display::DisplayService& display_;
     semantic_link::Decoder decoder_{};
+    semantic_link::PolledEndpoint endpoint_{};
+    semantic_display::RecordView subscriptionRecord_{};
+    std::uint16_t subscriptionCount_{};
+    std::uint8_t subscriptionStage_{};
+    bool subscriptionRecordValid_{};
+    std::uint8_t address_{};
     ConfigMessageReceiver configReceiver_{};
     AlertMessageReceiver alertReceiver_{};
     std::uint16_t subscribedSection_{semantic_display::noIndex};

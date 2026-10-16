@@ -9,6 +9,7 @@ namespace {
 constexpr std::uint8_t displayRole = 1u;
 constexpr char deviceName[] = "remote-a";
 constexpr std::uint8_t permanentSourceFlag = 0x01u;
+constexpr std::uint8_t ageSupportedFlag = 0x02u;
 constexpr std::uint32_t announcementRetryMs = 1000u;
 constexpr std::uint32_t peerTimeoutMs = 12000u;
 constexpr std::string_view localProvider{"device"};
@@ -17,6 +18,7 @@ constexpr std::string_view localProvider{"device"};
 
 bool DisplayLinkService::init() {
     if (!runtime_.millis || !package_.valid()) return false;
+    address_ = transport_.address(); endpoint_.setAddress(address_);
     sendHello();
     sendSubscriptions();
     lastAnnouncementAt_ = runtime_.millis();
@@ -85,6 +87,7 @@ void DisplayLinkService::shutdown() {
 
 bool DisplayLinkService::send(semantic_link::MessageType type,
                               const std::uint8_t* payload, std::size_t payloadSize) {
+    if (transport_.addressed()) return endpoint_.enqueue(type, payload, payloadSize);
     std::array<std::uint8_t, semantic_link::maxEncodedFrameSize> frame{};
     const auto size = semantic_link::encode(type, sequence_++, payload, payloadSize,
                                             frame.data(), frame.size());
@@ -115,34 +118,49 @@ void DisplayLinkService::sendSubscriptions() {
         } while (package_.next(record));
     }
 
-    std::uint8_t begin[4]{};
-    semantic_link::writeU16(begin, section);
-    semantic_link::writeU16(begin + 2u, count);
-    (void)send(semantic_link::MessageType::subscriptionsBegin, begin, sizeof begin);
+    subscribedSection_ = section;
+    subscriptionCount_ = count;
+    subscriptionStage_ = 1u;
+    pumpSubscriptions();
+}
 
-    if (package_.first(record)) {
-        do {
+void DisplayLinkService::pumpSubscriptions() {
+    if (subscriptionStage_ == 1u) {
+        std::uint8_t begin[4]{};
+        semantic_link::writeU16(begin, subscribedSection_);
+        semantic_link::writeU16(begin + 2u, subscriptionCount_);
+        if (!send(semantic_link::MessageType::subscriptionsBegin, begin, sizeof begin)) return;
+        subscriptionRecordValid_ = package_.first(subscriptionRecord_);
+        subscriptionStage_ = 2u;
+    }
+    if (subscriptionStage_ == 2u) {
+        while (subscriptionRecordValid_) {
             semantic_display::SourceView source{};
-            if (!package_.source(record, source) ||
+            if (!package_.source(subscriptionRecord_, source) ||
                 source.provider == localProvider ||
-                !semantic_display::sourceIsSubscribed(source, section)) continue;
+                !semantic_display::sourceIsSubscribed(source, subscribedSection_)) {
+                subscriptionRecordValid_ = package_.next(subscriptionRecord_); continue;
+            }
             const auto payloadSize = 9u + source.provider.size() + source.path.size();
             if (source.provider.size() > 0xffu || source.path.size() > 0xffu ||
-                payloadSize > semantic_link::maxPayloadSize) continue;
+                payloadSize > semantic_link::maxPayloadSize) {
+                subscriptionRecordValid_ = package_.next(subscriptionRecord_); continue;
+            }
             std::array<std::uint8_t, semantic_link::maxPayloadSize> payload{};
             semantic_link::writeU16(payload.data(), source.sourceIndex);
             semantic_link::writeU32(payload.data() + 2u, source.subscribePeriodMs);
-            payload[6] = source.permanent ? permanentSourceFlag : 0u;
+            payload[6] = static_cast<std::uint8_t>((source.permanent ? permanentSourceFlag : 0u) | ageSupportedFlag);
             payload[7] = static_cast<std::uint8_t>(source.provider.size());
             payload[8] = static_cast<std::uint8_t>(source.path.size());
             std::memcpy(payload.data() + 9u, source.provider.data(), source.provider.size());
             std::memcpy(payload.data() + 9u + source.provider.size(),
                         source.path.data(), source.path.size());
-            (void)send(semantic_link::MessageType::subscribe, payload.data(), payloadSize);
-        } while (package_.next(record));
+            if (!send(semantic_link::MessageType::subscribe, payload.data(), payloadSize)) return;
+            subscriptionRecordValid_ = package_.next(subscriptionRecord_);
+        }
+        subscriptionStage_ = 3u;
     }
-    (void)send(semantic_link::MessageType::subscriptionsEnd);
-    subscribedSection_ = section;
+    if (subscriptionStage_ == 3u && send(semantic_link::MessageType::subscriptionsEnd)) subscriptionStage_ = 0u;
 }
 
 bool DisplayLinkService::accepts(std::uint16_t sourceIndex) const {
@@ -255,16 +273,18 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
     if (!accepts(sourceIndex)) return;
     const auto now = runtime_.millis();
     bool updated{};
-    if (message.type == semantic_link::MessageType::valueNumber && size == 6u) {
+    if (message.type == semantic_link::MessageType::valueNumber && (size == 6u || size == 10u)) {
         const auto raw = semantic_link::readU32(payload + 2u);
         float value{};
         static_assert(sizeof value == sizeof raw, "Semantic Link requires binary32 float");
         std::memcpy(&value, &raw, sizeof value);
-        updated = std::isfinite(value) && data_.setNumber(sourceIndex, value, now);
+        const auto updatedAt = size == 10u ? now - semantic_link::readU32(payload + 6u) : now;
+        updated = std::isfinite(value) && data_.setNumber(sourceIndex, value, updatedAt);
     } else if (message.type == semantic_link::MessageType::valueText && size >= 3u &&
-               payload[2] == size - 3u) {
+               (payload[2] == size - 3u || payload[2] + 4u == size - 3u)) {
+        const auto updatedAt = payload[2] == size - 3u ? now : now - semantic_link::readU32(payload + 3u + payload[2]);
         updated = data_.setText(sourceIndex,
-            {reinterpret_cast<const char*>(payload + 3u), payload[2]}, now);
+            {reinterpret_cast<const char*>(payload + 3u), payload[2]}, updatedAt);
     } else if (message.type == semantic_link::MessageType::valueUnavailable && size == 2u) {
         updated = data_.setUnavailable(sourceIndex, now);
     }
@@ -274,23 +294,38 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
 void DisplayLinkService::run() {
     if (shuttingDown_) return;
     const auto now = runtime_.millis();
+    if (address_ != transport_.address()) {
+        address_ = transport_.address(); endpoint_.setAddress(address_); transportRestored();
+    }
     if (peerSeen_ && static_cast<std::uint32_t>(now - lastPeerAt_) >= peerTimeoutMs) {
         peerSeen_ = false;
         lastAnnouncementAt_ = now - announcementRetryMs;
     }
     if (display_.activeSection() != subscribedSection_) sendSubscriptions();
+    pumpSubscriptions();
     if (!peerSeen_ &&
         static_cast<std::uint32_t>(now - lastAnnouncementAt_) >= announcementRetryMs) {
-        sendHello();
-        sendSubscriptions();
+        if (!transport_.addressed()) { sendHello(); sendSubscriptions(); }
         lastAnnouncementAt_ = now;
     }
     std::uint8_t bytes[64]{};
-    const auto count = transport_.read(bytes, sizeof bytes);
+    std::uint32_t receivedAt[64]{};
+    const auto count = transport_.read(bytes, sizeof bytes, receivedAt);
     for (std::size_t index = 0u; index < count; ++index) {
         semantic_link::MessageView message{};
         if (decoder_.push(bytes[index], message) == semantic_link::DecodeResult::message) {
-            handle(message);
+            if (transport_.addressed()) {
+                if (!endpoint_.request(message, runtime_.millis(), receivedAt[index])) continue;
+                if (!endpoint_.duplicate()) {
+                    if (message.type == semantic_link::MessageType::hello) endpoint_.clearQueue();
+                    if (message.type != semantic_link::MessageType::busPoll) handle(message);
+                    else { peerSeen_ = true; lastPeerAt_ = runtime_.millis(); }
+                    pumpSubscriptions();
+                }
+                std::array<std::uint8_t, semantic_link::maxEncodedFrameSize> reply{};
+                const auto size = endpoint_.reply(runtime_.millis(), reply.data(), reply.size());
+                if (size != 0u) (void)transport_.write(reply.data(), size);
+            } else if (message.version == semantic_link::protocolVersion) handle(message);
             if (shuttingDown_) return;
         }
     }

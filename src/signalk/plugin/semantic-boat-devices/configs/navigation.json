@@ -1,0 +1,48 @@
+{
+  "schema": "semantic-display/v1", "name": "Navigation",
+  "permanent_sources": [
+    {"id": "sog", "provider": "signalk", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "mean"}},
+    {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "mean"}},
+    {"id": "depth", "provider": "signalk", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "minimum"}}
+  ],
+  "sections": [
+    {
+      "id": "navigation", "title": "NAVIGATION", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "cog", "provider": "signalk", "path": "navigation.courseOverGroundTrue", "unit": "rad", "stale_ms": 10000},
+        {"id": "heading", "provider": "signalk", "path": "navigation.headingTrue", "unit": "rad", "stale_ms": 10000},
+        {"id": "state", "provider": "signalk", "path": "navigation.state", "stale_ms": 30000}
+      ],
+      "pages": [
+        {"id": "overview", "title": "OVERVIEW", "history_plot": {"source": "sog", "title": "SPEED OVER GROUND", "display_unit": "kn", "decimals": 1, "y_min": 0, "y_max": 20}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "sog", "label": "SOG", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "cog", "label": "COG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "depth", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}}
+        ]},
+        {"id": "motion", "title": "MOTION", "history_plot": {"source": "stw", "title": "SPEED THROUGH WATER", "display_unit": "kn", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "sog", "label": "SOG", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "stw", "label": "STW", "display_unit": "kn", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "cog", "label": "COG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "heading", "label": "HEADING TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]},
+        {"id": "status", "title": "VESSEL STATUS", "grid": {"columns": 2, "rows": 1, "gap": 4}, "widgets": [
+          {"type": "value", "source": "state", "label": "STATE", "cell": {"column": 0, "row": 0}},
+          {"type": "local-clock", "label": "LOCAL TIME", "cell": {"column": 1, "row": 0}}
+        ]}
+      ]
+    },
+    {
+      "id": "depth", "title": "DEPTH", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "keel", "provider": "signalk", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000},
+        {"id": "surface", "provider": "signalk", "path": "environment.depth.belowSurface", "unit": "m", "stale_ms": 10000},
+        {"id": "transducer", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "stale_ms": 10000}
+      ],
+      "pages": [{"id": "depth", "title": "DEPTH REFERENCES", "history_plot": {"source": "depth", "title": "MINIMUM DEPTH BELOW KEEL", "display_unit": "m", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"type": "value", "source": "keel", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
+        {"type": "value", "source": "surface", "label": "BELOW SURFACE", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 0}},
+        {"type": "value", "source": "transducer", "label": "BELOW TRANSDUCER", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}}
+      ]}]
+    }
+  ]
+}

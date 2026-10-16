@@ -27,7 +27,7 @@ const maximumConfigNameBytes = 47;
 // block. This also gives its interrupt receiver a clean boundary between
 // frames instead of streaming maximum-size frames back-to-back.
 const configChunkBytes = 32;
-const configFrameGapMs = 30;
+const transmitFrameGapMs = 30;
 const reconnectDelayMs = 1000;
 const snoozeDurationMs = 10_000;
 const alertTemplates = Object.freeze({
@@ -206,7 +206,11 @@ function run(options) {
       port.write(frame, error => error ? reject(error) : resolve());
     })).then(written => written === false ? false : new Promise((resolve, reject) => {
       port.drain(error => error ? reject(error) : resolve());
-    })).then(written => written !== false, error => {
+    })).then(async written => {
+      if (written === false) return false;
+      await delay(transmitFrameGapMs);
+      return true;
+    }, error => {
       console.warn(`Serial write failed: ${error.message}`);
       return false;
     });
@@ -360,7 +364,6 @@ function run(options) {
       chunk.writeUInt32LE(offset, 2);
       bytes.copy(chunk, 6);
       if (!await send(MessageType.CONFIG_CHUNK, chunk)) throw new Error('serial write failed');
-      await delay(configFrameGapMs);
     }
     const end = Buffer.alloc(2);
     end.writeUInt16LE(transferId, 0);

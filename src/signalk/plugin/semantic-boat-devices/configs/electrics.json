@@ -1,0 +1,27 @@
+{
+  "schema": "semantic-display/v1", "name": "Electrics",
+  "sections": [
+    {
+      "id": "batteries", "title": "12 V DC", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "house-voltage", "provider": "signalk", "path": "electrical.batteries.house.voltage", "unit": "V", "stale_ms": 30000},
+        {"id": "house-current", "provider": "signalk", "path": "electrical.batteries.house.current", "unit": "A", "stale_ms": 30000},
+        {"id": "house-charge", "provider": "signalk", "path": "electrical.batteries.house.capacity.stateOfCharge", "unit": "ratio", "stale_ms": 60000},
+        {"id": "starter-voltage", "provider": "signalk", "path": "electrical.batteries.starter.voltage", "unit": "V", "stale_ms": 30000}
+      ],
+      "pages": [{"id": "batteries", "title": "BATTERIES", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"type": "value", "source": "house-voltage", "label": "HOUSE VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}},
+        {"type": "value", "source": "house-current", "label": "HOUSE CURRENT", "display_unit": "A", "decimals": 1, "cell": {"column": 1, "row": 0}},
+        {"type": "value", "source": "house-charge", "label": "HOUSE CHARGE", "display_unit": "%", "decimals": 0, "cell": {"column": 0, "row": 1}},
+        {"type": "value", "source": "starter-voltage", "label": "STARTER VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 1, "row": 1}}
+      ]}]
+    },
+    {
+      "id": "charging", "title": "CHARGING", "button_labels": {"action_2": "REFRESH"},
+      "sources": [{"id": "alternator", "provider": "signalk", "path": "propulsion.port.alternatorVoltage", "unit": "V", "stale_ms": 30000}],
+      "pages": [{"id": "alternator", "title": "PORT ALTERNATOR", "grid": {"columns": 1, "rows": 1, "gap": 4}, "widgets": [
+        {"type": "value", "source": "alternator", "label": "ALTERNATOR VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}}
+      ]}]
+    }
+  ]
+}

@@ -14,8 +14,9 @@ inline constexpr std::size_t historySeriesOverheadBytes = 32u;
 inline constexpr std::uint8_t defaultValueMaxDigits = 6u;
 inline constexpr std::uint8_t maximumValueMaxDigits = 32u;
 
-enum class RecordType : std::uint8_t { source = 1u, section = 2u, page = 3u, widget = 4u };
+enum class RecordType : std::uint8_t { source = 1u, section = 2u, page = 3u, widget = 4u, historyPlot = 5u };
 enum class WidgetType : std::uint8_t { text = 1u, value = 2u, localClock = 3u, unknown = 0xffu };
+enum class PositionFormat : std::uint8_t { ddm, dd, dms };
 enum class HistoryReducer : std::uint8_t { none, last, mean, minimum, maximum };
 
 struct PackageInfo {
@@ -43,6 +44,7 @@ struct SourceView {
     std::uint16_t sourceIndex{noIndex};
     std::uint32_t subscribePeriodMs{};
     std::uint32_t staleAfterMs{};
+    std::uint32_t outdatedAfterMs{};
     std::uint32_t historyIntervalMs{};
     std::uint16_t historyPoints{};
     HistoryReducer historyReducer{HistoryReducer::none};
@@ -85,11 +87,25 @@ struct WidgetView {
     std::uint8_t rowSpan{1u};
     std::int8_t decimals{};
     std::uint8_t maxDigits{defaultValueMaxDigits};
+    PositionFormat positionFormat{PositionFormat::ddm};
     std::string_view typeName{};
     std::string_view sourceId{};
     std::string_view label{};
     std::string_view displayUnit{};
     std::string_view text{};
+};
+
+struct HistoryPlotView {
+    std::uint16_t sectionIndex{noIndex};
+    std::uint16_t pageIndex{noIndex};
+    std::uint16_t sourceIndex{noIndex};
+    std::uint8_t decimals{1u};
+    bool fixedRange{};
+    float minimum{};
+    float maximum{};
+    std::string_view sourceId{};
+    std::string_view title{};
+    std::string_view displayUnit{};
 };
 
 class PackageView {
@@ -106,9 +122,12 @@ public:
     bool section(const RecordView& record, SectionView& section) const;
     bool page(const RecordView& record, PageView& page) const;
     bool widget(const RecordView& record, WidgetView& widget) const;
+    bool historyPlot(const RecordView& record, HistoryPlotView& plot) const;
+    bool historyPlotByPage(std::uint16_t index, HistoryPlotView& plot) const;
     bool sourceByIndex(std::uint16_t index, SourceView& source) const;
 
 private:
+    bool headerValid() const;
     bool recordAt(std::size_t offset, RecordView& record) const;
     const std::uint8_t* data_{};
     std::size_t size_{};

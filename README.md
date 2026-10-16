@@ -90,6 +90,43 @@ The current STM32L431 RAM baseline, runtime `R`/`S` measurements, and guidance
 for the planned CAN/NMEA 2000 device are documented in
 [`doc/firmware-memory-budget.md`](doc/firmware-memory-budget.md).
 
+## Display simulator
+
+The Linux launcher requires Node.js 20 or newer. Install its dependencies once
+from the repository root:
+
+```sh
+npm ci --prefix src/tools/disp-sim
+```
+
+Connect the ST-Link virtual COM port and start the simulator with
+[`script/sim.sh`](script/sim.sh):
+
+```sh
+./script/sim.sh
+./script/sim.sh --list
+./script/sim.sh --port /dev/serial/by-id/usb-STMicroelectronics_STLINK-V3_004F00353234510537333934-if02
+```
+
+Without arguments it attempts to select a unique serial port. Use `--list` to
+find ports and `--port` to select one explicitly. The launcher works from any
+working directory when invoked by its absolute path and forwards all simulator
+arguments, including `--help`, `--verbose`, and `--config-dir`. Relative config
+directories are resolved from `src/tools/disp-sim`. Stop with `Ctrl+C`; run only
+one simulator per serial port.
+
+Configuration selection and alert controls are documented in
+[`src/tools/disp-sim/README.md`](src/tools/disp-sim/README.md).
+
+## Signal K plugins
+
+Signal K plugin development lives under `src/signalk/plugin/`. The
+[N2K simulator](src/signalk/plugin/n2k-simulator/README.md) provides a local
+encoded NMEA 2000 instrument feed and an alternative direct Signal K output
+for off-boat hardware and alarm testing. Use a separate development server,
+never live navigation data. Its [roadmap](src/signalk/plugin/n2k-simulator/PLAN.md)
+tracks the planned helm UI, scenarios, and hardware transports.
+
 ## Debugging remote-a
 
 Install the recommended Cortex-Debug extension, connect the ST-Link probe, and

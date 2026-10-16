@@ -1,0 +1,40 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "Environment",
+  "sections": [
+    {
+      "id": "wind", "title": "WIND", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "aws", "provider": "signalk", "path": "environment.wind.speedApparent", "unit": "m/s", "stale_ms": 10000},
+        {"id": "awa", "provider": "signalk", "path": "environment.wind.angleApparent", "unit": "rad", "stale_ms": 10000},
+        {"id": "tws", "provider": "signalk", "path": "environment.wind.speedTrue", "unit": "m/s", "stale_ms": 10000},
+        {"id": "twd", "provider": "signalk", "path": "environment.wind.directionTrue", "unit": "rad", "stale_ms": 10000}
+      ],
+      "pages": [{
+        "id": "wind", "title": "WIND", "grid": {"columns": 2, "rows": 2, "gap": 4},
+        "widgets": [
+          {"type": "value", "source": "aws", "label": "APPARENT WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "awa", "label": "APPARENT ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "tws", "label": "TRUE WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "twd", "label": "TRUE DIRECTION", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]
+      }]
+    },
+    {
+      "id": "weather", "title": "WEATHER", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "air", "provider": "signalk", "path": "environment.outside.temperature", "unit": "K", "stale_ms": 30000},
+        {"id": "water", "provider": "signalk", "path": "environment.water.temperature", "unit": "K", "stale_ms": 30000},
+        {"id": "pressure", "provider": "signalk", "path": "environment.outside.pressure", "unit": "Pa", "stale_ms": 30000}
+      ],
+      "pages": [{
+        "id": "weather", "title": "WEATHER", "grid": {"columns": 2, "rows": 2, "gap": 4},
+        "widgets": [
+          {"type": "value", "source": "air", "label": "AIR", "display_unit": "C", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "water", "label": "SEA", "display_unit": "C", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "pressure", "label": "AIR PRESSURE", "display_unit": "hPa", "decimals": 0, "cell": {"column": 0, "row": 1, "column_span": 2}}
+        ]
+      }]
+    }
+  ]
+}

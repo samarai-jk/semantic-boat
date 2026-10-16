@@ -15,6 +15,7 @@ public:
     std::size_t usedBytes() const { return usedBytes_; }
     std::size_t seriesCount() const { return seriesCount_; }
     std::size_t sampleCount(std::uint16_t sourceIndex) const;
+    std::uint32_t revision() const { return revision_; }
     bool sample(std::uint16_t sourceIndex, std::size_t oldestIndex, float& value) const;
 
 private:
@@ -23,6 +24,7 @@ private:
     std::size_t capacity_{};
     std::size_t usedBytes_{};
     std::size_t seriesCount_{};
+    std::uint32_t revision_{};
 };
 
 } // namespace semantic_display

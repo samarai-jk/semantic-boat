@@ -124,6 +124,7 @@ public:
     bool sleeping() const { return sleeping_; }
     bool sleepActive() const { return sleeping_ || sleepRequested_; }
     std::uint32_t partialRefreshCount() const { return partialRefreshCount_; }
+    bool graphMode() const { return graphMode_; }
 
 private:
     struct ModalState {
@@ -169,6 +170,8 @@ private:
     bool pageByIndex(std::uint16_t index, PageView& page) const;
     bool sectionByIndex(std::uint16_t index, SectionView& section) const;
     void render();
+    void renderHistoryPlot(const HistoryPlotView& plot, std::uint16_t x, std::uint16_t y,
+                           std::uint16_t width, std::uint16_t height);
     void renderWidget(const PageView& page, const WidgetView& widget,
                       std::uint16_t x, std::uint16_t y,
                       std::uint16_t width, std::uint16_t height);
@@ -205,7 +208,9 @@ private:
     std::uint32_t recoverAt_{};
     std::uint32_t partialRefreshCount_{};
     std::uint32_t clockRefreshAt_{};
+    std::uint32_t ageCheckedAt_{};
     bool configured_{};
+    bool graphMode_{};
     bool dirty_{};
     bool activeUpdate_{};
     bool activeFullRefresh_{};

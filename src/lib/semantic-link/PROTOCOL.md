@@ -1,4 +1,4 @@
-# Semantic Link protocol v1
+# Semantic Link protocol
 
 Semantic Link carries subscriptions and typed display values over a reliable
 byte stream such as a debug UART or RS485. Signal K JSON is parsed by the host
@@ -23,6 +23,52 @@ CRC parameters are polynomial `0x1021`, initial value `0xffff`, no reflection,
 and no final XOR. A receiver discards malformed frames and resumes at the next
 zero delimiter. Sequence numbers currently aid diagnostics; realtime values
 are not acknowledged because a newer value supersedes a lost one.
+
+## Addressed RS485 Version 2
+
+Version 1 remains the point-to-point/debug-UART format. A shared RS485 bus uses
+version 2 at 115200 baud, with the same COBS delimiter, CRC and application
+payloads. Its decoded header is:
+
+| Offset | Size | Meaning |
+| --- | ---: | --- |
+| 0 | 1 | Version `2` |
+| 1 | 1 | Application type, or Poll `0x50` / Idle `0x51` |
+| 2 | 1 | Master transaction token, echoed by the reply |
+| 3 | 1 | Device address `1..254` |
+| 4 | 1 | Direction: `0` master request, `1` device reply |
+| 5 | 2 | Payload length, at most 240 bytes |
+| 7 | n | Unchanged application payload |
+| 7+n | 2 | CRC-16 over header and payload |
+
+There is exactly one master. Each addressed request grants its target one reply;
+other devices remain silent. A request may carry an application message or an
+empty Poll. The reply carries the oldest queued application message, or empty
+Idle when no message is pending. Devices never broadcast startup announcements.
+Addresses 0 and 255 are reserved; broadcasts are not supported.
+
+The reply must start within 100 ms of receiving the delimiter, including time
+spent waiting for firmware execution. Late grants are discarded, not answered
+during another device's turn. The master waits up to 200 ms after draining its
+request, then adds a 30 ms guard before the next turn. It schedules devices round
+robin, interleaves retries with other devices and backs off unresponsive peers.
+Requests retried within a second retain their token and payload; the endpoint
+replays its cached reply rather than applying the request or consuming its queue
+again. Tokens are not application-install acknowledgements.
+
+Each firmware endpoint has a four-message queue. Subscription snapshots resume
+as polls drain it, so queue capacity does not truncate larger source lists.
+Gateway snapshots and value queues are independent for every address. Missing
+peers expire their subscriptions after 12 seconds; replies from one address do
+not refresh another peer's lease. Configuration transfers use the same turn
+schedule and can target devices independently. Config end may reset the target
+before it replies: the gateway reports sent/awaiting restart, not an install ACK.
+
+Both displays must run the addressed firmware before sharing the bus. Legacy
+unsolicited RS485 devices must not be mixed with this mode. Assign unique local
+addresses and matching gateway entries; firmware does not auto-discover identity
+or reliably diagnose two physical devices with the same address. A received
+device address routes traffic but is not authentication or a hardware UID.
 
 ## Messages
 
@@ -51,9 +97,21 @@ are not acknowledged because a newer value supersedes a lost one.
 | `0x43` | Alert silence | Gateway to device | ID length `u8`, alarm ID UTF-8 bytes |
 
 Hello role is `1` for a display and `2` for a gateway/simulator. Subscribe flag
-bit 0 means the source is permanent. Other flag bits are reserved. Provider is
+bit 0 means the source is permanent. Bit 1 advertises support for an optional
+value-age extension. Other flag bits are reserved. Provider is
 normally `signalk`; the development configuration may use `fake` while retaining
 Signal K-compatible paths.
+
+For age-capable subscriptions, the gateway appends sample age in milliseconds
+(`u32`, little endian) to number and text value payloads. Text length still counts
+only UTF-8 text bytes. Maximum text length with age is 233 bytes. Legacy devices
+without bit 1 receive unchanged payloads; updated devices accept either form.
+Unavailable payloads remain unchanged. Age is measured from the preferred
+Signal K sample timestamp when valid, otherwise zero at gateway delivery;
+negative ages are clamped to zero and gateway ages saturate at 2147483647 ms.
+The device stores its receipt tick minus the transmitted age. Its own monotonic
+elapsed time then advances that age independently of further messages. Transport
+queue time after payload creation is not included in the transmitted age.
 
 Subscription messages form an atomic snapshot. On `Subscriptions begin`, the
 gateway creates a pending set. It replaces the active set only after a valid

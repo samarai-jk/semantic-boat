@@ -62,10 +62,10 @@ constexpr auto testConfiguration = R"json({
           ]
         },
         {
-          "id":"environment","title":"ENVIRONMENT","grid":{"columns":2,"rows":1,"gap":4},
+          "id":"environment","title":"ENVIRONMENT","grid":{"columns":1,"rows":1,"gap":4},
+          "history_plot":{"source":"outside-temp","title":"OUTSIDE TEMPERATURE","display_unit":"C","decimals":1},
           "widgets":[
-            {"type":"value","source":"outside-temp","cell":{"column":0,"row":0},"label":"OUTSIDE","display_unit":"C","decimals":1},
-            {"type":"history-graph","source":"outside-temp","cell":{"column":1,"row":0}}
+            {"type":"value","source":"outside-temp","cell":{"column":0,"row":0},"label":"OUTSIDE","display_unit":"C","decimals":1}
           ]
         }
       ]

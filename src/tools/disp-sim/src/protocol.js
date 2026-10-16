@@ -1,6 +1,7 @@
 export const PROTOCOL_VERSION = 1;
+export const ADDRESSED_PROTOCOL_VERSION = 2;
 export const MAX_PAYLOAD_SIZE = 240;
-export const MAX_ENCODED_FRAME_SIZE = 250;
+export const MAX_ENCODED_FRAME_SIZE = 251;
 
 export const MessageType = Object.freeze({
   HELLO: 0x01,
@@ -24,6 +25,8 @@ export const MessageType = Object.freeze({
   ALERT_REMOVE: 0x41,
   ALERT_ACTION: 0x42,
   ALERT_SILENCE: 0x43,
+  BUS_POLL: 0x50,
+  BUS_IDLE: 0x51,
 });
 
 export function crc16Ccitt(data) {
@@ -100,21 +103,25 @@ function cobsDecode(data) {
   return output.subarray(0, write);
 }
 
-export function encodeFrame(type, sequence, payload = Buffer.alloc(0), flags = 0) {
+export function encodeFrame(type, sequence, payload = Buffer.alloc(0), flags = 0, version = PROTOCOL_VERSION, response = false) {
   if (!Buffer.isBuffer(payload)) payload = Buffer.from(payload);
   if (payload.length > MAX_PAYLOAD_SIZE) throw new RangeError('payload exceeds 240 bytes');
-  const decoded = Buffer.alloc(6 + payload.length + 2);
-  decoded[0] = PROTOCOL_VERSION;
+  const header = version === ADDRESSED_PROTOCOL_VERSION ? 7 : 6;
+  const decoded = Buffer.alloc(header + payload.length + 2);
+  decoded[0] = version;
   decoded[1] = type;
   decoded[2] = sequence;
   decoded[3] = flags;
-  decoded.writeUInt16LE(payload.length, 4);
-  payload.copy(decoded, 6);
+  if (header === 7) decoded[4] = response ? 1 : 0;
+  decoded.writeUInt16LE(payload.length, header - 2);
+  payload.copy(decoded, header);
   decoded.writeUInt16LE(crc16Ccitt(decoded.subarray(0, decoded.length - 2)), decoded.length - 2);
   return Buffer.concat([cobsEncode(decoded), Buffer.from([0])]);
 }
 
 export class FrameDecoder {
+  #version;
+  constructor(version = PROTOCOL_VERSION) { this.#version = version; }
   #encoded = [];
   #discarding = false;
   errors = 0;
@@ -150,9 +157,11 @@ export class FrameDecoder {
   #finish() {
     const decoded = cobsDecode(Buffer.from(this.#encoded));
     if (decoded.length < 8) throw new Error('frame too short');
-    if (decoded[0] !== PROTOCOL_VERSION) throw new Error('unsupported protocol version');
-    const payloadLength = decoded.readUInt16LE(4);
-    if (payloadLength > MAX_PAYLOAD_SIZE || decoded.length !== 8 + payloadLength) {
+    if (decoded[0] !== this.#version) throw new Error('unsupported protocol version');
+    const header = this.#version === ADDRESSED_PROTOCOL_VERSION ? 7 : 6;
+    if (decoded.length < header + 2 || (header === 7 && (decoded[4] > 1 || decoded[3] === 0 || decoded[3] === 255))) throw new Error('invalid addressed header');
+    const payloadLength = decoded.readUInt16LE(header - 2);
+    if (payloadLength > MAX_PAYLOAD_SIZE || decoded.length !== header + 2 + payloadLength) {
       throw new Error('invalid payload length');
     }
     const expected = decoded.readUInt16LE(decoded.length - 2);
@@ -163,7 +172,8 @@ export class FrameDecoder {
       type: decoded[1],
       sequence: decoded[2],
       flags: decoded[3],
-      payload: decoded.subarray(6, decoded.length - 2),
+      payload: decoded.subarray(header, decoded.length - 2),
+      ...(header === 7 ? { response: decoded[4] === 1 } : {}),
     };
   }
 }
@@ -237,6 +247,7 @@ export function parseSubscription(payload) {
     sourceIndex: payload.readUInt16LE(0),
     periodMs: payload.readUInt32LE(2),
     permanent: (payload[6] & 1) !== 0,
+    ...((payload[6] & 2) !== 0 ? { ageSupported: true } : {}),
     provider: payload.subarray(9, 9 + providerLength).toString('utf8'),
     path: payload.subarray(9 + providerLength).toString('utf8'),
   };

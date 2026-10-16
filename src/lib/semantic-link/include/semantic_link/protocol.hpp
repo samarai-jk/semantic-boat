@@ -7,11 +7,13 @@
 namespace semantic_link {
 
 inline constexpr std::uint8_t protocolVersion = 1u;
+inline constexpr std::uint8_t addressedProtocolVersion = 2u;
+inline constexpr std::uint32_t replyStartWindowMs = 100u;
 inline constexpr std::size_t frameHeaderSize = 6u;
 inline constexpr std::size_t frameCrcSize = 2u;
 inline constexpr std::size_t maxPayloadSize = 240u;
 inline constexpr std::size_t maxDecodedFrameSize =
-    frameHeaderSize + maxPayloadSize + frameCrcSize;
+    frameHeaderSize + 1u + maxPayloadSize + frameCrcSize;
 inline constexpr std::size_t maxEncodedFrameSize =
     maxDecodedFrameSize + maxDecodedFrameSize / 254u + 2u;
 
@@ -37,6 +39,8 @@ enum class MessageType : std::uint8_t {
     alertRemove = 0x41u,
     alertAction = 0x42u,
     alertSilence = 0x43u,
+    busPoll = 0x50u,
+    busIdle = 0x51u,
 };
 
 enum class AlertAction : std::uint8_t {
@@ -53,6 +57,8 @@ struct MessageView {
     std::uint8_t flags{};
     const std::uint8_t* payload{};
     std::uint16_t payloadSize{};
+    std::uint8_t version{protocolVersion};
+    bool response{};
 };
 
 std::uint16_t crc16Ccitt(const std::uint8_t* data, std::size_t size);
@@ -60,7 +66,8 @@ std::uint16_t crc16Ccitt(const std::uint8_t* data, std::size_t size);
 std::size_t encode(MessageType type, std::uint8_t sequence,
                    const std::uint8_t* payload, std::size_t payloadSize,
                    std::uint8_t* output, std::size_t outputCapacity,
-                   std::uint8_t flags = 0u);
+                   std::uint8_t flags = 0u,
+                   std::uint8_t version = protocolVersion, bool response = false);
 
 class Decoder {
 public:
@@ -76,6 +83,39 @@ private:
     std::size_t encodedSize_{};
     std::uint32_t errorCount_{};
     bool discardUntilDelimiter_{};
+};
+
+class PolledEndpoint {
+public:
+    void setAddress(std::uint8_t address);
+    void clearQueue();
+    bool enqueue(MessageType type, const std::uint8_t* payload, std::size_t size);
+    bool request(const MessageView& message, std::uint32_t now, std::uint32_t receivedAt);
+    bool duplicate() const { return duplicate_; }
+    std::size_t reply(std::uint32_t now, std::uint8_t* output, std::size_t capacity);
+
+private:
+    struct Pending {
+        MessageType type{};
+        std::uint16_t size{};
+        std::array<std::uint8_t, maxPayloadSize> payload{};
+    };
+    std::array<Pending, 4u> queue_{};
+    std::array<std::uint8_t, maxEncodedFrameSize> previousReply_{};
+    std::size_t previousReplySize_{};
+    std::uint32_t previousReplyAt_{};
+    std::uint32_t grantedAt_{};
+    std::uint16_t previousRequestCrc_{};
+    std::uint16_t requestCrc_{};
+    MessageType previousType_{};
+    MessageType requestType_{};
+    std::uint8_t address_{1u};
+    std::uint8_t head_{};
+    std::uint8_t count_{};
+    std::uint8_t sequence_{};
+    std::uint8_t previousSequence_{};
+    bool duplicate_{};
+    bool granted_{};
 };
 
 inline std::uint16_t readU16(const std::uint8_t* data) {

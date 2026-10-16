@@ -1,0 +1,40 @@
+{
+  "schema": "semantic-display/v1", "name": "Server",
+  "sections": [
+    {
+      "id": "health", "title": "RASPBERRY PI", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "temperature", "provider": "signalk", "path": "environment.rpi.cpu.temperature", "unit": "K", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "cpu", "provider": "signalk", "path": "environment.rpi.cpu.utilisation", "unit": "ratio", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "memory", "provider": "signalk", "path": "environment.rpi.memory.utilisation", "unit": "ratio", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "storage", "provider": "signalk", "path": "environment.rpi.storage.utilisation", "unit": "ratio", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "uptime", "provider": "signalk", "path": "environment.rpi.uptime", "unit": "s", "stale_ms": 60000, "subscribe": {"period_ms": 5000}}
+      ],
+      "pages": [
+        {"id": "health", "title": "SERVER HEALTH", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "temperature", "label": "CPU TEMP", "display_unit": "C", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "cpu", "label": "CPU USED", "display_unit": "%", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "memory", "label": "RAM USED", "display_unit": "%", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "storage", "label": "DISK USED", "display_unit": "%", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]},
+        {"id": "uptime", "title": "UPTIME", "grid": {"columns": 2, "rows": 1, "gap": 4}, "widgets": [
+          {"type": "value", "source": "uptime", "label": "SERVER UPTIME", "display_unit": "h", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "local-clock", "label": "LOCAL TIME", "cell": {"column": 1, "row": 0}}
+        ]}
+      ]
+    },
+    {
+      "id": "load", "title": "CPU LOAD", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "load-one", "provider": "signalk", "path": "environment.rpi.cpu.load.1m", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "load-five", "provider": "signalk", "path": "environment.rpi.cpu.load.5m", "stale_ms": 60000, "subscribe": {"period_ms": 5000}},
+        {"id": "load-fifteen", "provider": "signalk", "path": "environment.rpi.cpu.load.15m", "stale_ms": 60000, "subscribe": {"period_ms": 5000}}
+      ],
+      "pages": [{"id": "load", "title": "LOAD AVERAGES", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"type": "value", "source": "load-one", "label": "1 MINUTE", "decimals": 2, "cell": {"column": 0, "row": 0}},
+        {"type": "value", "source": "load-five", "label": "5 MINUTES", "decimals": 2, "cell": {"column": 1, "row": 0}},
+        {"type": "value", "source": "load-fifteen", "label": "15 MINUTES", "decimals": 2, "cell": {"column": 0, "row": 1, "column_span": 2}}
+      ]}]
+    }
+  ]
+}

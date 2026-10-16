@@ -2,6 +2,7 @@
 #include <array>
 #include <cassert>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -26,11 +27,12 @@ constexpr auto configuration = R"json(
         "action_2": "MENU"
       },
       "sources": [
-        {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s"}
+        {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s", "outdated_ms": 10000, "stale_ms": 30000}
       ],
       "pages": [
         {
           "id": "overview",
+          "history_plot": {"source":"depth-history","title":"DEPTH HISTORY","display_unit":"m","decimals":1,"y_min":-2.5,"y_max":1e2},
           "grid": {"columns": 3, "rows": 3, "gap": 4},
           "widgets": [
             {
@@ -40,7 +42,8 @@ constexpr auto configuration = R"json(
               "label": "SOG",
               "display_unit": "kn",
               "decimals": 1,
-              "max_digits": 6
+              "max_digits": 6,
+              "position_format": "DMS"
             },
             {
               "type": "future-gauge",
@@ -69,11 +72,19 @@ int main() {
 
     const semantic_display::PackageView package{bytes.data(), result.packageSize};
     assert(package.valid());
+    semantic_display::HistoryPlotView plot{};
+    assert(package.historyPlotByPage(0u, plot));
+    assert(plot.sourceIndex == 0u && plot.sourceId == "depth-history");
+    assert(plot.title == "DEPTH HISTORY" && plot.displayUnit == "m");
+    assert(plot.fixedRange && plot.minimum == -2.5f && plot.maximum == 100.0f);
     const auto info = package.info();
     assert(info.sourceCount == 2u);
     assert(info.sectionCount == 1u);
     assert(info.pageCount == 1u);
     assert(info.widgetCount == 3u);
+    semantic_display::SourceView source{};
+    assert(package.sourceByIndex(0u, source) && source.outdatedAfterMs == 0u);
+    assert(package.sourceByIndex(1u, source) && source.outdatedAfterMs == 10000u && source.staleAfterMs == 30000u);
     assert(info.historyBytes == semantic_display::historySeriesOverheadBytes +
                                 120u * sizeof(float));
 
@@ -96,8 +107,10 @@ int main() {
         if (widget.sourceIndex != semantic_display::noIndex) ++resolvedWidgets;
         if (widget.type == semantic_display::WidgetType::value) {
             assert(widget.maxDigits == 6u);
+          assert(widget.positionFormat == semantic_display::PositionFormat::dms);
         }
         if (widget.type == semantic_display::WidgetType::unknown) {
+          assert(widget.positionFormat == semantic_display::PositionFormat::ddm);
             ++unknownWidgets;
             assert(widget.typeName == "future-gauge");
         }
@@ -159,4 +172,28 @@ int main() {
                                                    bytes.data(), bytes.size());
     assert(!malformedResult);
     assert(malformedResult.error == semantic_display::CompileError::invalidJson);
+    constexpr auto invalidAge = R"json({"schema":"semantic-display/v1","permanent_sources":[
+      {"id":"position","path":"navigation.position","outdated_ms":10000,"stale_ms":10000}],
+      "sections":[{"id":"one","pages":[{"id":"page","grid":{"columns":1,"rows":1},"widgets":[]}]}]})json";
+    const auto invalidAgeResult = compiler.compile(invalidAge, bytes.data(), bytes.size());
+    assert(!invalidAgeResult && invalidAgeResult.error == semantic_display::CompileError::invalidProperty);
+    constexpr auto invalidPositionFormat = R"json({"schema":"semantic-display/v1","sections":[{"id":"one",
+      "pages":[{"id":"page","grid":{"columns":1,"rows":1},"widgets":[
+        {"type":"text","text":"bad","position_format":"invalid","cell":{"column":0,"row":0}}]}]}]})json";
+    const auto invalidPositionResult = compiler.compile(invalidPositionFormat, bytes.data(), bytes.size());
+    assert(!invalidPositionResult && invalidPositionResult.error == semantic_display::CompileError::invalidProperty);
+    const auto rejectPlot = [&](const char* original, const char* replacement) {
+      std::string document{configuration};
+      const auto position = document.find(original);
+      assert(position != std::string::npos);
+      document.replace(position, std::strlen(original), replacement);
+      assert(!compiler.compile(document, bytes.data(), bytes.size()));
+    };
+    rejectPlot("\"source\":\"depth-history\"", "\"source\":\"missing\"");
+    rejectPlot("\"history\": {\"interval_ms\": 60000, \"points\": 120, \"reducer\": \"mean\"}", "\"subscribe\": {}");
+    rejectPlot("\"y_min\":-2.5,", "");
+    rejectPlot("\"y_max\":1e2", "\"y_max\":-10");
+    rejectPlot("\"y_max\":1e2", "\"y_max\":1e100");
+    rejectPlot("\"y_min\":-2.5,\"y_max\":1e2", "\"y_min\":-3e38,\"y_max\":3e38");
+    rejectPlot("\"history_plot\": {", "\"history_plot\":{\"source\":\"depth-history\"},\"history_plot\": {");
 }

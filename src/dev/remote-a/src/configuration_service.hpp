@@ -102,6 +102,9 @@ private:
     std::uint16_t transferId_{};
     std::uint32_t failedOffset_{};
     std::uint32_t failedExpectedOffset_{};
+    std::uint32_t initialDroppedBytes_{};
+    std::uint32_t initialReceiveErrors_{};
+    std::uint32_t initialDecodeErrors_{};
     bool listActive_{};
     bool listRequestPending_{};
     bool listRequestTimedOut_{};

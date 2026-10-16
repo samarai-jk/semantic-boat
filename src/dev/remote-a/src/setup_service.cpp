@@ -1,16 +1,30 @@
 #include "setup_service.hpp"
 #include "hal_eeprom.hpp"
+#include <array>
 
 namespace remote_a {
 namespace {
 
 constexpr std::string_view mainItems[]{"SETTINGS", "APPS"};
 constexpr std::string_view settingItems[]{
-    "BEEP VOLUME", "LED MODE", "SHOW ALARM LEVELS", "DEVELOPER MODE", "RESET"};
+    "BEEP VOLUME", "LED MODE", "SHOW ALARM LEVELS", "DEVELOPER MODE",
+    "RS485 ADDRESS", "RESET"};
 constexpr std::string_view beepItems[]{"OFF", "MIN", "MEDIUM", "MAX"};
 constexpr std::string_view ledItems[]{"NORMAL", "SUBDUED", "OFF"};
 constexpr std::string_view alertLevelItems[]{"INFO +", "WARNING +", "ALARM +", "EMERGENCY ONLY"};
 constexpr std::string_view developerModeItems[]{"OFF", "ON"};
+constexpr std::size_t addressCount = DeviceSettings::maximumRs485Address -
+    DeviceSettings::minimumRs485Address + 1u;
+constexpr auto addressItems = [] {
+    std::array<std::array<char, 3u>, addressCount> items{};
+    for (std::size_t index = 0u; index < items.size(); ++index) {
+        const auto address = index + DeviceSettings::minimumRs485Address;
+        items[index] = {static_cast<char>('0' + address / 100u),
+                        static_cast<char>('0' + (address / 10u) % 10u),
+                        static_cast<char>('0' + address % 10u)};
+    }
+    return items;
+}();
 
 template <std::size_t Size>
 std::string_view itemAt(const std::string_view (&items)[Size], std::size_t index) {
@@ -42,7 +56,7 @@ bool SetupService::setSleeping(bool sleeping) {
 
 void SetupService::openSettings() {
     (void)display_.showSelection("SETTINGS",
-        {this, 5u, &settingsItem, &settingsCompleted});
+        {this, 6u, &settingsItem, &settingsCompleted});
 }
 
 void SetupService::openBeepVolume() {
@@ -69,6 +83,12 @@ void SetupService::openDeveloperMode() {
         settings_.developerMode ? 1u : 0u);
 }
 
+    void SetupService::openRs485Address() {
+        (void)display_.showSelection("RS485 ADDRESS",
+        {this, addressCount, &rs485AddressItem, &rs485AddressCompleted},
+        settings_.rs485Address - DeviceSettings::minimumRs485Address);
+    }
+
 std::string_view SetupService::mainItem(void*, std::size_t index) {
     return itemAt(mainItems, index);
 }
@@ -93,6 +113,12 @@ std::string_view SetupService::developerModeItem(void*, std::size_t index) {
     return itemAt(developerModeItems, index);
 }
 
+std::string_view SetupService::rs485AddressItem(void*, std::size_t index) {
+    return index < addressItems.size() ?
+        std::string_view{addressItems[index].data(), addressItems[index].size()} :
+        std::string_view{};
+}
+
 void SetupService::mainCompleted(void* context, semantic_display::SelectionResult result,
                                  std::size_t index) {
     auto& self = *static_cast<SetupService*>(context);
@@ -115,9 +141,31 @@ void SetupService::settingsCompleted(void* context,
         self.openAlertLevel();
     } else if (index == 3u) {
         self.openDeveloperMode();
-    } else if (index == 4u && self.actions_.reset) {
+    } else if (index == 4u) {
+        self.openRs485Address();
+    } else if (index == 5u && self.actions_.reset) {
         self.actions_.reset(self.actions_.context);
     }
+}
+
+void SetupService::rs485AddressCompleted(
+    void* context, semantic_display::SelectionResult result, std::size_t index) {
+    auto& self = *static_cast<SetupService*>(context);
+    if (result == semantic_display::SelectionResult::cancelled) {
+        self.openSettings();
+        return;
+    }
+    if (index >= addressCount) return;
+    const auto selected = static_cast<std::uint8_t>(
+        index + DeviceSettings::minimumRs485Address);
+    if (self.settings_.rs485Address == selected) {
+        self.openSettings();
+        return;
+    }
+    const auto previous = self.settings_.rs485Address;
+    self.settings_.rs485Address = selected;
+    if (self.persist()) self.openSettings();
+    else self.settings_.rs485Address = previous;
 }
 
 void SetupService::developerModeCompleted(
@@ -194,6 +242,7 @@ void SetupService::ledCompleted(void* context, semantic_display::SelectionResult
 }
 
 void SetupService::apply() {
+    transport_.setAddress(settings_.rs485Address);
     feedback_.setSettings(settings_);
     transport_.setActivityIndicatorEnabled(settings_.ledMode == LedMode::normal);
     alarms_.setMinimumLevel(settings_.minimumAlertLevel);

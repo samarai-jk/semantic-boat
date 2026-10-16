@@ -16,7 +16,23 @@ The initial settings are:
 - beep volume: **Min**;
 - LED mode: **Normal**;
 - minimum shown alert level: **Info**;
-- developer mode: **Off**.
+- developer mode: **Off**;
+- RS485 address: **001**.
+
+**Settings > RS485 address** selects a persistent device-local address from
+**001** to **254**. Reserve address **0** for the gateway and **255** for
+broadcast. Assign different addresses to devices on the same RS485 bus, for
+example **001** and **002** for two displays. Older settings records load with
+address **001** while retaining their existing preferences.
+
+The address is stored in EEPROM and applied to the addressed RS485 link.
+RS485 builds use Semantic Link version 2: devices queue outgoing messages and
+reply only to their own master-granted turn. The Signal K gateway must use an
+`rs485-addressed` bus with matching addresses. Both displays must be upgraded
+before sharing one bus; legacy RS485 firmware transmits unsolicited messages
+and must stay disconnected during rollout. Debug/ST-Link UART builds retain
+the version-1 point-to-point protocol. Address changes take effect locally
+without reflashing; duplicate physical addresses are not allowed.
 
 **Reset** performs an orderly software reset. The same operation is available
 from anywhere while awake by pressing Up (`BTN0`) and Down (`BTN1`) together.
@@ -142,3 +158,18 @@ therefore leaves the previous generation recoverable if power is interrupted.
 
 The protocol and server continue to call downloadable display applications
 "configurations" internally. **Apps** is only the clearer user-facing name.
+
+## Settings Test
+
+From the repository root, run the host-only persistence and migration test:
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror \
+  -I src/dev/remote-a/src -I src/lib/slstm32/include \
+  -I src/lib/semantic-display/include \
+  src/dev/remote-a/tests/device_settings_test.cpp \
+  src/dev/remote-a/src/device_settings.cpp \
+  src/lib/slstm32/src/storage/redundant_blob_store.cpp \
+  -o /tmp/remote-a-settings-test
+/tmp/remote-a-settings-test
+```

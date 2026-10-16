@@ -1,0 +1,24 @@
+{
+  "schema": "semantic-display/v1", "name": "Engine",
+  "sections": [{
+    "id": "engine", "title": "PORT ENGINE", "button_labels": {"action_2": "REFRESH"},
+    "sources": [
+      {"id": "rpm", "provider": "signalk", "path": "propulsion.port.revolutions", "unit": "Hz", "stale_ms": 10000},
+      {"id": "coolant", "provider": "signalk", "path": "propulsion.port.temperature", "unit": "K", "stale_ms": 30000},
+      {"id": "oil", "provider": "signalk", "path": "propulsion.port.oilPressure", "unit": "Pa", "stale_ms": 30000},
+      {"id": "alternator", "provider": "signalk", "path": "propulsion.port.alternatorVoltage", "unit": "V", "stale_ms": 30000},
+      {"id": "hours", "provider": "signalk", "path": "propulsion.port.runTime", "unit": "s", "stale_ms": 60000}
+    ],
+    "pages": [
+      {"id": "overview", "title": "ENGINE OVERVIEW", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"type": "value", "source": "rpm", "label": "ENGINE SPEED", "display_unit": "rpm", "decimals": 0, "cell": {"column": 0, "row": 0, "row_span": 2}},
+        {"type": "value", "source": "coolant", "label": "COOLANT", "display_unit": "C", "decimals": 1, "cell": {"column": 1, "row": 0}},
+        {"type": "value", "source": "oil", "label": "OIL PRESSURE", "display_unit": "bar", "decimals": 1, "cell": {"column": 1, "row": 1}}
+      ]},
+      {"id": "running", "title": "ENGINE DATA", "grid": {"columns": 2, "rows": 1, "gap": 4}, "widgets": [
+        {"type": "value", "source": "alternator", "label": "ALTERNATOR", "display_unit": "V", "decimals": 1, "cell": {"column": 0, "row": 0}},
+        {"type": "value", "source": "hours", "label": "ENGINE HOURS", "display_unit": "h", "decimals": 1, "cell": {"column": 1, "row": 0}}
+      ]}
+    ]
+  }]
+}

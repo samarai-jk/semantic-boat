@@ -1,0 +1,25 @@
+{
+  "name": "@semantic-boat/n2k-simulator",
+  "version": "0.1.0",
+  "description": "Sailboat instrument simulator for Signal K and NMEA 2000 hardware testing",
+  "main": "index.js",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-webapp"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node src/standalone.js"
+  },
+  "dependencies": {
+    "@canboat/canboatjs": "^3.20.0",
+    "geographiclib-geodesic": "^2.2.0",
+    "leaflet": "^1.9.4",
+    "lucide": "^0.468.0",
+    "nouislider": "^15.8.1"
+  },
+  "private": true
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>N2K Simulator | Semantic Boat</title>
+  <script>
+    if (window.location.pathname.startsWith('/@semantic-boat/n2k-simulator/')) {
+      window.location.replace('/plugins/semantic-boat-n2k-simulator/ui/');
+    }
+  </script>
+  <link rel="stylesheet" href="leaflet.css">
+  <link rel="stylesheet" href="nouislider.css">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="leaflet.js"></script>
+  <script defer src="lucide.js"></script>
+  <script defer src="nouislider.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><i data-lucide="sailboat"></i><div><h1>N2K Simulator</h1><span>SEMANTIC BOAT / TEST HELM</span></div></div>
+    <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection">Connecting</span><span class="test-label">SIMULATED DATA</span></div>
+  </header>
+  <div id="error" role="alert" hidden></div>
+  <main>
+    <section class="voyage">
+      <div class="preset-toolbar"><label for="preset-select">Preset</label><select id="preset-select" aria-label="Preset"><option value="">Current settings</option></select><button id="save-preset" class="icon-button" title="Save preset" aria-label="Save preset"><i data-lucide="save"></i></button><button id="delete-preset" class="icon-button" title="Delete preset" aria-label="Delete preset" disabled><i data-lucide="trash-2"></i></button></div>
+      <div class="section-toolbar">
+        <div class="segments" role="group" aria-label="Boat mode">
+          <button data-mode="marina" title="Marina"><i data-lucide="landmark"></i>Marina</button>
+          <button data-mode="anchor" title="At anchor"><i data-lucide="anchor"></i>Anchor</button>
+          <button data-mode="underway" title="Underway"><i data-lucide="navigation"></i>Underway</button>
+        </div>
+        <div class="commands">
+          <button id="pause" class="icon-button" title="Pause simulation" aria-label="Pause simulation"><i data-lucide="pause"></i></button>
+          <button id="reset" class="icon-button" title="Reset trip to departure" aria-label="Reset trip to departure"><i data-lucide="rotate-ccw"></i></button>
+        </div>
+      </div>
+      <div class="readings">
+        <div><span>SPEED OVER GROUND</span><div class="reading-value" data-output="navigation.speedOverGround"><strong id="sog">--</strong></div><small>kn</small></div>
+        <div><span>TRUE HEADING</span><div class="reading-value" data-output="navigation.headingTrue"><strong id="heading">--</strong><input id="marinaHeading" type="number" min="0" max="360" step="any" aria-label="Marina heading" title="Fixed marina heading" hidden></div><small>deg T</small></div>
+        <div><span>APPARENT WIND</span><div class="reading-value" data-output="environment.wind.speedApparent"><strong id="wind">--</strong></div><small>kn</small></div>
+        <div><span>DEPTH</span><div class="reading-value" data-output="environment.depth.belowTransducer"><strong id="depth-reading">--</strong></div><small>m</small></div>
+      </div>
+      <div id="anchor-controls" class="anchor-controls" hidden><label for="chainLength">Chain paid out (m)</label><input id="chainLength" type="number" min="0" max="200" step="any" aria-label="Chain paid out"><output id="anchor-radius"></output><span id="chain-warning" role="status" hidden>Chain is shorter than depth</span></div>
+      <div class="chart-wrap"><div id="chart" aria-label="Voyage chart"></div><div class="chart-toolbar">
+        <button id="fit" class="icon-button" title="Fit route" aria-label="Fit route"><i data-lucide="scan"></i></button>
+        <button id="pick-departure" class="icon-button" title="Set departure on chart" aria-label="Set departure on chart"><i data-lucide="map-pin"></i></button>
+        <button id="pick-destination" class="icon-button" title="Set destination on chart" aria-label="Set destination on chart"><i data-lucide="flag"></i></button>
+      </div><span id="map-status" hidden>Chart tiles unavailable</span></div>
+      <div class="trip-strip"><span><i data-lucide="clock-3"></i><b id="elapsed">00:00</b></span><span id="trip-state">Moored</span><span id="anchor-distance" hidden></span><div class="reading-value" data-output="navigation.position"><span id="position">--</span></div></div>
+      <section class="route-section">
+        <div class="section-heading"><h2>Route</h2><button id="apply-route"><i data-lucide="check"></i>Apply route</button></div>
+        <div class="route-fields">
+          <fieldset><legend><span class="route-dot departure-dot"></span><span id="departure-label">Departure</span></legend><label>Latitude<input id="departureLatitude" type="number" min="-89" max="89" step="0.0001"></label><label>Longitude<input id="departureLongitude" type="number" min="-180" max="180" step="0.0001"></label></fieldset>
+          <fieldset><legend><span class="route-dot destination-dot"></span>Destination</legend><label>Latitude<input id="destinationLatitude" type="number" min="-89" max="89" step="0.0001"></label><label>Longitude<input id="destinationLongitude" type="number" min="-180" max="180" step="0.0001"></label></fieldset>
+        </div>
+      </section>
+      <section class="output-section">
+        <div class="section-heading"><h2>Data output</h2><span id="output-mode">N2K TCP</span></div>
+        <dl><div><dt>PGNs emitted</dt><dd id="frames">0</dd></div><div><dt>TCP consumers</dt><dd id="clients">0</dd></div><div><dt>N2K endpoint</dt><dd id="endpoint">--</dd></div></dl>
+      </section>
+    </section>
+    <aside class="controls">
+      <div class="control-tabs" role="tablist" aria-label="Instrument controls">
+        <button id="tab-environment" role="tab" aria-selected="true" aria-controls="panel-environment" data-tab="environment"><i data-lucide="wind"></i>Environment</button>
+        <button id="tab-engine" role="tab" aria-selected="false" aria-controls="panel-engine" tabindex="-1" data-tab="engine"><i data-lucide="gauge"></i>Engine</button>
+        <button id="tab-navigation" role="tab" aria-selected="false" aria-controls="panel-navigation" tabindex="-1" data-tab="navigation"><i data-lucide="compass"></i>Nav & derived</button>
+      </div>
+      <div class="sensor-commands"><button id="enable-all"><i data-lucide="check-check"></i>Enable all</button><button id="disable-all"><i data-lucide="circle-slash"></i>Disable all</button></div>
+      <div id="panel-engine" role="tabpanel" aria-labelledby="tab-engine" hidden>
+      <section class="engine-section">
+        <div class="section-heading"><h2><i data-lucide="gauge"></i>Engine</h2><label class="switch-label"><span id="engine-state">Stopped</span><input id="engineRunning" type="checkbox" role="switch" aria-label="Engine running"></label></div>
+        <div id="engine-controls"></div>
+      </section>
+      </div>
+      <div id="panel-environment" role="tabpanel" aria-labelledby="tab-environment">
+      <section><div class="section-heading"><h2><i data-lucide="wind"></i>Wind & current</h2></div><div id="wind-controls"></div></section>
+      <section><div class="section-heading"><h2><i data-lucide="waves"></i>Sea & instruments</h2></div><div id="sea-controls"></div></section>
+      <section><div class="section-heading"><h2><i data-lucide="thermometer"></i>Temperature</h2></div><div id="temperature-controls"></div></section>
+      </div>
+      <div id="panel-navigation" role="tabpanel" aria-labelledby="tab-navigation" hidden>
+      <section class="navigation-section"><div class="section-heading"><h2><i data-lucide="compass"></i>Navigation & derived readings</h2></div><div id="derived-readings"></div></section>
+      </div>
+    </aside>
+  </main>
+  <dialog id="preset-dialog" aria-labelledby="preset-title"><form id="preset-form"><div class="section-heading"><h2 id="preset-title">Save preset</h2><button id="cancel-preset" type="button" class="icon-button" title="Close" aria-label="Close"><i data-lucide="x"></i></button></div><label for="preset-name">Name</label><input id="preset-name" type="text" required maxlength="80" autocomplete="off"><p id="preset-replace" hidden>A preset with this name will be replaced.</p><p id="preset-error" role="alert" hidden></p><div class="dialog-actions"><button type="submit"><i data-lucide="save"></i>Save</button></div></form></dialog>
+  <footer><span>SEMANTIC BOAT</span><span id="footer-status">Local test environment</span></footer>
+</body>
+</html>

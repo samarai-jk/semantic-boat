@@ -1,5 +1,7 @@
 #include "semantic_display/data.hpp"
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -70,6 +72,62 @@ float convertUnit(float value, std::string_view sourceUnit, std::string_view dis
     if (sourceUnit == "ratio" && displayUnit == "%") return value * 100.0f;
     if (sourceUnit == "m3/s" && displayUnit == "L/h") return value * 3600000.0f;
     return value;
+}
+
+ValueFreshness valueFreshness(const SourceView& source, const ValueSlot* value, std::uint32_t now) {
+    if (!value || value->type == ValueType::unavailable) return ValueFreshness::unavailable;
+    const auto age = static_cast<std::uint32_t>(now - value->updatedAt);
+    if (source.staleAfterMs != 0u && age >= source.staleAfterMs) return ValueFreshness::stale;
+    if (source.outdatedAfterMs != 0u && age >= source.outdatedAfterMs) return ValueFreshness::outdated;
+    return ValueFreshness::fresh;
+}
+
+bool formatValueAge(std::uint32_t ageMs, char* output, std::size_t capacity) {
+    if (!output || capacity == 0u) return false;
+    const auto divisor = ageMs >= 3600000u ? 3600000u : ageMs >= 60000u ? 60000u : 1000u;
+    const auto unit = ageMs >= 3600000u ? 'h' : ageMs >= 60000u ? 'm' : 's';
+    const auto length = std::snprintf(output, capacity, "OLD %lu%c",
+        static_cast<unsigned long>(ageMs / divisor), unit);
+    return length >= 0 && static_cast<std::size_t>(length) < capacity;
+}
+
+bool formatPosition(std::string_view value, PositionFormat format, char* output, std::size_t capacity) {
+    if (!output || capacity == 0u || value.empty() || value.size() >= 48u) return false;
+    char input[48]{};
+    std::memcpy(input, value.data(), value.size());
+    char* latitudeEnd{};
+    const auto latitude = std::strtod(input, &latitudeEnd);
+    if (latitudeEnd == input || !std::isfinite(latitude) || latitude < 0.0 || latitude > 90.0 ||
+        (*latitudeEnd != 'N' && *latitudeEnd != 'S') || latitudeEnd[1] != ' ') return false;
+    const auto* longitudeStart = latitudeEnd + 2;
+    char* longitudeEnd{};
+    const auto longitude = std::strtod(longitudeStart, &longitudeEnd);
+    if (longitudeEnd == longitudeStart || !std::isfinite(longitude) || longitude < 0.0 || longitude > 180.0 ||
+        (*longitudeEnd != 'E' && *longitudeEnd != 'W') || longitudeEnd[1] != '\0') return false;
+    const auto coordinate = [format](double magnitude, char hemisphere, char* text, std::size_t size) {
+        const auto units = format == PositionFormat::dd ? 1000000u : format == PositionFormat::ddm ? 60000u : 36000u;
+        const auto rounded = static_cast<unsigned long>(magnitude * units + 0.5);
+        const auto degrees = rounded / units;
+        const auto remainder = rounded % units;
+        if (format == PositionFormat::dd) {
+            return std::snprintf(text, size, "%s%lu.%06lu", hemisphere == 'S' || hemisphere == 'W' ? "-" : "", degrees, remainder);
+        }
+        if (format == PositionFormat::ddm) {
+            return std::snprintf(text, size, "%lu\xc2\xb0%lu.%03lu'%c", degrees,
+                                 remainder / 1000u, remainder % 1000u, hemisphere);
+        }
+        return std::snprintf(text, size, "%lu\xc2\xb0%lu'%lu.%01lu\"%c", degrees,
+                     remainder / 600u, (remainder % 600u) / 10u, remainder % 10u, hemisphere);
+    };
+    if (format != PositionFormat::dd && format != PositionFormat::ddm && format != PositionFormat::dms) return false;
+    char latitudeText[24]{}, longitudeText[24]{};
+    const auto latitudeLength = coordinate(latitude, *latitudeEnd, latitudeText, sizeof latitudeText);
+    const auto longitudeLength = coordinate(longitude, *longitudeEnd, longitudeText, sizeof longitudeText);
+    if (latitudeLength < 0 || longitudeLength < 0 ||
+        static_cast<std::size_t>(latitudeLength) >= sizeof latitudeText ||
+        static_cast<std::size_t>(longitudeLength) >= sizeof longitudeText) return false;
+    const auto length = std::snprintf(output, capacity, format == PositionFormat::dd ? "%s, %s" : "%s %s", latitudeText, longitudeText);
+    return length >= 0 && static_cast<std::size_t>(length) < capacity;
 }
 
 bool formatNumber(float value, std::uint8_t decimals, char* output, std::size_t capacity) {

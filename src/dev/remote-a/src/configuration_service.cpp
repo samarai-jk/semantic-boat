@@ -47,6 +47,7 @@ void ConfigurationService::run() {
         static_cast<std::uint32_t>(now - configRequestedAt_) >= requestTimeoutMs) {
         configRequestPending_ = false;
         configRequestTimedOut_ = true;
+        display_.setRenderingPaused(false);
         display_.showModal("LINK ERROR", "APP REQUEST TIMED OUT.",
                            semantic_display::ModalSeverity::error);
     }
@@ -155,8 +156,17 @@ void ConfigurationService::selectionCompleted(
     }
     self.configRequestPending_ = false;
     self.configRequestTimedOut_ = false;
-    if (index >= self.nameCount_ || !self.link_.connected() ||
-        !self.link_.requestConfig(self.names_[index].bytes)) {
+    if (index >= self.nameCount_ || !self.link_.connected()) {
+        self.display_.showModal("LINK ERROR", "CONFIGURATION REQUEST FAILED.",
+                                semantic_display::ModalSeverity::error);
+        return;
+    }
+    self.initialDroppedBytes_ = self.link_.droppedBytes();
+    self.initialReceiveErrors_ = self.link_.receiveErrors();
+    self.initialDecodeErrors_ = self.link_.decodeErrors();
+    self.display_.setRenderingPaused(true);
+    if (!self.link_.requestConfig(self.names_[index].bytes)) {
+        self.display_.setRenderingPaused(false);
         self.display_.showModal("LINK ERROR", "CONFIGURATION REQUEST FAILED.",
                                 semantic_display::ModalSeverity::error);
         return;
@@ -174,6 +184,11 @@ void ConfigurationService::loadDefault() {
 
 void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t size,
                                        std::uint32_t crc, std::string_view name) {
+    if (!configRequestPending_) {
+        initialDroppedBytes_ = link_.droppedBytes();
+        initialReceiveErrors_ = link_.receiveErrors();
+        initialDecodeErrors_ = link_.decodeErrors();
+    }
     configRequestPending_ = false;
     if (configRequestTimedOut_) {
         display_.dismissModal();
@@ -259,11 +274,15 @@ void ConfigurationService::configEnd(std::uint16_t transferId) {
     if (!transferActive_ || transferId != transferId_) return;
     transferActive_ = false;
     if (transferFailed_) {
-        char message[96]{};
+        char message[160]{};
         std::snprintf(message, sizeof message,
-                      "CONFIG CHUNK AT %lu; EXPECTED %lu.",
+                  "CONFIG CHUNK AT %lu; EXPECTED %lu. DROPPED %lu; UART ERRORS %lu; FLAGS %lu; DECODE %lu.",
                       static_cast<unsigned long>(failedOffset_),
-                      static_cast<unsigned long>(failedExpectedOffset_));
+                  static_cast<unsigned long>(failedExpectedOffset_),
+                  static_cast<unsigned long>(link_.droppedBytes() - initialDroppedBytes_),
+                  static_cast<unsigned long>(link_.receiveErrors() - initialReceiveErrors_),
+                  static_cast<unsigned long>(link_.lastReceiveError()),
+                  static_cast<unsigned long>(link_.decodeErrors() - initialDecodeErrors_));
         transferError(message);
         return;
     }

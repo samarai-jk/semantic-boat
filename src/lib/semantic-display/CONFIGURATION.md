@@ -37,6 +37,14 @@ and a larger example is [examples/remote-test-v1.json](examples/remote-test-v1.j
       "pages": [
         {
           "id": "overview",
+          "history_plot": {
+            "source": "outside-temp",
+            "title": "OUTSIDE TEMPERATURE",
+            "display_unit": "C",
+            "decimals": 1,
+            "y_min": -10,
+            "y_max": 40
+          },
           "grid": { "columns": 2, "rows": 1, "gap": 4 },
           "widgets": [
             {
@@ -75,6 +83,7 @@ A source gives widgets and data connectors a stable local ID:
 | `path` | Required provider-specific data path. |
 | `unit` | Unit of incoming numeric values. |
 | `stale_ms` | Optional age after which the widget shows unavailable. Zero disables it. |
+| `outdated_ms` | Optional earlier age at which the value is retained with an inverted `OLD` age badge. Zero disables the badge. |
 | `subscribe.period_ms` | Requested provider update period. Zero means provider default. |
 | `history` | Optional RAM history policy described below. |
 
@@ -87,6 +96,60 @@ history must continue while another section is displayed. A section-local
 source may use the same ID as a permanent source and takes precedence for
 widgets in that section. Duplicate permanent IDs, or duplicate source IDs in
 one section, are rejected.
+
+For example, a position source can use:
+
+```json
+{"id":"position","provider":"signalk","path":"navigation.position","outdated_ms":10000,"stale_ms":60000}
+```
+
+These are both absolute ages, not consecutive delays: after 10 seconds the last
+value remains visible with `OLD 10s`; at 60 seconds it becomes `--`. A longer
+cutoff allows ages such as `OLD 3m` and `OLD 2h`. The badge shows whole seconds
+below one minute, whole minutes below one hour, and whole hours thereafter.
+When both thresholds are nonzero, `outdated_ms` must be less than `stale_ms`.
+With `stale_ms: 0`, the retained value never expires. Omitting `outdated_ms`
+preserves stale-only behavior. Explicit unavailable values still clear immediately.
+Visible widgets age and expire without needing another incoming update; normal
+render scheduling may delay a threshold transition by about a second.
+
+The Semantic Boat gateway transports `navigation.position` as decimal latitude
+and longitude with hemisphere letters. The display formats a `value` widget
+using its optional `position_format`: `DD`, `DDM` (default), or `DMS`. Leave the
+source unit and display unit empty. For example:
+
+```json
+{"type":"value","source":"position","position_format":"DDM","cell":{"column":0,"row":0}}
+```
+
+| Format | Example |
+| --- | --- |
+| DD | `48.858370, 2.294481` |
+| DMS | 48&#176;51'30.1"N 2&#176;17'40.1"E |
+| DDM | 48&#176;51.502'N 2&#176;17.669'E |
+
+DD uses signed coordinates with six decimal places and a comma separator,
+without hemisphere letters. DMS uses degree symbols, minute/second marks,
+hemisphere letters, and one decimal place for seconds. DDM uses degree symbols,
+minute marks, hemisphere letters, and three decimal places for minutes. No
+leading zeros are added to degrees, minutes, or whole seconds. Decimal fractions
+retain their specified number of places.
+
+DD stays on one line; DMS/DDM use two lines where widget height permits. Text
+reduces its font scale to fit. Allow enough columns for the longer forms. The
+gateway transports six decimal places; changing notation does not increase
+underlying measurement accuracy or recover precision from older cached values.
+Rounding carries correctly between seconds, minutes, and degrees. Existing
+compiled widgets without the setting default to DDM on updated firmware.
+Choosing another format requires saving and reinstalling the configuration.
+Other arbitrary Signal K object values are not supported.
+
+Updated remote-a firmware accepts an optional source-record age extension and
+requests timestamp-aware link values. Legacy compiled source records remain
+readable. Reinstall a configuration after upgrading firmware to compile the
+new `outdated_ms` field; old firmware ignores that JSON field. Where supplied,
+Signal K sample timestamps contribute to age, so cached values do not restart
+fresh on reconnect. Without a usable provider timestamp, age starts at delivery.
 
 The runtime does not contain Signal K, RS-485, CAN, or NMEA 2000 code. A
 connector enumerates source records from `PackageView`, sends subscriptions for
@@ -109,7 +172,7 @@ The remote-a mapping is:
 | --- | --- |
 | B0 / B1 | Previous / next section; hold B0 for three seconds to sleep |
 | B2 / B3 | Previous / next page |
-| B4 | Action 1, currently reserved |
+| B4 | Action 1: toggle GRAPH / VALUES when the page assigns a history plot |
 | B5 | Action 2: force a full display refresh |
 
 After B0 has been held for one second, remote-a displays a two-second countdown
@@ -189,6 +252,53 @@ bytes per point for each history source. Compilation fails if the sum exceeds
 the device-provided history arena. History starts empty after boot and is not
 written to EEPROM.
 
+### Page History Plot
+
+Each page may assign one numeric history source using `history_plot`, independently
+of its widgets. B4, the third button in the bottom row, toggles between the normal
+page and a full-page line graph. Its label changes from `GRAPH` to `VALUES`.
+Navigating to another page or section returns to normal mode. Pages without a
+plot retain their existing Action 1 behavior; B5 still refreshes the display.
+
+| Field | Meaning |
+| --- | --- |
+| `source` | Required source ID with a non-empty source-level `history` policy. Section-local sources override permanent sources. |
+| `title` | Optional graph heading; defaults to the source ID. |
+| `display_unit` | Optional numeric conversion; defaults to the source unit. |
+| `decimals` | Y-axis label precision, 0 through 6; defaults to 1. |
+| `y_min`, `y_max` | Optional fixed bounds in **display units**, supplied together with minimum less than maximum. Omit both for zero-based automatic scaling. |
+
+Automatic scaling starts at zero and uses the largest retained value for the
+upper bound. Zero or negative-only histories use a range of 0 to 1. Configure a
+negative `y_min` and matching `y_max` to show negative values rather than clipping
+them to zero. Fixed ranges clip out-of-range values at the graph edges. Empty
+histories show `NO DATA`. Graph traces are two pixels thick; there are no axis
+strokes or dedicated Y-label gutter. The white content area is the plot, with a
+six-pixel outer inset. The 14-pixel title is centered at the top, with the
+duration at the top right. The plotted maximum and its scale/unit label begin
+below that header row. Annotations use 11-pixel text. Small white backdrops
+keep those annotations readable where the trace crosses them. Plot assignments
+reuse the source's ring rather than allocating
+another series; multiple pages can plot the same source with different units or
+axes. Text values, including the `signalk-text` provider, are not numeric history.
+
+The X-axis is oldest to latest, with a nominal span of
+`(points - 1) * interval_ms`. There are no labels below the X-axis. Its nominal
+duration appears in the top-right corner as `30m` or `10h`, rounded to the nearest
+minute or hour (seconds or milliseconds for shorter windows).
+Partially filled rings are right-aligned. History
+does not store timestamps or insert empty buckets for outages, so this is a
+sample-history graph, not an exact wall-clock timeline. Section-local sampling
+pauses outside that section; use permanent sources for continuous collection.
+Graph redraws follow committed history samples rather than every raw update.
+All samples disappear on reboot or configuration replacement.
+
+Remote-a reserves 1,024 history bytes in total: a 120-point source costs 512
+bytes, so two such sources fit. The designer exposes source interval, points and
+reducer, page plot assignment, heading, units, precision and fixed bounds. The
+catalog and device compiler enforce the storage budget. Updated display firmware
+is required; saving a designer draft does not update or flash a device.
+
 ## Capacity and validation
 
 There is intentionally no small arbitrary limit on section, page, or widget
@@ -212,7 +322,7 @@ constants, not schema promises, and may be tuned for another MCU.
 
 JSON is compiled once after upload. The binary package has a versioned header,
 payload CRC, source-JSON CRC, counts, and a stream of length-prefixed source,
-section, page, and widget records. All integers have an explicit little-endian
+section, page, widget, and optional history-plot records. All integers have an explicit little-endian
 encoding and all relationships use indices, so the bytes can be loaded at any
 address after reboot.
 

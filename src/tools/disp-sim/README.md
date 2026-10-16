@@ -37,6 +37,17 @@ Flash remote-a, then run:
 npm start
 ```
 
+On Linux, the repository-root launcher forwards the same arguments:
+
+```sh
+./script/sim.sh --list
+./script/sim.sh --port /dev/ttyACM0
+```
+
+Run these commands from the repository root, or invoke the launcher by its
+absolute path from another directory. See the
+[root README](../../../README.md#display-simulator) for dependency setup.
+
 The simulator automatically selects a single ST-Link virtual COM port. If there
 are several ST-Link devices, bypass npm argument forwarding and select one
 explicitly with `node src/index.js --port COM7`.

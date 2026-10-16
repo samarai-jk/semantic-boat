@@ -3,8 +3,8 @@
 namespace remote_a {
 namespace {
 
-constexpr std::uint8_t settingsVersion = 4u;
-constexpr std::size_t payloadSize = 6u;
+constexpr std::uint8_t settingsVersion = 5u;
+constexpr std::size_t payloadSize = 7u;
 
 } // namespace
 
@@ -20,7 +20,10 @@ bool DeviceSettingsStore::load(DeviceSettings& settings) {
         (payload[0] >= 2u && size >= 4u &&
          payload[3] > static_cast<std::uint8_t>(semantic_display::AlertLevel::emergency)) ||
         (payload[0] >= 3u && (size < 5u || payload[4] > 1u)) ||
-        (payload[0] >= 4u && (size < 6u || payload[5] > 1u))) {
+                (payload[0] >= 4u && (size < 6u || payload[5] > 1u)) ||
+                (payload[0] >= 5u &&
+                 (payload[6] < DeviceSettings::minimumRs485Address ||
+                    payload[6] > DeviceSettings::maximumRs485Address))) {
         return false;
     }
     settings.beepVolume = static_cast<BeepVolume>(payload[1]);
@@ -33,10 +36,14 @@ bool DeviceSettingsStore::load(DeviceSettings& settings) {
     }
     settings.developerMode = payload[0] >= 3u && size >= 5u && payload[4] != 0u;
     settings.sleeping = payload[0] >= 4u && size >= 6u && payload[5] != 0u;
+    settings.rs485Address = payload[0] >= 5u ? payload[6] :
+        DeviceSettings::minimumRs485Address;
     return true;
 }
 
 bool DeviceSettingsStore::save(const DeviceSettings& settings) {
+    if (settings.rs485Address < DeviceSettings::minimumRs485Address ||
+        settings.rs485Address > DeviceSettings::maximumRs485Address) return false;
     const std::uint8_t payload[payloadSize]{
         settingsVersion,
         static_cast<std::uint8_t>(settings.beepVolume),
@@ -44,6 +51,7 @@ bool DeviceSettingsStore::save(const DeviceSettings& settings) {
         static_cast<std::uint8_t>(settings.minimumAlertLevel),
         static_cast<std::uint8_t>(settings.developerMode ? 1u : 0u),
         static_cast<std::uint8_t>(settings.sleeping ? 1u : 0u),
+        settings.rs485Address,
     };
     return store_.commit(payload, sizeof payload);
 }

@@ -43,6 +43,7 @@ private:
     static std::string_view ledItem(void*, std::size_t index);
     static std::string_view alertLevelItem(void*, std::size_t index);
     static std::string_view developerModeItem(void*, std::size_t index);
+    static std::string_view rs485AddressItem(void*, std::size_t index);
     static void mainCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void settingsCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void beepCompleted(void*, semantic_display::SelectionResult, std::size_t index);
@@ -51,12 +52,15 @@ private:
                                     std::size_t index);
     static void developerModeCompleted(void*, semantic_display::SelectionResult,
                                        std::size_t index);
+    static void rs485AddressCompleted(void*, semantic_display::SelectionResult,
+                                      std::size_t index);
 
     void openSettings();
     void openBeepVolume();
     void openLedMode();
     void openAlertLevel();
     void openDeveloperMode();
+    void openRs485Address();
     void apply();
     bool persist();
 

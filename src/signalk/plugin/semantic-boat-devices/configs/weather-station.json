@@ -1,0 +1,99 @@
+{
+  "schema": "semantic-display/v1",
+  "name": "Weather Station",
+  "permanent_sources": [
+    {"id": "wind-speed", "provider": "signalk", "path": "environment.weather.wind.speed", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 56, "reducer": "maximum"}},
+    {"id": "temperature", "provider": "signalk", "path": "environment.weather.air.temperature", "unit": "K", "stale_ms": 10000, "history": {"interval_ms": 60000, "points": 56, "reducer": "mean"}},
+    {"id": "pressure", "provider": "signalk", "path": "environment.weather.air.pressure", "unit": "Pa", "stale_ms": 10000, "history": {"interval_ms": 60000, "points": 56, "reducer": "mean"}},
+    {"id": "pm25", "provider": "signalk-ugm3", "path": "environment.weather.air.pm25", "unit": "ug/m3", "stale_ms": 10000, "history": {"interval_ms": 60000, "points": 56, "reducer": "maximum"}}
+  ],
+  "sections": [
+    {
+      "id": "weather-wind", "title": "STATION WIND", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "wind-force", "provider": "signalk", "path": "environment.weather.wind.force", "stale_ms": 10000},
+        {"id": "wind-direction", "provider": "signalk", "path": "environment.weather.wind.direction", "unit": "rad", "stale_ms": 10000},
+        {"id": "wind-sector", "provider": "signalk", "path": "environment.weather.wind.directionSector", "stale_ms": 10000}
+      ],
+      "pages": [{
+        "id": "wind", "title": "WIND", "grid": {"columns": 2, "rows": 2, "gap": 4},
+        "history_plot": {"source": "wind-speed", "title": "PEAK WIND SPEED", "display_unit": "kn", "decimals": 1, "y_min": 0, "y_max": 40},
+        "widgets": [
+          {"type": "value", "source": "wind-speed", "label": "WIND SPEED", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "wind-force", "label": "WIND FORCE", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "wind-direction", "label": "SENSOR DIRECTION", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "wind-sector", "label": "DIRECTION SECTOR", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]
+      }]
+    },
+    {
+      "id": "weather-air", "title": "STATION AIR", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "humidity", "provider": "signalk", "path": "environment.weather.air.relativeHumidity", "unit": "ratio", "stale_ms": 10000},
+        {"id": "noise", "provider": "signalk", "path": "environment.weather.air.noiseLevel", "unit": "dB", "stale_ms": 10000},
+        {"id": "pm10", "provider": "signalk-ugm3", "path": "environment.weather.air.pm10", "unit": "ug/m3", "stale_ms": 10000}
+      ],
+      "pages": [
+        {
+          "id": "air", "title": "AIR", "grid": {"columns": 2, "rows": 2, "gap": 4},
+          "history_plot": {"source": "temperature", "title": "AIR TEMPERATURE", "display_unit": "C", "decimals": 1},
+          "widgets": [
+            {"type": "value", "source": "temperature", "label": "AIR TEMPERATURE", "display_unit": "C", "decimals": 1, "cell": {"column": 0, "row": 0}},
+            {"type": "value", "source": "humidity", "label": "HUMIDITY", "display_unit": "%", "decimals": 1, "cell": {"column": 1, "row": 0}},
+            {"type": "value", "source": "pressure", "label": "AIR PRESSURE", "display_unit": "hPa", "decimals": 1, "cell": {"column": 0, "row": 1}},
+            {"type": "value", "source": "noise", "label": "NOISE", "display_unit": "dB", "decimals": 1, "cell": {"column": 1, "row": 1}}
+          ]
+        },
+        {
+          "id": "particles", "title": "PARTICLES", "grid": {"columns": 2, "rows": 1, "gap": 4},
+          "history_plot": {"source": "pm25", "title": "PEAK PM2.5", "display_unit": "ug/m3", "decimals": 0, "y_min": 0, "y_max": 100},
+          "widgets": [
+            {"type": "value", "source": "pm25", "label": "PM2.5", "display_unit": "ug/m3", "decimals": 0, "max_digits": 6, "cell": {"column": 0, "row": 0}},
+            {"type": "value", "source": "pm10", "label": "PM10", "display_unit": "ug/m3", "decimals": 0, "max_digits": 6, "cell": {"column": 1, "row": 0}}
+          ]
+        },
+        {
+          "id": "pressure", "title": "PRESSURE", "grid": {"columns": 1, "rows": 1, "gap": 4},
+          "history_plot": {"source": "pressure", "title": "AIR PRESSURE", "display_unit": "hPa", "decimals": 1},
+          "widgets": [
+            {"type": "value", "source": "pressure", "label": "AIR PRESSURE", "display_unit": "hPa", "decimals": 1, "cell": {"column": 0, "row": 0}}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "weather-light-rain", "title": "LIGHT AND RAIN", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "illuminance", "provider": "signalk", "path": "environment.weather.light.illuminance", "unit": "lux", "stale_ms": 10000},
+        {"id": "coarse-illuminance", "provider": "signalk", "path": "environment.weather.light.coarseIlluminance", "unit": "lux", "stale_ms": 10000},
+        {"id": "solar", "provider": "signalk", "path": "environment.weather.solar.irradiance", "unit": "W/m2", "stale_ms": 10000},
+        {"id": "rain", "provider": "signalk", "path": "environment.weather.rain.accumulation", "unit": "m", "stale_ms": 10000}
+      ],
+      "pages": [{
+        "id": "light-rain", "title": "LIGHT AND RAIN", "grid": {"columns": 2, "rows": 2, "gap": 4},
+        "widgets": [
+          {"type": "value", "source": "illuminance", "label": "ILLUMINANCE", "display_unit": "lux", "decimals": 0, "max_digits": 7, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "coarse-illuminance", "label": "COARSE LIGHT", "display_unit": "lux", "decimals": 0, "max_digits": 7, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "solar", "label": "SOLAR IRRADIANCE", "display_unit": "W/m2", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "rain", "label": "TOTAL RAIN", "display_unit": "m", "decimals": 4, "max_digits": 8, "cell": {"column": 1, "row": 1}}
+        ]
+      }]
+    },
+    {
+      "id": "weather-station", "title": "STATION STATUS", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "compass", "provider": "signalk", "path": "environment.weather.compass.angle", "unit": "rad", "stale_ms": 10000},
+        {"id": "available", "provider": "signalk-text", "path": "environment.weather.status.available", "stale_ms": 10000},
+        {"id": "last-read", "provider": "signalk", "path": "environment.weather.status.lastSuccessfulRead"}
+      ],
+      "pages": [{
+        "id": "status", "title": "STATUS", "grid": {"columns": 2, "rows": 2, "gap": 4},
+        "widgets": [
+          {"type": "value", "source": "compass", "label": "STATION COMPASS", "display_unit": "deg", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "available", "label": "AVAILABLE", "max_digits": 5, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "last-read", "label": "LAST READ UTC", "max_digits": 24, "cell": {"column": 0, "row": 1, "column_span": 2}}
+        ]
+      }]
+    }
+  ]
+}

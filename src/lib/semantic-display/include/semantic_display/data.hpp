@@ -8,6 +8,7 @@
 namespace semantic_display {
 
 enum class ValueType : std::uint8_t { unavailable, number, text };
+enum class ValueFreshness : std::uint8_t { unavailable, fresh, outdated, stale };
 
 struct ValueSlot {
     float number{};
@@ -37,6 +38,9 @@ private:
 };
 
 float convertUnit(float value, std::string_view sourceUnit, std::string_view displayUnit);
+ValueFreshness valueFreshness(const SourceView& source, const ValueSlot* value, std::uint32_t now);
+bool formatValueAge(std::uint32_t ageMs, char* output, std::size_t capacity);
+bool formatPosition(std::string_view value, PositionFormat format, char* output, std::size_t capacity);
 bool formatNumber(float value, std::uint8_t decimals, char* output, std::size_t capacity);
 bool sourceIsSubscribed(const SourceView& source, std::uint16_t activeSection);
 bool sourceIsSubscribed(const PackageView& package, std::uint16_t sourceIndex,

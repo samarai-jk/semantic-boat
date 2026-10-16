@@ -1,4 +1,6 @@
 #include "semantic_display/compiler.hpp"
+#include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -116,6 +118,17 @@ public:
         } while (position_ < input_.size() && input_[position_] >= '0' && input_[position_] <= '9');
         result = static_cast<std::uint32_t>(value);
         return true;
+    }
+
+    bool number(float& result) {
+        skipWhitespace();
+        const auto start = position_;
+        if (!skipNumber() || position_ - start >= 64u) return false;
+        char text[64]{};
+        std::memcpy(text, input_.data() + start, position_ - start);
+        char* end{};
+        result = std::strtof(text, &end);
+        return end == text + position_ - start && std::isfinite(result);
     }
 
     bool skipValue(std::uint8_t depth = 0u) {
@@ -398,7 +411,7 @@ private:
         if (!reader_.consume('{')) return false;
         Token id{}, provider{}, path{}, unit{};
         std::memcpy(provider.bytes, "signalk", 7u); provider.size = 7u;
-        std::uint32_t subscribeMs{}, staleMs{}, historyInterval{};
+        std::uint32_t subscribeMs{}, staleMs{}, outdatedMs{}, historyInterval{};
         std::uint16_t historyPoints{};
         auto reducer = HistoryReducer::none;
         if (!reader_.consume('}')) {
@@ -411,6 +424,7 @@ private:
                 else if (key.equals("path")) { if (!reader_.string(path)) return false; }
                 else if (key.equals("unit")) { if (!reader_.string(unit)) return false; }
                 else if (key.equals("stale_ms")) { if (!reader_.unsignedInteger(staleMs)) return false; }
+                else if (key.equals("outdated_ms")) { if (!reader_.unsignedInteger(outdatedMs)) return false; }
                 else if (key.equals("subscribe")) { if (!parseSubscribe(subscribeMs)) return false; }
                 else if (key.equals("history")) {
                     if (!parseHistory(historyInterval, historyPoints, reducer)) return false;
@@ -426,6 +440,10 @@ private:
             fail(CompileError::invalidProperty, "history requires interval_ms and points");
             return false;
         }
+        if (outdatedMs != 0u && staleMs != 0u && outdatedMs >= staleMs) {
+            fail(CompileError::invalidProperty, "outdated_ms must be less than stale_ms");
+            return false;
+        }
         if (historyPoints != 0u && reducer == HistoryReducer::none) reducer = HistoryReducer::last;
         const auto addedHistory = historyPoints == 0u ? 0u :
             static_cast<std::uint32_t>(historySeriesOverheadBytes) +
@@ -438,7 +456,7 @@ private:
             fail(CompileError::dataBudgetExceeded, "configuration exceeds data-slot budget");
             return false;
         }
-        std::uint8_t payload[24u + 4u * 255u]{};
+        std::uint8_t payload[28u + 4u * 255u]{};
         auto* cursor = payload;
         write16(cursor, sectionIndex); cursor += 2u;
         write16(cursor, sourceCount_); cursor += 2u;
@@ -456,6 +474,7 @@ private:
             std::memcpy(cursor, token.bytes, token.size); cursor += token.size;
         };
         append(provider); append(id); append(path); append(unit);
+        if (outdatedMs != 0u) { write32(cursor, outdatedMs); cursor += 4u; }
         if (!output_.appendRecord(RecordType::source, payload,
                                   static_cast<std::size_t>(cursor - payload))) {
             fail(CompileError::outputTooLarge, "compiled configuration exceeds package limit");
@@ -578,6 +597,57 @@ private:
         return true;
     }
 
+    bool parseHistoryPlot(std::uint16_t sectionIndex, std::uint16_t pageIndex) {
+        if (!reader_.consume('{')) return false;
+        Token source{}, title{}, unit{};
+        std::uint32_t decimals{1u};
+        float minimum{}, maximum{};
+        bool hasMinimum{}, hasMaximum{};
+        if (!reader_.consume('}')) {
+            bool done{};
+            while (!done) {
+                Token key{};
+                if (!keyValuePrefix(key)) return false;
+                if (key.equals("source")) { if (!reader_.string(source)) return false; }
+                else if (key.equals("title")) { if (!reader_.string(title)) return false; }
+                else if (key.equals("display_unit")) { if (!reader_.string(unit)) return false; }
+                else if (key.equals("decimals")) {
+                    if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false;
+                } else if (key.equals("y_min")) {
+                    if (!reader_.number(minimum)) return false;
+                    hasMinimum = true;
+                } else if (key.equals("y_max")) {
+                    if (!reader_.number(maximum)) return false;
+                    hasMaximum = true;
+                } else { fail(CompileError::invalidProperty, "unknown history plot property"); return false; }
+                if (!nextObjectMember(done)) return false;
+            }
+        }
+        if (source.size == 0u || hasMinimum != hasMaximum ||
+            (hasMinimum && (!(minimum < maximum) || !std::isfinite(maximum - minimum)))) {
+            fail(CompileError::invalidProperty, "history plot requires source and an increasing finite range");
+            return false;
+        }
+        std::uint8_t payload[19u + 3u * 255u]{};
+        write16(payload, sectionIndex); write16(payload + 2u, pageIndex);
+        write16(payload + 4u, noIndex);
+        payload[6] = hasMinimum ? 1u : 0u;
+        payload[7] = static_cast<std::uint8_t>(decimals);
+        payload[8] = source.size; payload[9] = title.size; payload[10] = unit.size;
+        std::uint32_t raw{};
+        std::memcpy(&raw, &minimum, sizeof raw); write32(payload + 11u, raw);
+        std::memcpy(&raw, &maximum, sizeof raw); write32(payload + 15u, raw);
+        auto* cursor = payload + 19u;
+        std::memcpy(cursor, source.bytes, source.size); cursor += source.size;
+        std::memcpy(cursor, title.bytes, title.size); cursor += title.size;
+        std::memcpy(cursor, unit.bytes, unit.size); cursor += unit.size;
+        if (!output_.appendRecord(RecordType::historyPlot, payload, static_cast<std::size_t>(cursor - payload))) {
+            fail(CompileError::outputTooLarge, "compiled history plot exceeds package limit");
+            return false;
+        }
+        return true;
+    }
+
     bool parsePage(std::uint16_t sectionIndex) {
         if (pageCount_ == noIndex || !reader_.consume('{')) return false;
         const auto pageIndex = pageCount_;
@@ -591,6 +661,9 @@ private:
                 if (key.equals("id")) { if (!reader_.string(id)) return false; }
                 else if (key.equals("title")) { if (!reader_.string(title)) return false; }
                 else if (key.equals("grid")) { if (!parseGrid(columns, rows, gap)) return false; }
+                else if (key.equals("history_plot")) {
+                    if (!parseHistoryPlot(sectionIndex, pageIndex)) return false;
+                }
                 else if (key.equals("widgets")) {
                     if (!parseWidgets(sectionIndex, pageIndex)) return false;
                 } else if (!reader_.skipValue()) return false;
@@ -657,7 +730,7 @@ private:
 
     bool parseWidget(std::uint16_t sectionIndex, std::uint16_t pageIndex) {
         if (widgetCount_ == noIndex || !reader_.consume('{')) return false;
-        Token type{}, source{}, label{}, unit{}, text{};
+        Token type{}, source{}, label{}, unit{}, text{}, positionFormat{};
         std::uint8_t column{}, row{}, columnSpan{1u}, rowSpan{1u};
         std::uint32_t decimals{};
         std::uint32_t maxDigits{defaultValueMaxDigits};
@@ -671,6 +744,7 @@ private:
                 else if (key.equals("label")) { if (!reader_.string(label)) return false; }
                 else if (key.equals("display_unit")) { if (!reader_.string(unit)) return false; }
                 else if (key.equals("text")) { if (!reader_.string(text)) return false; }
+                else if (key.equals("position_format")) { if (!reader_.string(positionFormat)) return false; }
                 else if (key.equals("decimals")) {
                     if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false;
                 } else if (key.equals("max_digits")) {
@@ -699,7 +773,16 @@ private:
             fail(CompileError::missingProperty, "text widget requires text");
             return false;
         }
-        std::uint8_t payload[18u + 5u * 255u]{};
+        auto storedPositionFormat = PositionFormat::ddm;
+        if (positionFormat.size != 0u) {
+            if (positionFormat.equals("DD")) storedPositionFormat = PositionFormat::dd;
+            else if (positionFormat.equals("DMS")) storedPositionFormat = PositionFormat::dms;
+            else if (!positionFormat.equals("DDM")) {
+                fail(CompileError::invalidProperty, "position_format must be DD, DDM or DMS");
+                return false;
+            }
+        }
+        std::uint8_t payload[19u + 5u * 255u]{};
         write16(payload, sectionIndex);
         write16(payload + 2u, pageIndex);
         write16(payload + 4u, noIndex);
@@ -720,6 +803,7 @@ private:
             std::memcpy(cursor, token.bytes, token.size); cursor += token.size;
         };
         append(storedType); append(source); append(label); append(unit); append(text);
+        if (storedPositionFormat != PositionFormat::ddm) *cursor++ = static_cast<std::uint8_t>(storedPositionFormat);
         if (!output_.appendRecord(RecordType::widget, payload,
                                   static_cast<std::size_t>(cursor - payload))) {
             fail(CompileError::outputTooLarge, "compiled configuration exceeds package limit");
@@ -900,6 +984,33 @@ private:
             if (recordSize < 4u || offset + recordSize > output_.size()) {
                 fail(CompileError::invalidProperty, "invalid compiled record");
                 return false;
+            }
+            if (record[0] == static_cast<std::uint8_t>(RecordType::historyPlot)) {
+                auto* payload = record + 4u;
+                if (recordSize < 23u) return false;
+                std::uint16_t sourceIndex{};
+                const std::string_view sourceId{reinterpret_cast<const char*>(payload + 19u), payload[8]};
+                if (!findSource(read16(payload), sourceId, sourceIndex)) {
+                    fail(CompileError::unresolvedSource, "history plot references an unknown source");
+                    return false;
+                }
+                bool hasHistory{};
+                for (std::size_t candidate = packageHeaderSize; candidate < output_.size();) {
+                    const auto* other = output_.data() + candidate;
+                    if (other[0] == static_cast<std::uint8_t>(RecordType::source) &&
+                        read16(other + 6u) == sourceIndex) hasHistory = read16(other + 20u) != 0u;
+                    if (candidate != offset && other[0] == static_cast<std::uint8_t>(RecordType::historyPlot) &&
+                        read16(other + 6u) == read16(payload + 2u)) {
+                        fail(CompileError::invalidProperty, "a page supports one history plot");
+                        return false;
+                    }
+                    candidate += read16(other + 2u);
+                }
+                if (!hasHistory) {
+                    fail(CompileError::invalidProperty, "history plot source requires history storage");
+                    return false;
+                }
+                write16(payload + 4u, sourceIndex);
             }
             if (record[0] == static_cast<std::uint8_t>(RecordType::widget)) {
                 auto* payload = record + 4u;

@@ -41,6 +41,7 @@ std::size_t recordSize(const std::uint8_t* data) { return headerSize + read16(da
 bool HistoryStore::configure(const PackageView& package, std::uint32_t now) {
     usedBytes_ = 0u;
     seriesCount_ = 0u;
+    revision_ = 0u;
     if (!memory_ || !package.valid() || package.info().historyBytes > capacity_) return false;
     std::memset(memory_, 0, capacity_);
     RecordView record{};
@@ -104,6 +105,7 @@ bool HistoryStore::ingest(std::uint16_t sourceIndex, float value, std::uint32_t 
     const auto points = read16(series + pointsOffset);
     auto writeIndex = read16(series + writeOffset);
     writeFloat(series + headerSize + writeIndex * sizeof(float), sampleValue);
+    ++revision_;
     writeIndex = static_cast<std::uint16_t>((writeIndex + 1u) % points);
     write16(series + writeOffset, writeIndex);
     auto count = read16(series + countOffset);

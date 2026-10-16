@@ -1,0 +1,11 @@
+{
+  "name": "@semantic-boat/devices",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Signal K gateway and shared configuration catalog for Semantic Boat devices",
+  "main": "index.js",
+  "keywords": ["signalk-node-server-plugin", "signalk-webapp"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "serialport": "^13.0.0", "lucide": "^0.468.0", "ajv": "^8.17.1" }
+}

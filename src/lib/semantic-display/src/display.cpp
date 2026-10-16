@@ -1,5 +1,7 @@
 #include "semantic_display/display.hpp"
 #include "slstm32/epd/font5x7.hpp"
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -122,6 +124,7 @@ void drawVerticalArrow(slstm32::epd::MonochromeCanvas& canvas,
 bool DisplayService::setPackage(PackageView package) {
     if (!package.valid()) return false;
     package_ = package;
+    graphMode_ = false;
     configured_ = true;
     if (!initialized_) return true;
     cancelObsoleteTransfer();
@@ -278,6 +281,8 @@ void DisplayService::logicalSectionAvailability(bool& previous, bool& next) cons
 }
 
 bool DisplayService::actionAvailable(InputAction action) const {
+    HistoryPlotView plot{};
+    if (action == InputAction::action1 && package_.historyPlotByPage(activePage_, plot)) return true;
     if ((action != InputAction::action1 && action != InputAction::action2) ||
         !actionHandler_.execute) return false;
     return !actionHandler_.available || actionHandler_.available(
@@ -286,6 +291,9 @@ bool DisplayService::actionAvailable(InputAction action) const {
 
 std::string_view DisplayService::actionLabel(InputAction action,
                                              std::string_view configuredLabel) const {
+    HistoryPlotView plot{};
+    if (action == InputAction::action1 && package_.historyPlotByPage(activePage_, plot))
+        return graphMode_ ? "VALUES" : "GRAPH";
     if (!actionHandler_.label) return configuredLabel;
     const auto label = actionHandler_.label(actionHandler_.context, action,
                                             activeSection_, activePage_);
@@ -353,6 +361,19 @@ void DisplayService::handle(InputAction action) {
     case InputAction::previousPage: changed = switchPage(-1); break;
     case InputAction::nextPage: changed = switchPage(1); break;
     case InputAction::action1:
+        {
+            HistoryPlotView plot{};
+            if (package_.historyPlotByPage(activePage_, plot)) {
+                graphMode_ = !graphMode_;
+                invalidate(policy_.inputSettleMs);
+                return;
+            }
+        }
+        if (actionAvailable(action)) {
+            changed = actionHandler_.execute(actionHandler_.context, action,
+                                             activeSection_, activePage_);
+        }
+        break;
     case InputAction::action2:
         if (actionAvailable(action)) {
             changed = actionHandler_.execute(actionHandler_.context, action,
@@ -362,6 +383,7 @@ void DisplayService::handle(InputAction action) {
     default: break;
     }
     if (changed) {
+        if (action != InputAction::action1 && action != InputAction::action2) graphMode_ = false;
         if (navigationNotification_.changed) {
             navigationNotification_.changed(navigationNotification_.context, activeSection_, activePage_);
         }
@@ -409,6 +431,10 @@ bool DisplayService::wake() {
 }
 
 bool DisplayService::pageUsesSource(std::uint16_t sourceIndex) const {
+    if (graphMode_) {
+        HistoryPlotView plot{};
+        return package_.historyPlotByPage(activePage_, plot) && plot.sourceIndex == sourceIndex;
+    }
     RecordView record{};
     if (!package_.first(record)) return false;
     do {
@@ -431,11 +457,13 @@ bool DisplayService::pageHasLocalClock() const {
 }
 
 void DisplayService::sourceUpdated(std::uint16_t sourceIndex, bool requestRender) {
+    const auto previousRevision = history_.revision();
     const auto* value = data_.get(sourceIndex);
     if (value && value->type == ValueType::number) {
         (void)history_.ingest(sourceIndex, value->number, value->updatedAt);
     }
     if (!requestRender) return;
+    if (graphMode_ && history_.revision() == previousRevision) return;
     // Continue updating the data store and histories while an overlay is up,
     // but do not let high-rate values compete with dialog interaction for the
     // EPD. Dismissing every dialog invalidates the complete normal screen.
@@ -673,11 +701,19 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     SourceView source{};
     const bool sourceKnown = package_.sourceByIndex(widget.sourceIndex, source);
     const auto now = runtime_.millis ? runtime_.millis() : 0u;
-    const bool stale = sourceKnown && source.staleAfterMs != 0u && value &&
-        static_cast<std::uint32_t>(now - value->updatedAt) > source.staleAfterMs;
+    const auto freshness = valueFreshness(source, value, now);
+    const bool stale = freshness == ValueFreshness::stale;
+    const bool position = sourceKnown && source.provider == "signalk" && source.path == "navigation.position" &&
+        value && value->type == ValueType::text && !stale;
+    char ageText[20]{};
+    if (sourceKnown && freshness == ValueFreshness::outdated) {
+        (void)formatValueAge(static_cast<std::uint32_t>(now - value->updatedAt), ageText, sizeof ageText);
+    }
     if (value && !stale && value->type == ValueType::text) {
         const std::string_view text{value->text, value->textLength};
-        copyView(valueText, sizeof valueText, text);
+        if (position) {
+            if (!formatPosition(text, widget.positionFormat, valueText, sizeof valueText)) copyText(valueText, sizeof valueText, "--");
+        } else copyView(valueText, sizeof valueText, text);
     } else if (value && !stale && value->type == ValueType::number) {
         const auto converted = convertUnit(value->number, source.unit, widget.displayUnit);
         (void)formatNumber(converted, static_cast<std::uint8_t>(widget.decimals),
@@ -689,22 +725,42 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     const auto valueTop = static_cast<std::uint16_t>(y + widgetVerticalPadding +
         (*label ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
     const auto valueBottomInset = static_cast<std::uint16_t>(widgetVerticalPadding +
-        (*unitText ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
+        (*unitText ? auxiliaryTextHeight + auxiliaryTextGap : 0u) +
+        (*ageText ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
     const auto valueBottom = height > valueBottomInset
         ? static_cast<std::uint16_t>(y + height - valueBottomInset) : valueTop;
     const auto valueHeight = valueBottom > valueTop
         ? static_cast<std::uint16_t>(valueBottom - valueTop) : 7u;
-    const auto scale = fittedValueScale(innerWidth, valueHeight, widget.maxDigits);
+    auto* longitudeText = position && widget.positionFormat != PositionFormat::dd && valueHeight >= 16u ? std::strchr(valueText, ' ') : nullptr;
+    if (longitudeText) *longitudeText++ = '\0';
+    const auto latitudeDigits = (Font5x7::textWidth(valueText, 1u) + 1u) / 6u;
+    const auto longitudeDigits = longitudeText ? (Font5x7::textWidth(longitudeText, 1u) + 1u) / 6u : 0u;
+    const auto textDigits = static_cast<std::uint8_t>(latitudeDigits > longitudeDigits ? latitudeDigits : longitudeDigits);
+    const auto digits = value && value->type == ValueType::text && textDigits > widget.maxDigits
+        ? textDigits : widget.maxDigits;
+    const auto lineHeight = longitudeText ? static_cast<std::uint16_t>((valueHeight - 2u) / 2u) : valueHeight;
+    const auto scale = fittedValueScale(innerWidth, lineHeight, digits);
     fitText(valueText, sizeof valueText, innerWidth, scale);
-    const auto valueY = valueHeight > 7u * scale
-        ? static_cast<std::uint16_t>(valueTop + (valueHeight - 7u * scale) / 2u)
+    if (longitudeText) fitText(longitudeText, std::strlen(longitudeText) + 1u, innerWidth, scale);
+    const auto blockHeight = longitudeText ? 14u * scale + 2u : 7u * scale;
+    const auto valueY = valueHeight > blockHeight
+        ? static_cast<std::uint16_t>(valueTop + (valueHeight - blockHeight) / 2u)
         : valueTop;
     drawCentered(x, width, valueY, valueText, true, scale);
+    if (longitudeText) drawCentered(x, width, static_cast<std::uint16_t>(valueY + 7u * scale + 2u), longitudeText, true, scale);
     if (*unitText) {
         const auto unitY = static_cast<std::uint16_t>(
-            y + height - widgetVerticalPadding - auxiliaryTextHeight);
+            y + height - widgetVerticalPadding - auxiliaryTextHeight -
+            (*ageText ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
         if (compact) drawCompactCentered(canvas_, x, width, unitY, unitText, true);
         else drawCentered(x, width, unitY, unitText, true, 2u);
+    }
+    if (*ageText) {
+        const auto ageY = static_cast<std::uint16_t>(y + height - widgetVerticalPadding - auxiliaryTextHeight);
+        canvas_.fillRect(static_cast<std::uint16_t>(x + 4u), static_cast<std::uint16_t>(ageY - 2u),
+                         innerWidth, static_cast<std::uint16_t>(auxiliaryTextHeight + 4u), true);
+        if (compact) drawCompactCentered(canvas_, x, width, ageY, ageText, false);
+        else drawCentered(x, width, ageY, ageText, false, 2u);
     }
 }
 
@@ -956,6 +1012,125 @@ void DisplayService::renderAlert() {
     }
 }
 
+void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_t x,
+                                     std::uint16_t y, std::uint16_t width, std::uint16_t height) {
+    if (width < 180u || height < 90u) return;
+    SourceView source{};
+    if (!package_.sourceByIndex(plot.sourceIndex, source)) return;
+    const auto unit = plot.displayUnit.empty() ? source.unit : plot.displayUnit;
+    char title[64]{}, unitText[24]{};
+    copyView(title, sizeof title, plot.title.empty() ? plot.sourceId : plot.title);
+    copyView(unitText, sizeof unitText, unit);
+    const auto count = history_.sampleCount(plot.sourceIndex);
+    float minimum = plot.minimum, maximum = plot.maximum;
+    bool haveSample{};
+    if (!plot.fixedRange) {
+        minimum = 0.0f;
+        for (std::size_t index = 0u; index < count; ++index) {
+            float value{};
+            if (!history_.sample(plot.sourceIndex, index, value)) continue;
+            value = convertUnit(value, source.unit, unit);
+            if (!std::isfinite(value)) continue;
+            if (!haveSample) { maximum = value; haveSample = true; }
+            else maximum = std::max(maximum, value);
+        }
+        if (!(maximum > minimum)) maximum = 1.0f;
+    }
+    const auto fitScaled = [](char* text, std::uint16_t available, std::uint8_t numerator) {
+        auto length = std::strlen(text);
+        bool shortened{};
+        while (length != 0u && Font5x7::textWidthScaled(text, numerator, 2u) > available) {
+            text[--length] = '\0'; shortened = true;
+        }
+        if (shortened && length != 0u) text[length - 1u] = '.';
+    };
+    char lowerBound[48]{}, upperBound[48]{}, window[24]{};
+    (void)formatNumber(minimum, plot.decimals, lowerBound, sizeof lowerBound);
+    (void)formatNumber(maximum, plot.decimals, upperBound, sizeof upperBound);
+    const auto labelLimit = static_cast<std::uint16_t>(width / 3u - 3u);
+    fitScaled(lowerBound, labelLimit, 3u);
+    fitScaled(upperBound, labelLimit, 3u);
+    fitScaled(unitText, labelLimit, 3u);
+    const auto left = x;
+    const auto top = static_cast<std::uint16_t>(y + 21u);
+    const auto right = static_cast<std::uint16_t>(x + width - 1u);
+    const auto bottom = static_cast<std::uint16_t>(y + height - 1u);
+    const auto graphWidth = static_cast<std::uint16_t>(right - left);
+    const auto graphHeight = static_cast<std::uint16_t>(bottom - top);
+    const auto milliseconds = static_cast<std::uint64_t>(source.historyPoints - 1u) * source.historyIntervalMs;
+    const auto seconds = milliseconds / 1000u;
+    if (seconds >= 3600u)
+        std::snprintf(window, sizeof window, "%luh", static_cast<unsigned long>((seconds + 1800u) / 3600u));
+    else if (seconds >= 60u)
+        std::snprintf(window, sizeof window, "%lum", static_cast<unsigned long>((seconds + 30u) / 60u));
+    else if (milliseconds >= 1000u)
+        std::snprintf(window, sizeof window, "%lus", static_cast<unsigned long>(seconds));
+    else std::snprintf(window, sizeof window, "%lums", static_cast<unsigned long>(milliseconds));
+    fitScaled(window, graphWidth / 2u, 3u);
+    const auto windowWidth = Font5x7::textWidthScaled(window, 3u, 2u);
+    const bool validRange = count != 0u && (plot.fixedRange || haveSample) &&
+        minimum < maximum && std::isfinite(maximum - minimum);
+    char upperCaption[72]{};
+    if (validRange) std::snprintf(upperCaption, sizeof upperCaption, "%s%s%s", upperBound, *unitText ? " " : "", unitText);
+    else copyText(upperCaption, sizeof upperCaption, unitText);
+    fitScaled(upperCaption, labelLimit, 3u);
+    const auto sideWidth = std::max(Font5x7::textWidthScaled(upperCaption, 3u, 2u), windowWidth);
+    fitScaled(title, static_cast<std::uint16_t>(width - 2u * (sideWidth + 6u)), 4u);
+    const auto drawAnnotation = [&](const char* text, std::uint16_t textX, std::uint16_t textY, std::uint8_t numerator) {
+        const auto textWidth = Font5x7::textWidthScaled(text, numerator, 2u);
+        if (textWidth == 0u) return;
+        const auto textHeight = static_cast<std::uint16_t>((7u * numerator + 1u) / 2u);
+        canvas_.fillRect(static_cast<std::uint16_t>(textX - 2u), static_cast<std::uint16_t>(textY - 2u),
+                         static_cast<std::uint16_t>(textWidth + 4u), static_cast<std::uint16_t>(textHeight + 4u), false);
+        Font5x7::drawTextScaled(canvas_, textX, textY, text, true, numerator, 2u);
+    };
+    const auto drawAnnotations = [&]() {
+        drawAnnotation(title, static_cast<std::uint16_t>(x + (width - Font5x7::textWidthScaled(title, 4u, 2u)) / 2u), y, 4u);
+        drawAnnotation(upperCaption, left, static_cast<std::uint16_t>(y + 21u), 3u);
+        drawAnnotation(window, static_cast<std::uint16_t>(right + 1u - windowWidth), static_cast<std::uint16_t>(y + 5u), 3u);
+        if (validRange) drawAnnotation(lowerBound, left, static_cast<std::uint16_t>(bottom - 10u), 3u);
+    };
+    if (!validRange) {
+        const auto messageWidth = Font5x7::textWidthScaled("NO DATA", 5u, 2u);
+        Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(left + (graphWidth - messageWidth) / 2u),
+                              static_cast<std::uint16_t>(top + (graphHeight - 18u) / 2u), "NO DATA", true, 5u, 2u);
+        drawAnnotations();
+        return;
+    }
+    for (std::uint16_t row = 1u; row < 4u; ++row) {
+        const auto gridY = static_cast<std::uint16_t>(top + row * graphHeight / 4u);
+        for (std::uint16_t column = 4u; column < graphWidth; column += 8u)
+            canvas_.setPixel(static_cast<std::uint16_t>(left + column), gridY, true);
+    }
+    int previousX{}, previousY{};
+    bool previousValid{};
+    const auto drawPoint = [&](int pixelX, int pixelY) {
+        canvas_.fillRect(static_cast<std::uint16_t>(std::min(pixelX, static_cast<int>(right) - 1)),
+                         static_cast<std::uint16_t>(std::min(pixelY, static_cast<int>(bottom) - 1)), 2u, 2u, true);
+    };
+    for (std::size_t index = 0u; index < count; ++index) {
+        float value{};
+        if (!history_.sample(plot.sourceIndex, index, value)) { previousValid = false; continue; }
+        value = convertUnit(value, source.unit, unit);
+        if (!std::isfinite(value)) { previousValid = false; continue; }
+        const auto pointX = static_cast<int>(left + (source.historyPoints > 1u
+            ? (source.historyPoints - count + index) * graphWidth / (source.historyPoints - 1u) : graphWidth));
+        const auto ratio = std::clamp((value - minimum) / (maximum - minimum), 0.0f, 1.0f);
+        const auto pointY = static_cast<int>(bottom - static_cast<std::uint16_t>(ratio * graphHeight));
+        drawPoint(pointX, pointY);
+        if (previousValid) {
+            const auto steps = std::max(std::abs(pointX - previousX), std::abs(pointY - previousY));
+            for (int step = 0; step <= steps; ++step) {
+                const auto pixelX = steps == 0 ? pointX : previousX + (pointX - previousX) * step / steps;
+                const auto pixelY = steps == 0 ? pointY : previousY + (pointY - previousY) * step / steps;
+                drawPoint(pixelX, pixelY);
+            }
+        }
+        previousX = pointX; previousY = pointY; previousValid = true;
+    }
+    drawAnnotations();
+}
+
 void DisplayService::render() {
     if (alert_.visible) {
         renderAlert();
@@ -1071,6 +1246,14 @@ void DisplayService::render() {
     const auto contentWidth = safeWidth;
     const auto contentHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight -
                                                            footerHeight - 2u * outerGap);
+    HistoryPlotView plot{};
+    if (graphMode_ && package_.historyPlotByPage(activePage_, plot)) {
+        constexpr std::uint16_t graphMargin = 6u;
+        renderHistoryPlot(plot, graphMargin, static_cast<std::uint16_t>(headerHeight + graphMargin),
+                          static_cast<std::uint16_t>(canvas_.width() - 2u * graphMargin),
+                          static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight - 2u * graphMargin));
+        return;
+    }
     const auto gap = page.gap < widgetSeparatorWidth ? widgetSeparatorWidth : page.gap;
     const auto horizontalGaps = static_cast<std::uint16_t>((page.columns - 1u) * gap);
     const auto verticalGaps = static_cast<std::uint16_t>((page.rows - 1u) * gap);
@@ -1142,6 +1325,26 @@ void DisplayService::run() {
         static_cast<std::int32_t>(now - clockRefreshAt_) >= 0) {
         clockRefreshAt_ = now + policy_.localClockRenderIntervalMs;
         if (!dialogVisible() && !renderingPaused_ && pageHasLocalClock()) invalidate(0u);
+    }
+    if (static_cast<std::uint32_t>(now - ageCheckedAt_) >= 1000u) {
+        ageCheckedAt_ = now;
+        if (!dirty_ && !dialogVisible() && !renderingPaused_) {
+            RecordView record{};
+            if (package_.first(record)) do {
+                WidgetView widget{}; SourceView source{};
+                if (!package_.widget(record, widget) || widget.pageIndex != activePage_ ||
+                    widget.type != WidgetType::value || !package_.sourceByIndex(widget.sourceIndex, source)) continue;
+                const auto* value = data_.get(widget.sourceIndex);
+                const auto current = valueFreshness(source, value, now);
+                const auto previous = valueFreshness(source, value, lastRenderStartedAt_);
+                char currentAge[20]{}, previousAge[20]{};
+                if (value && current == ValueFreshness::outdated) {
+                    (void)formatValueAge(static_cast<std::uint32_t>(now - value->updatedAt), currentAge, sizeof currentAge);
+                    (void)formatValueAge(static_cast<std::uint32_t>(lastRenderStartedAt_ - value->updatedAt), previousAge, sizeof previousAge);
+                }
+                if (current != previous || std::strcmp(currentAge, previousAge) != 0) { invalidate(0u); break; }
+            } while (package_.next(record));
+        }
     }
     if (panel_.updateState() == UpdateState::failed) {
         activeUpdate_ = false;

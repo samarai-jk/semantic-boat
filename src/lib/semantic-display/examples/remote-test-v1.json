@@ -146,11 +146,20 @@
         {
           "id": "history",
           "title": "History",
+          "history_plot": {
+            "source": "outside-temperature-history",
+            "title": "OUTSIDE TEMPERATURE",
+            "display_unit": "C",
+            "decimals": 1
+          },
           "grid": { "columns": 1, "rows": 1, "gap": 0 },
           "widgets": [
             {
-              "type": "future-history-graph",
+              "type": "value",
               "source": "outside-temperature-history",
+              "label": "OUTSIDE",
+              "display_unit": "C",
+              "decimals": 1,
               "cell": { "column": 0, "row": 0 }
             }
           ]

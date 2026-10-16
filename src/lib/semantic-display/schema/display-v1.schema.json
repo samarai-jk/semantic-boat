@@ -27,7 +27,8 @@
         "provider": { "type": "string", "default": "signalk" },
         "path": { "type": "string", "minLength": 1 },
         "unit": { "type": "string" },
-        "stale_ms": { "type": "integer", "minimum": 0 },
+        "stale_ms": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "outdated_ms": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "subscribe": {
           "type": "object",
           "properties": {
@@ -68,11 +69,26 @@
         "cell": { "$ref": "#/$defs/cell" },
         "label": { "type": "string" },
         "display_unit": { "type": "string" },
+        "position_format": { "enum": ["DD", "DDM", "DMS"], "default": "DDM" },
         "decimals": { "type": "integer", "minimum": 0, "maximum": 6 },
         "max_digits": { "type": "integer", "minimum": 1, "maximum": 32, "default": 6 },
         "text": { "type": "string" }
       },
       "additionalProperties": true
+    },
+    "historyPlot": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "display_unit": { "type": "string" },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 6, "default": 1 },
+        "y_min": { "type": "number" },
+        "y_max": { "type": "number" }
+      },
+      "dependentRequired": { "y_min": ["y_max"], "y_max": ["y_min"] },
+      "additionalProperties": false
     },
     "page": {
       "type": "object",
@@ -80,6 +96,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "title": { "type": "string" },
+        "history_plot": { "$ref": "#/$defs/historyPlot" },
         "grid": {
           "type": "object",
           "required": ["columns", "rows"],

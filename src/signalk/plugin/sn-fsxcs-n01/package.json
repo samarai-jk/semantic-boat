@@ -1,0 +1,11 @@
+{
+  "name": "@semantic-boat/sn-fsxcs-n01",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Signal K acquisition for the SN-*-FSXCS-N01 Modbus weather station",
+  "main": "index.js",
+  "keywords": ["signalk-node-server-plugin"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "modbus-serial": "^8.0.23" }
+}

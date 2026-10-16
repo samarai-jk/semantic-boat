@@ -30,6 +30,10 @@ const std::uint8_t* glyph(char character) {
     static constexpr std::uint8_t period[5] = {0x00,0x60,0x60,0x00,0x00};
     static constexpr std::uint8_t colon[5] = {0x00,0x36,0x36,0x00,0x00};
     static constexpr std::uint8_t dash[5] = {0x08,0x08,0x08,0x08,0x08};
+    static constexpr std::uint8_t degree[5] = {0x06,0x09,0x09,0x06,0x00};
+    static constexpr std::uint8_t apostrophe[5] = {0x00,0x03,0x01,0x00,0x00};
+    static constexpr std::uint8_t quote[5] = {0x03,0x00,0x03,0x00,0x00};
+    static constexpr std::uint8_t comma[5] = {0x00,0x40,0x20,0x00,0x00};
 
     if (character >= 'a' && character <= 'z') character = static_cast<char>(character - 'a' + 'A');
     if (character >= '0' && character <= '9') return digits[character - '0'];
@@ -37,7 +41,19 @@ const std::uint8_t* glyph(char character) {
     if (character == '.') return period;
     if (character == ':') return colon;
     if (character == '-') return dash;
+    if (static_cast<unsigned char>(character) == 0xb0u) return degree;
+    if (character == '\'') return apostrophe;
+    if (character == '"') return quote;
+    if (character == ',') return comma;
     return space;
+}
+
+char nextCharacter(const char*& text) {
+    if (static_cast<unsigned char>(text[0]) == 0xc2u && static_cast<unsigned char>(text[1]) == 0xb0u) {
+        text += 2;
+        return static_cast<char>(0xb0u);
+    }
+    return *text++;
 }
 
 std::uint16_t scaled(std::uint16_t value, std::uint8_t numerator,
@@ -72,7 +88,7 @@ void Font5x7::drawText(MonochromeCanvas& canvas, std::uint16_t x, std::uint16_t 
     if (!text || scale == 0u) return;
     const auto advance = static_cast<std::uint16_t>(6u * scale);
     while (*text) {
-        drawChar(canvas, x, y, *text++, black, scale);
+        drawChar(canvas, x, y, nextCharacter(text), black, scale);
         x = static_cast<std::uint16_t>(x + advance);
     }
 }
@@ -80,7 +96,7 @@ void Font5x7::drawText(MonochromeCanvas& canvas, std::uint16_t x, std::uint16_t 
 std::uint16_t Font5x7::textWidth(const char* text, std::uint8_t scale) {
     if (!text || !*text || scale == 0u) return 0u;
     std::uint16_t length{};
-    while (text[length]) ++length;
+    while (*text) { (void)nextCharacter(text); ++length; }
     return static_cast<std::uint16_t>(length * 6u * scale - scale);
 }
 
@@ -92,7 +108,7 @@ void Font5x7::drawTextScaled(MonochromeCanvas& canvas, std::uint16_t x,
     const auto glyphHeight = scaled(7u, numerator, denominator);
     const auto advance = scaled(6u, numerator, denominator);
     while (*text) {
-        const auto* data = glyph(*text++);
+        const auto* data = glyph(nextCharacter(text));
         for (std::uint16_t column = 0u; column < glyphWidth; ++column) {
             const auto sourceColumn = static_cast<std::uint8_t>(
                 static_cast<std::uint32_t>(column) * denominator / numerator);
@@ -113,7 +129,7 @@ std::uint16_t Font5x7::textWidthScaled(const char* text, std::uint8_t numerator,
                                        std::uint8_t denominator) {
     if (!text || !*text || numerator == 0u || denominator == 0u) return 0u;
     std::uint16_t length{};
-    while (text[length]) ++length;
+    while (*text) { (void)nextCharacter(text); ++length; }
     const auto glyphWidth = scaled(5u, numerator, denominator);
     const auto advance = scaled(6u, numerator, denominator);
     return static_cast<std::uint16_t>((length - 1u) * advance + glyphWidth);

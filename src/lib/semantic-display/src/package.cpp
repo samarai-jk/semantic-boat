@@ -1,4 +1,6 @@
 #include "semantic_display/package.hpp"
+#include <cmath>
+#include <cstring>
 
 namespace semantic_display {
 namespace {
@@ -50,18 +52,23 @@ PackageInfo PackageView::info() const {
     return result;
 }
 
-bool PackageView::valid() const {
+bool PackageView::headerValid() const {
     if (!data_ || size_ < packageHeaderSize || read32(data_) != packageMagic ||
         read16(data_ + 4u) != packageFormatVersion ||
         read16(data_ + 6u) != packageHeaderSize) return false;
     const auto details = info();
-    if (details.totalSize < packageHeaderSize || details.totalSize > size_) return false;
+    return details.totalSize >= packageHeaderSize && details.totalSize <= size_;
+}
+
+bool PackageView::valid() const {
+    if (!headerValid()) return false;
+    const auto details = info();
     return crc32(data_ + packageHeaderSize, details.totalSize - packageHeaderSize) ==
            details.payloadCrc32;
 }
 
 bool PackageView::recordAt(std::size_t offset, RecordView& record) const {
-    if (!valid() || offset + 4u > info().totalSize) return false;
+    if (!headerValid() || offset > info().totalSize || info().totalSize - offset < 4u) return false;
     const auto recordSize = read16(data_ + offset + 2u);
     if (recordSize < 4u || offset + recordSize > info().totalSize) return false;
     record.type = static_cast<RecordType>(data_[offset]);
@@ -78,12 +85,13 @@ bool PackageView::first(RecordView& record) const {
 }
 
 bool PackageView::next(RecordView& record) const {
-    if (!valid() || record.nextOffset >= info().totalSize) return false;
+    if (!headerValid() || record.nextOffset >= info().totalSize) return false;
     return recordAt(record.nextOffset, record);
 }
 
 bool PackageView::source(const RecordView& record, SourceView& sourceResult) const {
     if (record.type != RecordType::source || record.payloadSize < 24u) return false;
+    sourceResult = {};
     const auto* current = record.payload;
     const auto* end = record.payload + record.payloadSize;
     sourceResult.sectionIndex = read16(current); current += 2u;
@@ -98,10 +106,14 @@ bool PackageView::source(const RecordView& record, SourceView& sourceResult) con
     const auto idLength = *current++;
     const auto pathLength = *current++;
     const auto unitLength = *current++;
-    return takeString(current, end, providerLength, sourceResult.provider) &&
+        if (!(takeString(current, end, providerLength, sourceResult.provider) &&
            takeString(current, end, idLength, sourceResult.id) &&
            takeString(current, end, pathLength, sourceResult.path) &&
-           takeString(current, end, unitLength, sourceResult.unit) && current == end;
+            takeString(current, end, unitLength, sourceResult.unit))) return false;
+        if (current == end) return true;
+        if (end - current != 4) return false;
+        sourceResult.outdatedAfterMs = read32(current);
+        return sourceResult.staleAfterMs == 0u || sourceResult.outdatedAfterMs < sourceResult.staleAfterMs;
 }
 
 bool PackageView::section(const RecordView& record, SectionView& result) const {
@@ -147,6 +159,7 @@ bool PackageView::page(const RecordView& record, PageView& result) const {
 
 bool PackageView::widget(const RecordView& record, WidgetView& result) const {
     if (record.type != RecordType::widget || record.payloadSize < 18u) return false;
+    result = {};
     const auto* current = record.payload;
     const auto* end = record.payload + record.payloadSize;
     result.sectionIndex = read16(current); current += 2u;
@@ -165,11 +178,52 @@ bool PackageView::widget(const RecordView& record, WidgetView& result) const {
     const auto textLength = *current++;
     const auto storedMaxDigits = *current++;
     result.maxDigits = storedMaxDigits != 0u ? storedMaxDigits : defaultValueMaxDigits;
-    return takeString(current, end, typeLength, result.typeName) &&
+        if (!(takeString(current, end, typeLength, result.typeName) &&
            takeString(current, end, sourceLength, result.sourceId) &&
            takeString(current, end, labelLength, result.label) &&
            takeString(current, end, unitLength, result.displayUnit) &&
-           takeString(current, end, textLength, result.text) && current == end;
+            takeString(current, end, textLength, result.text))) return false;
+        if (current == end) return true;
+        if (end - current != 1 || *current > static_cast<std::uint8_t>(PositionFormat::dms)) return false;
+        result.positionFormat = static_cast<PositionFormat>(*current);
+        return true;
+}
+
+bool PackageView::historyPlot(const RecordView& record, HistoryPlotView& result) const {
+    if (record.type != RecordType::historyPlot || record.payloadSize < 19u) return false;
+    result = {};
+    const auto* current = record.payload;
+    const auto* end = current + record.payloadSize;
+    result.sectionIndex = read16(current); current += 2u;
+    result.pageIndex = read16(current); current += 2u;
+    result.sourceIndex = read16(current); current += 2u;
+    const auto flags = *current++;
+    result.fixedRange = (flags & 1u) != 0u;
+    result.decimals = *current++;
+    const auto sourceLength = *current++;
+    const auto titleLength = *current++;
+    const auto unitLength = *current++;
+    auto raw = read32(current); current += 4u;
+    std::memcpy(&result.minimum, &raw, sizeof raw);
+    raw = read32(current); current += 4u;
+    std::memcpy(&result.maximum, &raw, sizeof raw);
+    if (flags > 1u || result.decimals > 6u || result.sourceIndex >= info().sourceCount ||
+        result.pageIndex >= info().pageCount || result.sectionIndex >= info().sectionCount ||
+        (result.fixedRange && (!(result.minimum < result.maximum) ||
+        !std::isfinite(result.minimum) || !std::isfinite(result.maximum) ||
+        !std::isfinite(result.maximum - result.minimum)))) return false;
+    return takeString(current, end, sourceLength, result.sourceId) &&
+           takeString(current, end, titleLength, result.title) &&
+           takeString(current, end, unitLength, result.displayUnit) && current == end;
+}
+
+bool PackageView::historyPlotByPage(std::uint16_t index, HistoryPlotView& result) const {
+    RecordView record{};
+    if (!first(record)) return false;
+    do {
+        if (historyPlot(record, result) && result.pageIndex == index) return true;
+    } while (next(record));
+    return false;
 }
 
 bool PackageView::sourceByIndex(std::uint16_t index, SourceView& result) const {

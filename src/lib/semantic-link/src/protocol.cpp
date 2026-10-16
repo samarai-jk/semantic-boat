@@ -74,20 +74,22 @@ std::uint16_t crc16Ccitt(const std::uint8_t* data, std::size_t size) {
 std::size_t encode(MessageType type, std::uint8_t sequence,
                    const std::uint8_t* payload, std::size_t payloadSize,
                    std::uint8_t* output, std::size_t outputCapacity,
-                   std::uint8_t flags) {
+                   std::uint8_t flags, std::uint8_t version, bool response) {
     if (!output || payloadSize > maxPayloadSize ||
         (payloadSize != 0u && !payload)) return 0u;
 
     std::array<std::uint8_t, maxDecodedFrameSize> decoded{};
-    decoded[0] = protocolVersion;
+    decoded[0] = version;
     decoded[1] = static_cast<std::uint8_t>(type);
     decoded[2] = sequence;
     decoded[3] = flags;
-    writeU16(decoded.data() + 4u, static_cast<std::uint16_t>(payloadSize));
+    const auto headerSize = frameHeaderSize + (version == addressedProtocolVersion ? 1u : 0u);
+    if (version == addressedProtocolVersion) decoded[4] = response ? 1u : 0u;
+    writeU16(decoded.data() + headerSize - 2u, static_cast<std::uint16_t>(payloadSize));
     for (std::size_t index = 0u; index < payloadSize; ++index) {
-        decoded[frameHeaderSize + index] = payload[index];
+        decoded[headerSize + index] = payload[index];
     }
-    const auto crcOffset = frameHeaderSize + payloadSize;
+    const auto crcOffset = headerSize + payloadSize;
     writeU16(decoded.data() + crcOffset, crc16Ccitt(decoded.data(), crcOffset));
     const auto encodedSize = cobsEncode(decoded.data(), crcOffset + frameCrcSize,
                                         output, outputCapacity);
@@ -124,12 +126,18 @@ DecodeResult Decoder::finish(MessageView& message) {
     const auto decodedSize = cobsDecode(encoded_.data(), encodedSize_,
                                         decoded_.data(), decoded_.size());
     encodedSize_ = 0u;
-    if (decodedSize < frameHeaderSize + frameCrcSize || decoded_[0] != protocolVersion) {
+    if (decodedSize < frameHeaderSize + frameCrcSize ||
+        (decoded_[0] != protocolVersion && decoded_[0] != addressedProtocolVersion)) {
         ++errorCount_;
         return DecodeResult::error;
     }
-    const auto payloadSize = readU16(decoded_.data() + 4u);
-    const auto expectedSize = frameHeaderSize + payloadSize + frameCrcSize;
+    const auto headerSize = frameHeaderSize + (decoded_[0] == addressedProtocolVersion ? 1u : 0u);
+    if (decodedSize < headerSize + frameCrcSize ||
+        (decoded_[0] == addressedProtocolVersion && (decoded_[4] > 1u || decoded_[3] == 0u || decoded_[3] == 255u))) {
+        ++errorCount_; return DecodeResult::error;
+    }
+    const auto payloadSize = readU16(decoded_.data() + headerSize - 2u);
+    const auto expectedSize = headerSize + payloadSize + frameCrcSize;
     if (payloadSize > maxPayloadSize || decodedSize != expectedSize) {
         ++errorCount_;
         return DecodeResult::error;
@@ -143,9 +151,74 @@ DecodeResult Decoder::finish(MessageView& message) {
     message.type = static_cast<MessageType>(decoded_[1]);
     message.sequence = decoded_[2];
     message.flags = decoded_[3];
-    message.payload = decoded_.data() + frameHeaderSize;
+    message.payload = decoded_.data() + headerSize;
     message.payloadSize = payloadSize;
+    message.version = decoded_[0];
+    message.response = message.version == addressedProtocolVersion && decoded_[4] != 0u;
     return DecodeResult::message;
+}
+
+void PolledEndpoint::setAddress(std::uint8_t address) {
+    if (address == 0u || address == 255u) return;
+    address_ = address;
+    clearQueue();
+    previousReplySize_ = 0u;
+    granted_ = false;
+}
+
+void PolledEndpoint::clearQueue() {
+    head_ = 0u;
+    count_ = 0u;
+}
+
+bool PolledEndpoint::enqueue(MessageType type, const std::uint8_t* payload, std::size_t size) {
+    if (count_ == queue_.size() || size > maxPayloadSize || (size != 0u && !payload)) return false;
+    auto& entry = queue_[(head_ + count_) % queue_.size()];
+    entry.type = type;
+    entry.size = static_cast<std::uint16_t>(size);
+    for (std::size_t index = 0u; index < size; ++index) entry.payload[index] = payload[index];
+    ++count_;
+    return true;
+}
+
+bool PolledEndpoint::request(const MessageView& message, std::uint32_t now, std::uint32_t receivedAt) {
+    granted_ = false;
+    if (message.version != addressedProtocolVersion || message.response || message.flags != address_ ||
+        message.type == MessageType::busIdle ||
+        static_cast<std::uint32_t>(now - receivedAt) > replyStartWindowMs) return false;
+    requestCrc_ = crc16Ccitt(message.payload, message.payloadSize);
+    requestType_ = message.type;
+    sequence_ = message.sequence;
+    grantedAt_ = receivedAt;
+    duplicate_ = previousReplySize_ != 0u && sequence_ == previousSequence_ &&
+        requestCrc_ == previousRequestCrc_ && requestType_ == previousType_ &&
+        static_cast<std::uint32_t>(now - previousReplyAt_) < 1000u;
+    granted_ = true;
+    return true;
+}
+
+std::size_t PolledEndpoint::reply(std::uint32_t now, std::uint8_t* output, std::size_t capacity) {
+    if (!granted_ || !output) return 0u;
+    granted_ = false;
+    if (duplicate_) {
+        if (static_cast<std::uint32_t>(now - grantedAt_) > replyStartWindowMs) return 0u;
+        if (capacity < previousReplySize_) return 0u;
+        for (std::size_t index = 0u; index < previousReplySize_; ++index) output[index] = previousReply_[index];
+        return previousReplySize_;
+    }
+    const auto* pending = count_ ? &queue_[head_] : nullptr;
+    const auto size = encode(pending ? pending->type : MessageType::busIdle, sequence_,
+        pending ? pending->payload.data() : nullptr, pending ? pending->size : 0u,
+        output, capacity, address_, addressedProtocolVersion, true);
+    if (size == 0u) return 0u;
+    if (pending) { head_ = static_cast<std::uint8_t>((head_ + 1u) % queue_.size()); --count_; }
+    for (std::size_t index = 0u; index < size; ++index) previousReply_[index] = output[index];
+    previousReplySize_ = size;
+    previousReplyAt_ = now;
+    previousRequestCrc_ = requestCrc_;
+    previousType_ = requestType_;
+    previousSequence_ = sequence_;
+    return static_cast<std::uint32_t>(now - grantedAt_) <= replyStartWindowMs ? size : 0u;
 }
 
 } // namespace semantic_link

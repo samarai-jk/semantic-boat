@@ -12,11 +12,14 @@ enum class BeepVolume : std::uint8_t { off, minimum, medium, maximum };
 enum class LedMode : std::uint8_t { normal, subdued, off };
 
 struct DeviceSettings {
+    static constexpr std::uint8_t minimumRs485Address = 1u;
+    static constexpr std::uint8_t maximumRs485Address = 254u;
     BeepVolume beepVolume{BeepVolume::minimum};
     LedMode ledMode{LedMode::normal};
     semantic_display::AlertLevel minimumAlertLevel{semantic_display::AlertLevel::info};
     bool developerMode{};
     bool sleeping{};
+    std::uint8_t rs485Address{minimumRs485Address};
 };
 
 class DeviceSettingsStore {

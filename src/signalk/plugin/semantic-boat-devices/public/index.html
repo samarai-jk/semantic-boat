@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semantic Boat Devices</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header><div><span class="eyebrow">SEMANTIC BOAT</span><h1>Devices</h1></div><span id="connection">Connecting</span></header>
+  <nav aria-label="Views"><button class="tab active" data-view="devices" aria-selected="true">Devices</button><button class="tab" data-view="configurations" aria-selected="false">Configurations</button></nav>
+  <main>
+    <p id="notice" role="status" hidden></p>
+    <section id="devices-view"><div id="device-list"></div></section>
+    <section id="configurations-view" hidden>
+      <div class="catalog-layout">
+        <aside><div class="property-heading"><h2>Configurations</h2><button id="new" class="icon" title="New configuration" aria-label="New configuration"><i data-lucide="file-plus"></i></button></div><div id="catalog-list"></div></aside>
+        <div class="editor"><div class="editor-toolbar"><input id="filename" value="new-display.json" aria-label="Configuration filename" spellcheck="false"><button id="save" class="icon" title="Validate and save" aria-label="Validate and save"><i data-lucide="save"></i></button><button id="delete" class="icon" title="Delete configuration" aria-label="Delete configuration"><i data-lucide="trash-2"></i></button><button id="download" class="icon" title="Download JSON" aria-label="Download JSON"><i data-lucide="download"></i></button></div>
+          <div class="editor-modes" role="tablist" aria-label="Configuration editor"><button class="tab active" id="properties-mode" role="tab" aria-selected="true">Properties</button><button class="tab" id="json-mode" role="tab" aria-selected="false">JSON</button><button id="refresh-paths" class="icon" title="Refresh Signal K paths" aria-label="Refresh Signal K paths"><i data-lucide="refresh-cw"></i></button><span id="path-count"></span></div>
+          <div id="properties"></div><textarea id="json" aria-label="Display configuration JSON" spellcheck="false" hidden></textarea><div class="editor-footer"><span id="editor-status">Unsaved</span><span id="byte-count"></span></div></div>
+      </div>
+    </section>
+  </main>
+  <dialog id="new-config-dialog" aria-labelledby="new-config-title">
+    <form id="new-config-form">
+      <h2 id="new-config-title">New configuration</h2>
+      <label class="property-field">Filename<input id="new-filename" value="new-display.json" required maxlength="47" aria-label="New configuration filename"></label>
+      <label class="property-field">Template<select id="template" aria-label="Configuration template"><option value="">Blank configuration</option></select></label>
+      <div class="dialog-actions"><button type="button" id="cancel-new">Cancel</button><button type="submit"><i data-lucide="plus"></i>Create draft</button></div>
+    </form>
+  </dialog>
+  <datalist id="signal-paths"></datalist>
+  <script src="/plugins/semantic-boat-devices/ui/lucide.js"></script><script src="app.js"></script>
+</body>
+</html>

@@ -2,10 +2,12 @@
 #include "semantic_display/data.hpp"
 #include "semantic_display/display.hpp"
 #include "semantic_display/history.hpp"
+#include "slstm32/epd/font5x7.hpp"
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -168,6 +170,54 @@ int main() {
     assert(std::strcmp(formatted, "-0.05") == 0);
     assert(semantic_display::formatNumber(3.0f, 0u, formatted, sizeof formatted));
     assert(std::strcmp(formatted, "3") == 0);
+    assert(semantic_display::formatPosition("50.80000N 1.30000W", semantic_display::PositionFormat::ddm, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "50\xc2\xb0" "48.000'N 1\xc2\xb0" "18.000'W") == 0);
+    assert(semantic_display::formatPosition("50.80000N 1.30000W", semantic_display::PositionFormat::dd, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "50.800000, -1.300000") == 0);
+    assert(semantic_display::formatPosition("50.80000N 1.30000W", semantic_display::PositionFormat::dms, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "50\xc2\xb0" "48'0.0\"N 1\xc2\xb0" "18'0.0\"W") == 0);
+    assert(semantic_display::formatPosition("89.99999999S 179.99999999E", semantic_display::PositionFormat::ddm, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "90\xc2\xb0" "0.000'S 180\xc2\xb0" "0.000'E") == 0);
+    assert(semantic_display::formatPosition("89.99999999S 179.99999999E", semantic_display::PositionFormat::dms, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "90\xc2\xb0" "0'0.0\"S 180\xc2\xb0" "0'0.0\"E") == 0);
+    assert(semantic_display::formatPosition("48.858370N 2.294481E", semantic_display::PositionFormat::dd, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "48.858370, 2.294481") == 0);
+    assert(semantic_display::formatPosition("48.858370N 2.294481E", semantic_display::PositionFormat::dms, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "48\xc2\xb0" "51'30.1\"N 2\xc2\xb0" "17'40.1\"E") == 0);
+    assert(semantic_display::formatPosition("48.858370N 2.294481E", semantic_display::PositionFormat::ddm, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "48\xc2\xb0" "51.502'N 2\xc2\xb0" "17.669'E") == 0);
+    assert(semantic_display::formatPosition("1.000001S 2.000001W", semantic_display::PositionFormat::dd, formatted, sizeof formatted));
+    assert(std::strcmp(formatted, "-1.000001, -2.000001") == 0);
+    assert(slstm32::epd::Font5x7::textWidth("1\xc2\xb0" "2'3\"", 1u) == 35u);
+    assert(slstm32::epd::Font5x7::textWidthScaled("1\xc2\xb0" "2'3\"", 3u, 2u) == 53u);
+    {
+      std::array<std::uint8_t, 7> glyphFrame{}; glyphFrame.fill(0xffu);
+      slstm32::epd::MonochromeCanvas glyphCanvas{glyphFrame.data(), glyphFrame.size(), 8u, 7u};
+      for (const auto symbol : {"\xc2\xb0", "'", "\"", ","}) {
+        glyphFrame.fill(0xffu);
+        slstm32::epd::Font5x7::drawText(glyphCanvas, 0u, 0u, symbol, true, 1u);
+            assert((glyphFrame != std::array<std::uint8_t, 7>{0xffu,0xffu,0xffu,0xffu,0xffu,0xffu,0xffu}));
+      }
+    }
+    for (const auto invalidPosition : {"91.00000N 1.00000E", "1.00000N 181.00000W", "nanN 1E", "1N", "1E 2N", "1N 2E trailing"}) {
+      assert(!semantic_display::formatPosition(invalidPosition, semantic_display::PositionFormat::ddm, formatted, sizeof formatted));
+    }
+    assert(!semantic_display::formatPosition("0N 0E", semantic_display::PositionFormat::ddm, formatted, 4u));
+    semantic_display::SourceView ageSource{};
+    ageSource.outdatedAfterMs = 10000u; ageSource.staleAfterMs = 7200000u;
+    semantic_display::ValueSlot ageValue{};
+    ageValue.type = semantic_display::ValueType::number; ageValue.updatedAt = 100u;
+    assert(semantic_display::valueFreshness(ageSource, &ageValue, 10099u) == semantic_display::ValueFreshness::fresh);
+    assert(semantic_display::valueFreshness(ageSource, &ageValue, 10100u) == semantic_display::ValueFreshness::outdated);
+    assert(semantic_display::valueFreshness(ageSource, &ageValue, 7200100u) == semantic_display::ValueFreshness::stale);
+    for (const auto age : {10000u, 60000u, 3600000u}) {
+      assert(semantic_display::formatValueAge(age, formatted, sizeof formatted));
+      assert(std::strcmp(formatted, age == 10000u ? "OLD 10s" : age == 60000u ? "OLD 1m" : "OLD 1h") == 0);
+    }
+    ageValue.updatedAt = 0xfffffff0u;
+    assert(semantic_display::valueFreshness(ageSource, &ageValue, 0x2700u) == semantic_display::ValueFreshness::outdated);
+    ageValue.type = semantic_display::ValueType::unavailable;
+    assert(semantic_display::valueFreshness(ageSource, &ageValue, 0u) == semantic_display::ValueFreshness::unavailable);
 
     std::array<std::uint8_t, 2048> packageBytes{};
     const auto compiled = semantic_display::ConfigCompiler{}.compile(
@@ -415,6 +465,197 @@ int main() {
     display.handle(semantic_display::InputAction::nextSection);
     assert(display.activeSection() == 0u && display.activePage() == 1u);
 
+    {
+      constexpr auto graphJson = R"json({"schema":"semantic-display/v1",
+        "permanent_sources":[{"id":"series","path":"test.series","unit":"K",
+          "history":{"interval_ms":100,"points":3,"reducer":"last"}}],
+        "sections":[{"id":"graphs","pages":[
+          {"id":"plot","grid":{"columns":1,"rows":1},"widgets":[
+            {"type":"text","text":"NORMAL","cell":{"column":0,"row":0}}],
+            "history_plot":{"source":"series","title":"TEST GRAPH","display_unit":"C","y_min":-10,"y_max":10}},
+          {"id":"plain","grid":{"columns":1,"rows":1},"widgets":[]},
+          {"id":"auto","grid":{"columns":1,"rows":1},"widgets":[],
+            "history_plot":{"source":"series","display_unit":"C"}}]}]})json";
+      std::array<std::uint8_t, 1024> graphBytes{};
+      const auto graphPackage = semantic_display::ConfigCompiler{}.compile(graphJson, graphBytes.data(), graphBytes.size());
+      assert(graphPackage);
+      std::array<semantic_display::ValueSlot, 1> graphSlots{};
+      semantic_display::DataStore graphData{graphSlots.data(), graphSlots.size()};
+      std::array<std::uint8_t, 64> graphHistoryBytes{};
+      semantic_display::HistoryStore graphHistory{graphHistoryBytes.data(), graphHistoryBytes.size()};
+      std::array<std::uint8_t, 16800> graphFrame{};
+      slstm32::epd::MonochromeCanvas graphCanvas{graphFrame.data(), graphFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
+      FakePanel graphPanel;
+      semantic_display::DisplayService graphDisplay{{&millis, nullptr, nullptr}, graphPanel, graphCanvas, graphData, graphHistory};
+      now = 0u;
+      assert(graphDisplay.setPackage({graphBytes.data(), graphPackage.packageSize}));
+      assert(graphDisplay.init());
+      const auto normalFrame = graphFrame;
+      graphDisplay.handle(semantic_display::InputAction::action1);
+      assert(graphDisplay.graphMode());
+      now = 100u; graphDisplay.run();
+      assert(graphFrame != normalFrame);
+      const auto emptyGraph = graphFrame;
+      for (std::uint16_t row = 70u; row < 245u; ++row) {
+        assert(!logicalPixelIsBlack(graphFrame, 6u, row));
+        assert(!logicalPixelIsBlack(graphFrame, 7u, row));
+      }
+      for (std::uint16_t column = 6u; column < 474u; ++column) {
+        assert(!logicalPixelIsBlack(graphFrame, column, 245u));
+        assert(!logicalPixelIsBlack(graphFrame, column, 244u));
+      }
+      for (std::uint16_t row = 246u; row < 252u; ++row)
+        for (std::uint16_t column = 6u; column < 474u; ++column)
+          assert(!logicalPixelIsBlack(graphFrame, column, row));
+      for (std::uint16_t row = 30u; row < 36u; ++row)
+        for (std::uint16_t column = 6u; column < 474u; ++column)
+          assert(!logicalPixelIsBlack(graphFrame, column, row));
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      for (const auto value : {275.15f, 278.15f, 281.15f}) {
+        now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
+      }
+      now += 333u; graphDisplay.run();
+      assert(graphFrame != emptyGraph);
+      assert(graphHistory.sampleCount(0u) == 3u);
+      std::array<std::uint8_t, 16800> upperLabelFrame{};
+      slstm32::epd::MonochromeCanvas upperLabelCanvas{upperLabelFrame.data(), upperLabelFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
+      upperLabelCanvas.clear(false);
+      slstm32::epd::Font5x7::drawTextScaled(upperLabelCanvas, 6u, 57u, "10.0 C", true, 3u, 2u);
+      for (std::uint16_t row = 57u; row < 68u; ++row)
+        for (std::uint16_t column = 6u; column < 59u; ++column)
+          assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(upperLabelFrame, column, row));
+      for (std::uint16_t row = 41u; row < 52u; ++row)
+        for (std::uint16_t column = 6u; column < 59u; ++column)
+          assert(!logicalPixelIsBlack(graphFrame, column, row));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 76u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 77u));
+      assert(logicalPixelIsBlack(graphFrame, 472u, 76u));
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      for (const auto value : {173.15f, 373.15f}) {
+        now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
+      }
+      float oldest{};
+      assert(graphHistory.sample(0u, 0u, oldest) && oldest == 281.15f);
+      now += 333u; graphDisplay.run();
+      assert(logicalPixelIsBlack(graphFrame, 473u, 57u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 58u));
+      for (std::uint16_t row = 34u; row < 39u; ++row)
+        assert(!logicalPixelIsBlack(graphFrame, 473u, row));
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      graphDisplay.handle(semantic_display::InputAction::action1);
+      assert(!graphDisplay.graphMode());
+      graphDisplay.handle(semantic_display::InputAction::nextPage);
+      graphDisplay.handle(semantic_display::InputAction::nextPage);
+      graphDisplay.handle(semantic_display::InputAction::action1);
+      assert(graphDisplay.graphMode());
+      for (unsigned sample = 0u; sample < 3u; ++sample) {
+        now += 100u; assert(graphData.setNumber(0u, 278.15f, now)); graphDisplay.sourceUpdated(0u);
+      }
+      now += 333u; graphDisplay.run();
+      assert(logicalPixelIsBlack(graphFrame, 473u, 57u));
+      assert(!logicalPixelIsBlack(graphFrame, 473u, 145u));
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      for (const auto value : {275.15f, 278.15f, 281.15f}) {
+        now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
+      }
+      now += 333u; graphDisplay.run();
+      assert(logicalPixelIsBlack(graphFrame, 239u, 128u));
+      assert(logicalPixelIsBlack(graphFrame, 239u, 129u));
+      assert(!logicalPixelIsBlack(graphFrame, 239u, 140u));
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      for (const auto value : {273.15f, 268.15f}) {
+        for (unsigned sample = 0u; sample < 3u; ++sample) {
+          now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
+        }
+        now += 333u; graphDisplay.run();
+        assert(logicalPixelIsBlack(graphFrame, 473u, 245u));
+        assert(!logicalPixelIsBlack(graphFrame, 473u, 243u));
+        graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      }
+      graphDisplay.handle(semantic_display::InputAction::nextPage);
+      now += 100u; graphDisplay.run();
+      assert(graphFrame == normalFrame);
+      graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+      graphDisplay.handle(semantic_display::InputAction::action1);
+      graphDisplay.handle(semantic_display::InputAction::nextPage);
+      assert(!graphDisplay.graphMode());
+      graphDisplay.handle(semantic_display::InputAction::action1);
+      assert(!graphDisplay.graphMode());
+      for (const auto interval : {900000u, 18000000u}) {
+        std::string durationJson{graphJson};
+        constexpr auto intervalProperty = "\"interval_ms\":100";
+        durationJson.replace(durationJson.find(intervalProperty), std::strlen(intervalProperty),
+                             "\"interval_ms\":" + std::to_string(interval));
+        const auto durationPackage = semantic_display::ConfigCompiler{}.compile(durationJson, graphBytes.data(), graphBytes.size());
+        assert(durationPackage);
+        FakePanel durationPanel;
+        semantic_display::DisplayService durationDisplay{{&millis, nullptr, nullptr}, durationPanel, graphCanvas, graphData, graphHistory};
+        now = 0u;
+        assert(durationDisplay.setPackage({graphBytes.data(), durationPackage.packageSize}));
+        assert(durationDisplay.init());
+        durationDisplay.handle(semantic_display::InputAction::action1);
+        now = 100u; durationDisplay.run();
+        const auto label = interval == 900000u ? "30m" : "10h";
+        const auto labelX = static_cast<std::uint16_t>(474u - slstm32::epd::Font5x7::textWidthScaled(label, 3u, 2u));
+        std::array<std::uint8_t, 16800> expectedFrame{};
+        slstm32::epd::MonochromeCanvas expectedCanvas{expectedFrame.data(), expectedFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
+        expectedCanvas.clear(false);
+        slstm32::epd::Font5x7::drawTextScaled(expectedCanvas, labelX, 41u, label, true, 3u, 2u);
+        for (std::uint16_t row = 41u; row < 52u; ++row)
+          for (auto column = static_cast<std::uint16_t>(labelX - 9u); column < 474u; ++column)
+            assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(expectedFrame, column, row));
+        constexpr auto graphTitle = "TEST GRAPH";
+        const auto titleWidth = slstm32::epd::Font5x7::textWidth(graphTitle, 2u);
+        const auto titleX = static_cast<std::uint16_t>((480u - titleWidth) / 2u);
+        slstm32::epd::Font5x7::drawText(expectedCanvas, titleX, 36u, graphTitle, true, 2u);
+        for (std::uint16_t row = 36u; row < 50u; ++row)
+          for (auto column = titleX; column < titleX + titleWidth; ++column)
+            assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(expectedFrame, column, row));
+      }
+    }
+    {
+      constexpr auto agingJson = R"json({"schema":"semantic-display/v1","sections":[{"id":"age",
+        "sources":[{"id":"position","path":"navigation.position","outdated_ms":10000,"stale_ms":7200000}],
+        "pages":[{"id":"position","grid":{"columns":1,"rows":1},"widgets":[
+        {"type":"value","source":"position","cell":{"column":0,"row":0}}]}]}]})json";
+      std::array<std::uint8_t, 1024> agingBytes{};
+      const auto agingPackage = semantic_display::ConfigCompiler{}.compile(agingJson, agingBytes.data(), agingBytes.size());
+      assert(agingPackage);
+      std::array<semantic_display::ValueSlot, 1> agingSlots{};
+      semantic_display::DataStore agingData{agingSlots.data(), agingSlots.size()};
+      std::array<std::uint8_t, 64> agingHistoryBytes{};
+      semantic_display::HistoryStore agingHistory{agingHistoryBytes.data(), agingHistoryBytes.size()};
+      std::array<std::uint8_t, 16800> agingFrame{};
+      slstm32::epd::MonochromeCanvas agingCanvas{agingFrame.data(), agingFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
+      FakePanel agingPanel;
+      semantic_display::DisplayService agingDisplay{{&millis, nullptr, nullptr}, agingPanel, agingCanvas, agingData, agingHistory};
+      assert(agingDisplay.setPackage({agingBytes.data(), agingPackage.packageSize}));
+      now += 1000u;
+      assert(agingDisplay.init());
+      const auto receivedAt = now;
+      assert(agingData.setText(0u, "60.25000N 5.75000W", now)); agingDisplay.sourceUpdated(0u);
+      const auto finishRefresh = [&]() {
+        assert(agingPanel.state == slstm32::epd::UpdateState::prepared);
+        agingDisplay.run(); agingPanel.state = slstm32::epd::UpdateState::idle; agingDisplay.run();
+      };
+      now += 333u; agingDisplay.run(); finishRefresh();
+      const auto freshFrame = agingFrame;
+      now = receivedAt + 10000u; agingDisplay.run(); finishRefresh();
+      assert(agingFrame != freshFrame);
+      const auto outdatedFrame = agingFrame;
+      now = receivedAt + 60000u; agingDisplay.run(); finishRefresh();
+      assert(agingFrame != outdatedFrame);
+      const auto minuteFrame = agingFrame;
+      now = receivedAt + 3600000u; agingDisplay.run(); finishRefresh();
+      assert(agingFrame != minuteFrame);
+      const auto hourFrame = agingFrame;
+      now = receivedAt + 7200000u; agingDisplay.run(); finishRefresh();
+      assert(agingFrame != hourFrame);
+      now += 1000u;
+      assert(agingData.setText(0u, "60.25000N 5.75000W", now)); agingDisplay.sourceUpdated(0u);
+      now += 333u; agingDisplay.run(); finishRefresh();
+      assert(agingFrame == freshFrame);
+    }
     display.requestShutdown();
     assert(!display.wake());
     display.run();

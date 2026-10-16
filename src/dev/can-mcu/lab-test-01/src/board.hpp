@@ -19,4 +19,8 @@ slstm32::drivers::PwmOutputHardware greenLed();
 slstm32::drivers::PwmOutputHardware redLed();
 slstm32::drivers::ToneOutputHardware buzzer();
 
+// PA4..PA7 wired to OUT_D_0..3 of the 12v-ad-input-iso module (physical pin
+// level, pull-up so an unplugged module reads "no 12 V").
+std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs();
+
 } // namespace lab_test_01::board

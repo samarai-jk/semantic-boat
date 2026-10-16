@@ -235,7 +235,7 @@ storage is normally simplest in embedded firmware.
 
 | Driver | Purpose and important behavior |
 | --- | --- |
-| `DigitalInputDriver` | Samples one logical digital input on every `run()`. |
+| `DigitalInputDriver` | Samples one logical digital input on every `run()`. Optionally debounced (a new level must be stable for a given time) and counts accepted changes. |
 | `DigitalOutputDriver` | Controls one logical output and remembers its requested state. |
 | `ButtonDriver` | Maps up to 16 interrupt tokens to button IDs, applies per-button debounce, and queues `ButtonEvent` values. Call `onInterrupt()` from the GPIO callback. |
 | `LedDriver` | Digital LED with steady, pulse, and blink modes. Timing is non-blocking. |
@@ -246,6 +246,7 @@ storage is normally simplest in embedded firmware.
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |
 | `LatchingRelayDriver` | Drives set/reset coils with non-blocking pulses and queues a changed request while a pulse is active. |
 | `SerialLogDriver` | Line-oriented log over a non-blocking serial output (for example a UART polled for TXE). Adds a timestamp and level letter, buffers complete lines in a caller-provided ring, drains it from `run()`, and drops and counts lines that do not fit. `write()` is interrupt-safe with valid critical-section hooks; `flush()` drains synchronously before a reset. `logger()` returns a `Logger` for services. |
+| `Ads1115Driver` | TI ADS1115 16-bit ADC on an `I2cBus`: up to eight configured channels (single-ended or differential, gain per channel) converted in single-shot mode without blocking, results in raw counts and microvolts with a sample counter. A missing device is retried once per second and never fails `init()`. |
 | `At24c256` | Implements the generic `ByteStorage` interface for a 32 KiB, 64-byte-page AT24C256-compatible EEPROM using board-provided read/write-page callbacks. |
 | `At24c256I2cBinding` | Provides those callbacks on an `I2cBus`: 16-bit addressing, page writes, acknowledge polling for the write cycle, and optional read-back verification with a last-error code. |
 | `CanBusDriver` | Queued CAN access through a `CanBusHardware` binding: caller-provided receive and transmit rings, frames moved into hardware mailboxes in order from `run()` and the transmit-complete interrupt, `transmitSpace()` for paced senders, counters for received, transmitted, and dropped frames and hardware overruns, and the controller state (error-active/warning/passive, bus-off) with error counters. |

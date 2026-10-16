@@ -10,6 +10,35 @@ extern TIM_HandleTypeDef htim1;
 namespace lab_test_01::board {
 namespace {
 
+// --- Isolated input module digital outputs -----------------------------------
+
+struct InputPin {
+    GPIO_TypeDef* port;
+    std::uint16_t pin;
+};
+
+InputPin moduleInputPins[]{
+    {GPIOA, GPIO_PIN_4},
+    {GPIOA, GPIO_PIN_5},
+    {GPIOA, GPIO_PIN_6},
+    {GPIOA, GPIO_PIN_7},
+};
+
+bool configureModuleInput(void* context) {
+    const auto& input = *static_cast<InputPin*>(context);
+    GPIO_InitTypeDef gpio{};
+    gpio.Pin = input.pin;
+    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Pull = GPIO_PULLUP;
+    HAL_GPIO_Init(input.port, &gpio);
+    return true;
+}
+
+bool readModuleInput(void* context) {
+    const auto& input = *static_cast<InputPin*>(context);
+    return HAL_GPIO_ReadPin(input.port, input.pin) == GPIO_PIN_SET;
+}
+
 // --- TIM1: status LEDs and buzzer ------------------------------------------
 //
 // CubeMX configures PWM mode 1 with low polarity on CH1/CH2 (active-low LEDs,
@@ -103,6 +132,14 @@ std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
         can_mcu::buttonFrontend(ButtonFrontend::fun4, 4u),
         can_mcu::buttonFrontend(ButtonFrontend::fun5, 5u),
     }};
+}
+
+std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs() {
+    std::array<slstm32::drivers::DigitalInputHardware, 4> result{};
+    for (std::size_t index = 0; index < result.size(); ++index) {
+        result[index] = {&moduleInputPins[index], &configureModuleInput, &readModuleInput, true};
+    }
+    return result;
 }
 
 slstm32::drivers::PwmOutputHardware greenLed() {

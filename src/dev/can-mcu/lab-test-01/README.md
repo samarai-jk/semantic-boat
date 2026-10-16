@@ -18,7 +18,7 @@ directory. `slstm32` never receives board- or device-specific code.
 | --- | --- | --- |
 | 4x I2C sensor connectors | host-dev H1/H2/H3/H6 | I2C1 (PB8/PB9) |
 | 4x analog inputs | J2.7, J2.9, J1.10, J1.11 | PA0 to PA3 (ADC1_IN5 to IN8) |
-| 4x one-wire inputs | J1.2, J1.4, J1.3, J1.6 | PA4 to PA7 |
+| 4x one-wire inputs (currently the input module's DI0..DI3) | J1.2, J1.4, J1.3, J1.6 | PA4 to PA7 |
 | Green status LED (PWM) | host-dev H9.2 -> J2.4 | PA8, TIM1_CH1 |
 | Red status LED (PWM) | host-dev H9.1 -> J2.5 | PA9, TIM1_CH2 |
 | Passive buzzer (PWM) | host-dev H7.1 -> J2.6 | PA10, TIM1_CH3 |
@@ -89,6 +89,7 @@ All buttons are active low with hardware debounce on the can-mcu.
 | `src/hardware_test_service.cpp` | User-interface bring-up: LEDs, buttons, clicks |
 | `src/diagnostics_service.cpp` | Supply dips and the heartbeat |
 | `src/can_monitor_service.cpp` | CAN state, activity LED, N2K message log and summary |
+| `src/input_module_test_service.cpp` | Bring-up of a 12v-ad-input-iso module |
 | `src/temperature_report_service.cpp` | Board and MCU temperature as PGN 130316 |
 | `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection |
 | `src/device_settings.cpp` | Settings record in EEPROM: boot counter and NMEA 2000 address |
@@ -156,6 +157,11 @@ editor or by other tools at the same time.
   the controller goes error-passive within milliseconds; that is expected.
   See [`src/tools/can-bench`](../../../tools/can-bench/README.md) for the PC
   side and its test options.
+- 12v-ad-input-iso module (ADS1115 at 0x48, DI0..DI3 on PA4..PA7, see
+  [`src/lib/semantic-modules`](../../../lib/semantic-modules/12v-ad-input-iso.md)):
+  ADC presence changes and every digital input change are logged at once;
+  once per second a line with the four terminal voltages and their
+  peak-to-peak noise, followed by the digital states and the sample rate.
 - A debug heartbeat every 10 s with uptime, supply range, board temperature
   (TMP75), MCU die temperature, I2C bus errors and recoveries, and dropped
   events.

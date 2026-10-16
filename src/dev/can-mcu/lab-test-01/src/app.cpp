@@ -10,9 +10,11 @@
 #include "events.hpp"
 #include "hardware_test_service.hpp"
 #include "i2c_scan_service.hpp"
+#include "input_module_test_service.hpp"
 #include "n2k/name.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
+#include "semantic_modules/ad_input_iso_12v.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
@@ -78,6 +80,17 @@ slstm32::drivers::CanBusDriver can{runtime, can_mcu::canBusHardware(), canReceiv
                                    canTransmitBuffer.size()};
 slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
 
+// 12v-ad-input-iso module on the I2C connectors, DI0..DI3 wired to PA4..PA7.
+semantic_modules::AdInputIso12vConfig inputModuleConfig{
+    0x48u,
+    slstm32::drivers::Ads1115Driver::Gain::fsr2048,
+    slstm32::drivers::Ads1115Driver::DataRate::sps128,
+    {9.2f, 9.2f, 9.2f, 9.2f},
+    lab_test_01::board::isolatedModuleInputs(),
+    20u,
+};
+semantic_modules::AdInputIso12v inputModule{runtime, i2c, inputModuleConfig};
+
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
@@ -104,6 +117,7 @@ lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardT
 lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 lab_test_01::TemperatureReportService temperatureReport{runtime, n2kNode, boardTemperature, mcu};
+lab_test_01::InputModuleTestService inputModuleTest{runtime, logger, inputModule};
 
 namespace component {
 struct SerialLog;
@@ -115,12 +129,14 @@ struct Mcu;
 struct BoardTemperature;
 struct Can;
 struct CanActivityLed;
+struct InputModule;
 struct HardwareTest;
 struct Diagnostics;
 struct I2cScan;
 struct N2kNode;
 struct CanMonitor;
 struct TemperatureReport;
+struct InputModuleTest;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -133,14 +149,16 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Can>(can),
-        slstm32::bind<component::CanActivityLed>(canActivityLed)),
+        slstm32::bind<component::CanActivityLed>(canActivityLed),
+        slstm32::bind<component::InputModule>(inputModule)),
     slstm32::makeServiceSet(
         slstm32::bind<component::HardwareTest>(hardwareTest),
         slstm32::bind<component::Diagnostics>(diagnostics),
         slstm32::bind<component::I2cScan>(i2cScan),
         slstm32::bind<component::N2kNode>(n2kNode),
         slstm32::bind<component::CanMonitor>(canMonitor),
-        slstm32::bind<component::TemperatureReport>(temperatureReport)));
+        slstm32::bind<component::TemperatureReport>(temperatureReport),
+        slstm32::bind<component::InputModuleTest>(inputModuleTest)));
 
 bool saveSettings() {
     eepromBinding.clearError();

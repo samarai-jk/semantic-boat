@@ -5,6 +5,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_CXX_STANDARD 17)
     add_subdirectory(../../../lib/slstm32 ${CMAKE_CURRENT_BINARY_DIR}/slstm32)
     add_subdirectory(../../../lib/n2k ${CMAKE_CURRENT_BINARY_DIR}/n2k)
+    add_subdirectory(../../../lib/semantic-modules ${CMAKE_CURRENT_BINARY_DIR}/semantic-modules)
 endif()
 
 set(LAB_TEST_01_TARGET ${CMAKE_PROJECT_NAME})
@@ -25,10 +26,11 @@ target_sources(${LAB_TEST_01_TARGET} PRIVATE
     src/diagnostics_service.cpp
     src/hardware_test_service.cpp
     src/i2c_scan_service.cpp
+    src/input_module_test_service.cpp
     src/temperature_report_service.cpp
 )
 target_include_directories(${LAB_TEST_01_TARGET} PRIVATE include src)
-target_link_libraries(${LAB_TEST_01_TARGET} n2k slstm32 stm32cubemx)
+target_link_libraries(${LAB_TEST_01_TARGET} n2k semantic_modules slstm32 stm32cubemx)
 target_link_options(${LAB_TEST_01_TARGET} PRIVATE
     -Wl,-Map=$<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.map)
 

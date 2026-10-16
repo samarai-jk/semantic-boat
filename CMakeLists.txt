@@ -16,6 +16,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(src/lib/slstm32)
 add_subdirectory(src/lib/n2k)
+add_subdirectory(src/lib/semantic-modules)
 add_subdirectory(src/lib/semantic-link)
 add_subdirectory(src/lib/semantic-display)
 

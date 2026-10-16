@@ -63,6 +63,8 @@ public:
     bool init() override;
     void run() override;
     bool send(const CanFrame& frame);
+    // Frames that send() can accept right now without dropping.
+    std::size_t transmitSpace() const;
     bool receive(CanFrame& frame);
     CanStatus status() const;
     Counters counters() const;

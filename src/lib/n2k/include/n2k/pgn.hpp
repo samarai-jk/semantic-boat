@@ -1,0 +1,18 @@
+#pragma once
+
+#include <cstdint>
+
+namespace n2k::pgn {
+
+// Network management
+inline constexpr std::uint32_t isoAcknowledgement = 59392u;
+inline constexpr std::uint32_t isoRequest = 59904u;
+inline constexpr std::uint32_t isoAddressClaim = 60928u;
+inline constexpr std::uint32_t pgnList = 126464u;
+inline constexpr std::uint32_t heartbeat = 126993u;
+inline constexpr std::uint32_t productInformation = 126996u;
+
+// Environment
+inline constexpr std::uint32_t temperatureExtendedRange = 130316u;
+
+} // namespace n2k::pgn

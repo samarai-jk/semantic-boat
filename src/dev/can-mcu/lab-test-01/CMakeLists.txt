@@ -4,6 +4,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_CXX_STANDARD 17)
     add_subdirectory(../../../lib/slstm32 ${CMAKE_CURRENT_BINARY_DIR}/slstm32)
+    add_subdirectory(../../../lib/n2k ${CMAKE_CURRENT_BINARY_DIR}/n2k)
 endif()
 
 set(LAB_TEST_01_TARGET ${CMAKE_PROJECT_NAME})
@@ -19,14 +20,15 @@ can_mcu_add_common(${LAB_TEST_01_TARGET})
 target_sources(${LAB_TEST_01_TARGET} PRIVATE
     src/app.cpp
     src/board.cpp
-    src/can_test_service.cpp
+    src/can_monitor_service.cpp
     src/device_settings.cpp
     src/diagnostics_service.cpp
     src/hardware_test_service.cpp
     src/i2c_scan_service.cpp
+    src/temperature_report_service.cpp
 )
 target_include_directories(${LAB_TEST_01_TARGET} PRIVATE include src)
-target_link_libraries(${LAB_TEST_01_TARGET} slstm32 stm32cubemx)
+target_link_libraries(${LAB_TEST_01_TARGET} n2k slstm32 stm32cubemx)
 target_link_options(${LAB_TEST_01_TARGET} PRIVATE
     -Wl,-Map=$<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.map)
 

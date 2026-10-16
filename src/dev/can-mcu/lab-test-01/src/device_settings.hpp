@@ -14,6 +14,8 @@ inline constexpr std::size_t settingsBytes = 256u;
 
 struct DeviceSettings {
     std::uint32_t bootCount{};
+    // Last claimed NMEA 2000 source address, tried first at the next start.
+    std::uint8_t n2kAddress{35u};
 };
 
 class DeviceSettingsStore {

@@ -88,9 +88,10 @@ All buttons are active low with hardware debounce on the can-mcu.
 | `src/board.cpp` | LT1 host bindings: buttons, TIM1 LEDs and buzzer |
 | `src/hardware_test_service.cpp` | User-interface bring-up: LEDs, buttons, clicks |
 | `src/diagnostics_service.cpp` | Supply dips and the heartbeat |
-| `src/can_test_service.cpp` | Raw CAN bring-up: test frames, receive log, bus state |
+| `src/can_monitor_service.cpp` | CAN state, activity LED, N2K message log and summary |
+| `src/temperature_report_service.cpp` | Board and MCU temperature as PGN 130316 |
 | `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection |
-| `src/device_settings.cpp` | Settings record in EEPROM (currently the boot counter) |
+| `src/device_settings.cpp` | Settings record in EEPROM: boot counter and NMEA 2000 address |
 
 `main.c` calls `lab_test_01_app_init()` after the CubeMX peripheral
 initialization and `lab_test_01_app_run()` in the main loop. SysTick calls
@@ -139,14 +140,22 @@ editor or by other tools at the same time.
   wiring fault (no level change) can be told apart from an interrupt fault.
 - The supply (VDDA = +3V3) is measured through VREFINT about 23,000 times per
   second. A 100 ms window below 3.15 V is logged as a supply dip.
-- CAN (raw, before NMEA 2000): a test frame every second, extended ID
-  0x18FF0042 with counter (LE32), uptime in seconds (LE16), and 0xCA 0xFE.
-  Received frames are logged (ten per second at most), every controller state
-  change is logged with its error counters, the yellow RJ45 LED flashes on
-  traffic, and a CAN summary follows every 10 s. Without another node on the
-  bus nothing acknowledges, so the node goes error-passive within
-  milliseconds and queued frames are dropped; that is expected. See
-  [`src/tools/can-bench`](../../../tools/can-bench/README.md) for the PC side.
+- NMEA 2000 (see [`src/lib/n2k`](../../../lib/n2k/README.md)): the node claims
+  its stored address (default 35) with a NAME whose unique number is derived
+  from the MCU unique ID (manufacturer code 2046 for development, device class
+  75 "sensor communication interface", function 130 "temperature"). A changed
+  address after a conflict is stored in EEPROM. It answers requests for the
+  address claim, product information, PGN list, and heartbeat, NACKs other
+  requests addressed to it, sends a heartbeat every 60 s, and publishes the
+  board temperature (instance 0) and MCU temperature (instance 1) as PGN 130316
+  every 2 s.
+- CAN monitoring: every controller state change is logged with its error
+  counters, the yellow RJ45 LED flashes on traffic, messages passed to the
+  application are logged (ten per second at most), and a CAN and N2K summary
+  follows every 10 s. Without another node on the bus nothing acknowledges, so
+  the controller goes error-passive within milliseconds; that is expected.
+  See [`src/tools/can-bench`](../../../tools/can-bench/README.md) for the PC
+  side and its test options.
 - A debug heartbeat every 10 s with uptime, supply range, board temperature
   (TMP75), MCU die temperature, I2C bus errors and recoveries, and dropped
   events.

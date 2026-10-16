@@ -1,15 +1,18 @@
 #include "lab_test_01/app.h"
 #include "board.hpp"
-#include "can_test_service.hpp"
 #include "can_mcu/board.hpp"
 #include "can_mcu/can_bus.hpp"
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "can_monitor_service.hpp"
 #include "device_settings.hpp"
 #include "diagnostics_service.hpp"
 #include "events.hpp"
 #include "hardware_test_service.hpp"
 #include "i2c_scan_service.hpp"
+#include "n2k/name.hpp"
+#include "n2k/node.hpp"
+#include "n2k/pgn.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
@@ -20,8 +23,10 @@
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
 #include "slstm32/event_bus.hpp"
+#include "temperature_report_service.hpp"
 #include <array>
 #include <cstdint>
+#include <cstdio>
 extern "C" {
 #include "main.h"
 }
@@ -37,6 +42,12 @@ constexpr std::uint8_t boardTemperatureAddress = 0x4Fu;
 constexpr std::size_t canReceiveFrames = 16u;
 constexpr std::size_t canTransmitFrames = 8u;
 
+// NMEA 2000 identity. 2046 is not an assigned manufacturer code; it is the
+// usual choice for development and must be replaced for a released product.
+constexpr std::uint16_t n2kManufacturerCode = 2046u;
+constexpr std::uint8_t n2kDeviceClassSensors = 75u;     // Sensor Communication Interface
+constexpr std::uint8_t n2kDeviceFunctionTemperature = 130u;
+
 const slstm32::Runtime runtime = can_mcu::runtime();
 slstm32::EventBus events{runtime};
 
@@ -49,6 +60,8 @@ can_mcu::HalI2cBus& i2c = can_mcu::i2cBus();
 slstm32::drivers::At24c256I2cBinding eepromBinding{runtime, i2c, eepromAddress};
 slstm32::drivers::At24c256 eeprom{eepromBinding.hardware()};
 lab_test_01::DeviceSettingsStore settingsStore{eeprom};
+lab_test_01::DeviceSettings settings{};
+bool settingsAvailable{};
 
 const auto buttonConfigs = lab_test_01::board::buttons();
 slstm32::drivers::ButtonDriver buttons{runtime, events, lab_test_01::buttonPressed,
@@ -65,13 +78,32 @@ slstm32::drivers::CanBusDriver can{runtime, can_mcu::canBusHardware(), canReceiv
                                    canTransmitBuffer.size()};
 slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
 
+// Filled in at startup from the MCU unique ID: NAME unique number and the
+// serial code of the product information.
+char serialCode[25]{};
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange};
+n2k::NodeConfig n2kConfig{
+    n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
+              n2kDeviceClassSensors, 0u, 4u, true},
+    lab_test_01::DeviceSettings{}.n2kAddress,
+    n2k::ProductInfo{2100u, 1u, "Semantic Boat LT1", "0.1.0 " __DATE__,
+                     "can-mcu V1.0 + host-dev", serialCode, 0u, 1u},
+    n2kTransmitPgns,
+    sizeof n2kTransmitPgns / sizeof n2kTransmitPgns[0],
+    nullptr,
+    0u,
+    60000u,
+};
+n2k::Node n2kNode{runtime, can, n2kConfig, logger};
+
 lab_test_01::HardwareTestService hardwareTest{
     runtime, events, logger, buttons, static_cast<std::uint8_t>(buttonConfigs.size()),
     greenLed, redLed, buzzer};
 lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardTemperature,
                                             i2c, buzzer};
 lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
-lab_test_01::CanTestService canTest{runtime, logger, can, canActivityLed};
+lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
+lab_test_01::TemperatureReportService temperatureReport{runtime, n2kNode, boardTemperature, mcu};
 
 namespace component {
 struct SerialLog;
@@ -86,7 +118,9 @@ struct CanActivityLed;
 struct HardwareTest;
 struct Diagnostics;
 struct I2cScan;
-struct CanTest;
+struct N2kNode;
+struct CanMonitor;
+struct TemperatureReport;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -104,25 +138,51 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::HardwareTest>(hardwareTest),
         slstm32::bind<component::Diagnostics>(diagnostics),
         slstm32::bind<component::I2cScan>(i2cScan),
-        slstm32::bind<component::CanTest>(canTest)));
+        slstm32::bind<component::N2kNode>(n2kNode),
+        slstm32::bind<component::CanMonitor>(canMonitor),
+        slstm32::bind<component::TemperatureReport>(temperatureReport)));
+
+bool saveSettings() {
+    eepromBinding.clearError();
+    if (settingsStore.save(settings)) return true;
+    logger.writef(LogLevel::error, "eeprom: settings write failed (error %u)",
+                  static_cast<unsigned>(eepromBinding.lastError()));
+    return false;
+}
 
 // Counts boots in EEPROM: proves read, write, and persistence across resets.
-void updateBootCount() {
+void loadSettings() {
     if (!eepromBinding.present()) {
         logger.writef(LogLevel::error, "eeprom: no answer at 0x%02X", static_cast<unsigned>(eepromAddress));
         return;
     }
-    lab_test_01::DeviceSettings settings{};
     const bool loaded = settingsStore.load(settings);
     ++settings.bootCount;
-    eepromBinding.clearError();
-    if (!settingsStore.save(settings)) {
-        logger.writef(LogLevel::error, "eeprom: settings write failed (error %u)",
-                      static_cast<unsigned>(eepromBinding.lastError()));
-        return;
-    }
+    settingsAvailable = saveSettings();
+    if (!settingsAvailable) return;
     logger.writef(LogLevel::info, "eeprom: boot #%lu%s", static_cast<unsigned long>(settings.bootCount),
                   loaded ? "" : " (no previous settings, defaults written)");
+}
+
+void configureN2kIdentity() {
+    std::uint8_t uid[12];
+    can_mcu::uniqueId(uid);
+    n2kConfig.name.uniqueNumber = n2k::uniqueNumberFrom(uid, sizeof uid);
+    for (std::size_t index = 0u; index < sizeof uid; ++index) {
+        std::snprintf(serialCode + 2u * index, 3u, "%02X", static_cast<unsigned>(uid[sizeof uid - 1u - index]));
+    }
+    n2kConfig.preferredAddress = settings.n2kAddress;
+    logger.writef(LogLevel::info, "n2k: unique number %lu, preferred address %u",
+                  static_cast<unsigned long>(n2kConfig.name.uniqueNumber),
+                  static_cast<unsigned>(n2kConfig.preferredAddress));
+}
+
+void onN2kAddressChange(void*, std::uint8_t address) {
+    if (!settingsAvailable || settings.n2kAddress == address) return;
+    settings.n2kAddress = address;
+    if (saveSettings()) {
+        logger.writef(LogLevel::info, "n2k: address %u stored", static_cast<unsigned>(address));
+    }
 }
 
 } // namespace
@@ -134,9 +194,12 @@ extern "C" void lab_test_01_app_init(void) {
                   __TIME__);
     can_mcu::logBoardInfo(logger);
     serialLog.flush(startupLogFlushMs);
-    updateBootCount();
+    loadSettings();
+    configureN2kIdentity();
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
+    n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
+    n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     if (!application.init()) {
         logger.write(LogLevel::error, "application init failed");
         redLed.blink(250u, 125u);

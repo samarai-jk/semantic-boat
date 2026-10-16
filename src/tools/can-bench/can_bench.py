@@ -1,16 +1,18 @@
-"""Bench CAN monitor for can-mcu firmware.
+"""Bench CAN / NMEA 2000 monitor for can-mcu firmware.
 
-Prints every frame on the bus, decodes the lab-test-01 raw test frame
-(ID 0x18FF0042: counter LE32, uptime s LE16, 0xCA 0xFE) and checks its
-sequence, optionally transmits its own test frame once per second
-(ID 0x18FF0099, counter LE32), and prints a summary on exit.
+Prints every frame on the bus, decodes NMEA 2000 identifiers, reassembles
+fast packets, and decodes the PGNs used by the can-mcu firmware (address
+claim, ISO request/acknowledgement, heartbeat, product information, PGN list,
+temperature). It can also act on the bus from its own source address:
 
-Works with any python-can interface; the default is a candleLight/gs_usb
-adapter through the `candle` backend on Windows.
-
-    python can_bench.py                      # listen, auto-detect adapter
-    python can_bench.py --send --duration 30
+    python can_bench.py                              # listen, auto-detect adapter
+    python can_bench.py --duration 20 --request 126996 --request 126464
+    python can_bench.py --duration 20 --conflict     # address contention tests
     python can_bench.py --interface socketcan --channel can0
+
+At start the bench sends a global request for address claims to discover
+the nodes. Requests go to the node that claimed an address most recently
+(or --dest).
 """
 
 import argparse
@@ -20,9 +22,114 @@ import time
 
 import can
 
-LT1_TEST_ID = 0x18FF0042
-BENCH_TEST_ID = 0x18FF0099
+BENCH_ADDRESS = 0x99
+FAST_PACKET_PGNS = {126464, 126996, 126998, 129029, 129540}
 
+PGN_NAMES = {
+    59392: "ISO Acknowledgement",
+    59904: "ISO Request",
+    60928: "ISO Address Claim",
+    126464: "PGN List",
+    126993: "Heartbeat",
+    126996: "Product Information",
+    130312: "Temperature",
+    130316: "Temperature, Extended Range",
+}
+
+TEMPERATURE_SOURCES = {0: "sea", 1: "outside", 2: "inside", 3: "engine room", 4: "main cabin",
+                       7: "refrigeration", 8: "heating", 13: "freezer", 14: "exhaust"}
+
+
+# --- identifiers -----------------------------------------------------------
+
+def decode_id(raw):
+    priority = (raw >> 26) & 7
+    source = raw & 0xFF
+    pgn_field = (raw >> 8) & 0x3FFFF
+    if ((pgn_field >> 8) & 0xFF) < 240:
+        return priority, pgn_field & 0x3FF00, source, pgn_field & 0xFF
+    return priority, pgn_field, source, 255
+
+
+def encode_id(priority, pgn, source, destination=255):
+    field = pgn & 0x3FFFF
+    if ((field >> 8) & 0xFF) < 240:
+        field = (field & 0x3FF00) | destination
+    return (priority & 7) << 26 | field << 8 | source
+
+
+def name_value(unique, manufacturer, function, device_class, instance=0, system=0, group=4, arbitrary=1):
+    return (unique & 0x1FFFFF | (manufacturer & 0x7FF) << 21 | (instance & 0xFF) << 32 |
+            function << 40 | (device_class & 0x7F) << 49 | (system & 0xF) << 56 |
+            (group & 7) << 60 | arbitrary << 63)
+
+
+def describe_name(value):
+    return (f"unique {value & 0x1FFFFF}, mfr {(value >> 21) & 0x7FF}, function {(value >> 40) & 0xFF}, "
+            f"class {(value >> 49) & 0x7F}, group {(value >> 60) & 7}, NAME 0x{value:016X}")
+
+
+# --- payload decoders ------------------------------------------------------
+
+def text(field):
+    return field.rstrip(b"\xff\x00 @").decode("ascii", "replace")
+
+
+def decode_payload(pgn, data):
+    if pgn == 60928 and len(data) >= 8:
+        return describe_name(struct.unpack_from("<Q", data)[0])
+    if pgn == 59904 and len(data) >= 3:
+        requested = int.from_bytes(data[:3], "little")
+        return f"request PGN {requested} ({PGN_NAMES.get(requested, '?')})"
+    if pgn == 59392 and len(data) >= 8:
+        control = {0: "ACK", 1: "NACK", 2: "access denied", 3: "cannot respond"}.get(data[0], data[0])
+        return f"{control} for PGN {int.from_bytes(data[5:8], 'little')}"
+    if pgn == 126993 and len(data) >= 4:
+        interval, sequence = struct.unpack_from("<HB", data)
+        states = {0: "error-active", 1: "error-passive", 2: "bus-off", 3: "n/a"}
+        return (f"interval {interval / 100:.2f} s, seq {sequence}, controller {states[data[3] & 3]}, "
+                f"equipment {'operational' if ((data[3] >> 4) & 3) == 0 else (data[3] >> 4) & 3}")
+    if pgn == 126996 and len(data) >= 134:
+        version, code = struct.unpack_from("<HH", data)
+        return (f"N2K {version / 1000:.3f}, product {code}, model '{text(data[4:36])}', "
+                f"software '{text(data[36:68])}', version '{text(data[68:100])}', "
+                f"serial '{text(data[100:132])}', cert {data[132]}, LEN {data[133]}")
+    if pgn == 126464 and len(data) >= 1:
+        pgns = [int.from_bytes(data[i:i + 3], "little") for i in range(1, len(data) - 2, 3)]
+        return f"{'transmit' if data[0] == 0 else 'receive'} PGNs {pgns}"
+    if pgn == 130316 and len(data) >= 8:
+        kelvin = int.from_bytes(data[3:6], "little") / 1000.0
+        source = TEMPERATURE_SOURCES.get(data[2], data[2])
+        return f"instance {data[1]}, source {source}, {kelvin - 273.15:.2f} C"
+    return None
+
+
+# --- fast packets ------------------------------------------------------------
+
+class FastPacketAssembler:
+    def __init__(self):
+        self.pending = {}
+
+    def add(self, key, data):
+        """Returns the complete payload, or None while frames are missing."""
+        sequence, frame = data[0] >> 5, data[0] & 0x1F
+        if frame == 0:
+            self.pending[key] = {"sequence": sequence, "length": data[1], "next": 1, "data": bytearray(data[2:])}
+        else:
+            entry = self.pending.get(key)
+            if entry is None or entry["sequence"] != sequence or entry["next"] != frame:
+                self.pending.pop(key, None)
+                return None
+            entry["data"] += data[1:]
+            entry["next"] += 1
+        entry = self.pending[key]
+        if len(entry["data"]) >= entry["length"]:
+            del self.pending[key]
+            return bytes(entry["data"][:entry["length"]])
+        return None
+
+
+# --- bench -------------------------------------------------------------------
 
 def open_bus(args):
     channel = args.channel
@@ -39,15 +146,116 @@ def open_bus(args):
         kwargs["fd"] = False
         kwargs["sample_point"] = args.sample_point
     bus = can.Bus(**kwargs)
-    print(f"[can-bench] {args.interface} {channel} at {args.bitrate} bit/s", flush=True)
+    print(f"[can-bench] {args.interface} {channel} at {args.bitrate} bit/s, bench address {BENCH_ADDRESS}",
+          flush=True)
     return bus
 
 
-def describe(message):
-    ident = f"{message.arbitration_id:08X}" if message.is_extended_id else f"{message.arbitration_id:03X}"
-    payload = " ".join(f"{byte:02X}" for byte in message.data)
-    kind = "ERR" if message.is_error_frame else ("ext" if message.is_extended_id else "std")
-    return f"{kind} {ident} [{message.dlc}] {payload}"
+class Bench:
+    def __init__(self, args, bus):
+        self.args = args
+        self.bus = bus
+        self.started = time.monotonic()
+        self.assembler = FastPacketAssembler()
+        self.claims = {}          # address -> NAME
+        self.last_claimer = None  # (address, NAME) of the most recent claim
+        self.frames = 0
+        self.messages = 0
+        self.send_failures = 0
+        self.actions = []
+
+    def elapsed(self):
+        return time.monotonic() - self.started
+
+    def send(self, priority, pgn, destination, data, label, source=BENCH_ADDRESS):
+        message = can.Message(arbitration_id=encode_id(priority, pgn, source, destination),
+                              is_extended_id=True, data=data)
+        try:
+            self.bus.send(message, timeout=0.2)
+            print(f"{self.elapsed():9.3f}  >> {label}", flush=True)
+        except can.CanError as error:
+            self.send_failures += 1
+            print(f"{self.elapsed():9.3f}  >> {label} FAILED: {error}", flush=True)
+
+    def target(self):
+        if self.args.dest is not None:
+            return self.args.dest
+        return self.last_claimer[0] if self.last_claimer else 255
+
+    def request(self, pgn, destination=None):
+        destination = self.target() if destination is None else destination
+        self.send(6, 59904, destination, pgn.to_bytes(3, "little"),
+                  f"ISO request PGN {pgn} ({PGN_NAMES.get(pgn, '?')}) to {destination}")
+
+    def contend(self, lower):
+        if not self.last_claimer:
+            print(f"{self.elapsed():9.3f}  !! no claimed node seen, contention test skipped", flush=True)
+            return
+        address, theirs = self.last_claimer
+        ours = 0 if lower else (1 << 64) - 1
+        verdict = "lower NAME, node must move" if lower else "higher NAME, node must re-assert"
+        # A claim competes for the address it is sent from.
+        self.send(6, 60928, 255, struct.pack("<Q", ours),
+                  f"address claim for {address} with {verdict}", source=address)
+
+    def schedule(self):
+        # Discover the nodes on the bus: every node answers a global request
+        # for the address claim with its claim.
+        self.actions.append((0.2, lambda: self.request(60928, destination=255)))
+        at = 1.0
+        for pgn in self.args.request:
+            self.actions.append((at, lambda pgn=pgn: self.request(pgn)))
+            at += 1.0
+        if self.args.request_unsupported:
+            self.actions.append((at, lambda: self.request(65000)))
+            at += 1.0
+        if self.args.conflict:
+            self.actions.append((at + 1.0, lambda: self.contend(lower=False)))
+            self.actions.append((at + 3.0, lambda: self.contend(lower=True)))
+        self.actions.sort(key=lambda item: item[0])
+
+    def handle(self, message):
+        self.frames += 1
+        now = self.elapsed()
+        if message.is_error_frame:
+            print(f"{now:9.3f}  ERROR FRAME", flush=True)
+            return
+        if not message.is_extended_id:
+            print(f"{now:9.3f}  std {message.arbitration_id:03X} [{message.dlc}] {message.data.hex(' ')}", flush=True)
+            return
+        priority, pgn, source, destination = decode_id(message.arbitration_id)
+        data = bytes(message.data)
+        if pgn in FAST_PACKET_PGNS:
+            data = self.assembler.add((source, pgn), data)
+            if data is None:
+                return
+        self.messages += 1
+        if pgn == 60928 and len(data) >= 8:
+            name = struct.unpack_from("<Q", data)[0]
+            if source != BENCH_ADDRESS and source != 254 and name not in (0, (1 << 64) - 1):
+                self.claims[source] = name
+                self.last_claimer = (source, name)
+        if self.args.quiet and pgn not in (60928, 59392):
+            return
+        decoded = decode_payload(pgn, data)
+        target = "" if destination == 255 else f" -> {destination}"
+        head = f"{now:9.3f}  PGN {pgn:6d} {PGN_NAMES.get(pgn, ''):<28} src {source:3d}{target} p{priority}"
+        print(f"{head}  {decoded if decoded is not None else data.hex(' ')}", flush=True)
+
+    def loop(self):
+        self.schedule()
+        while self.args.duration <= 0 or self.elapsed() < self.args.duration:
+            while self.actions and self.elapsed() >= self.actions[0][0]:
+                self.actions.pop(0)[1]()
+            message = self.bus.recv(timeout=0.05)
+            if message is not None:
+                self.handle(message)
+
+    def summary(self):
+        nodes = ", ".join(f"{address}: {describe_name(name)}" for address, name in sorted(self.claims.items()))
+        print(f"[can-bench] {self.elapsed():.1f} s: {self.frames} frame(s), {self.messages} message(s), "
+              f"send failures {self.send_failures}", flush=True)
+        print(f"[can-bench] claimed addresses: {nodes or 'none'}", flush=True)
 
 
 def main():
@@ -56,64 +264,26 @@ def main():
     parser.add_argument("--channel", default=None)
     parser.add_argument("--bitrate", type=int, default=250000)
     parser.add_argument("--sample-point", type=float, default=85.0, help="candle only, percent")
-    parser.add_argument("--send", action="store_true", help="transmit a bench test frame every second")
     parser.add_argument("--duration", type=float, default=0.0, help="seconds to run; 0 = until Ctrl+C")
-    parser.add_argument("--quiet", action="store_true", help="only print LT1 sequence problems and the summary")
+    parser.add_argument("--request", type=int, action="append", default=[], metavar="PGN",
+                        help="send an ISO request for PGN (repeatable), one per second from t=1 s")
+    parser.add_argument("--request-unsupported", action="store_true",
+                        help="also request PGN 65000, which must be NACKed")
+    parser.add_argument("--dest", type=int, default=None, help="request destination (default: last claimer)")
+    parser.add_argument("--conflict", action="store_true",
+                        help="contend for the claimed address with a higher, then a lower NAME")
+    parser.add_argument("--quiet", action="store_true", help="only print address claims and acknowledgements")
     args = parser.parse_args()
 
     bus = open_bus(args)
-    started = time.monotonic()
-    next_send = started
-    sent = send_errors = received = error_frames = 0
-    lt1_frames = lt1_gaps = 0
-    lt1_last = None
-
+    bench = Bench(args, bus)
     try:
-        while args.duration <= 0 or time.monotonic() - started < args.duration:
-            now = time.monotonic()
-            if args.send and now >= next_send:
-                next_send += 1.0
-                message = can.Message(arbitration_id=BENCH_TEST_ID, is_extended_id=True,
-                                      data=struct.pack("<I", sent) + b"\xBE\x7C\x00\x00")
-                try:
-                    bus.send(message, timeout=0.2)
-                    sent += 1
-                except can.CanError as error:
-                    send_errors += 1
-                    print(f"[can-bench] send failed: {error}", flush=True)
-
-            message = bus.recv(timeout=0.05)
-            if message is None:
-                continue
-            received += 1
-            if message.is_error_frame:
-                error_frames += 1
-            elapsed = message.timestamp - started if message.timestamp > 1e6 else time.monotonic() - started
-            line = f"{elapsed:9.3f}  {describe(message)}"
-            if message.arbitration_id == LT1_TEST_ID and message.is_extended_id and len(message.data) == 8:
-                counter, uptime = struct.unpack_from("<IH", message.data)
-                lt1_frames += 1
-                note = ""
-                if lt1_last is not None and counter != lt1_last + 1:
-                    lt1_gaps += 1
-                    note = f"  <-- sequence gap (expected {lt1_last + 1})"
-                lt1_last = counter
-                line += f"   LT1 test #{counter}, uptime {uptime} s{note}"
-                if args.quiet and not note:
-                    line = None
-            elif args.quiet:
-                line = None
-            if line:
-                print(line, flush=True)
+        bench.loop()
     except KeyboardInterrupt:
         pass
     finally:
         bus.shutdown()
-
-    duration = time.monotonic() - started
-    print(f"[can-bench] {duration:.1f} s: received {received} frame(s), {error_frames} error frame(s); "
-          f"LT1 test frames {lt1_frames}, sequence gaps {lt1_gaps}; "
-          f"sent {sent}, send failures {send_errors}", flush=True)
+        bench.summary()
 
 
 if __name__ == "__main__":

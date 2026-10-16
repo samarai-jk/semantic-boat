@@ -155,6 +155,11 @@ const char* resetCause() {
     return capturedResetCause;
 }
 
+void uniqueId(std::uint8_t (&out)[12]) {
+    const auto* uid = reinterpret_cast<const std::uint8_t*>(UID_BASE);
+    for (std::size_t index = 0u; index < sizeof out; ++index) out[index] = uid[index];
+}
+
 void logBoardInfo(const slstm32::Logger& log) {
     using slstm32::LogLevel;
     const auto* uid = reinterpret_cast<const std::uint32_t*>(UID_BASE);

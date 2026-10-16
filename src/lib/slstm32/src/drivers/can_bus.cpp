@@ -38,6 +38,14 @@ bool CanBusDriver::send(const CanFrame& frame) {
     return true;
 }
 
+std::size_t CanBusDriver::transmitSpace() const {
+    CriticalSection lock(runtime_);
+    const std::size_t head = transmitHead_;
+    const std::size_t tail = transmitTail_;
+    const auto used = head >= tail ? head - tail : transmitCapacity_ - tail + head;
+    return transmitCapacity_ - 1u - used;
+}
+
 bool CanBusDriver::receive(CanFrame& frame) {
     CriticalSection lock(runtime_);
     const auto tail = receiveTail_;

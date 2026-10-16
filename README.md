@@ -11,6 +11,7 @@ reusable drivers live outside generated code.
 - `src/dev/<device>/` — hand-written C++ firmware for one device
 - `src/lib/slstm32/` — heap-free reusable STM32 application framework and drivers
 - `src/lib/semantic-display/` — portable configured-display compiler and runtime
+- `src/lib/n2k/` — small NMEA 2000 stack on slstm32 (address claim, requests, heartbeat, product information)
 - `src/lib/` — other first- or third-party libraries
 
 Only code inside CubeMX `USER CODE` sections should be hand-edited under

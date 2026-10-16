@@ -38,6 +38,9 @@ slstm32::drivers::ButtonConfig buttonFrontend(ButtonFrontend frontend, std::uint
 
 const char* resetCause();
 
+// The MCU's 96-bit factory unique ID, little-endian.
+void uniqueId(std::uint8_t (&out)[12]);
+
 // Writes reset cause, clocks, and MCU identity to the log.
 void logBoardInfo(const slstm32::Logger& log);
 

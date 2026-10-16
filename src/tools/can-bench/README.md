@@ -1,9 +1,11 @@
 # can-bench
 
-Bench CAN monitor for can-mcu firmware, built on python-can. It prints every
-frame, decodes the lab-test-01 raw test frame (ID `0x18FF0042`) and checks its
-sequence, can transmit its own test frame (`0x18FF0099`) once per second, and
-prints a summary on exit.
+Bench CAN / NMEA 2000 monitor for can-mcu firmware, built on python-can. It
+decodes NMEA 2000 identifiers, reassembles fast packets, and decodes the PGNs
+used by the firmware (address claim, ISO request and acknowledgement,
+heartbeat, product information, PGN list, temperature). From its own source
+address (153) it discovers the nodes with a global address-claim request and
+can send requests and contend for addresses.
 
 ## Setup
 
@@ -19,9 +21,15 @@ On Linux use `build/tools/can-venv/bin/python` and a SocketCAN interface
 
 ```sh
 python src/tools/can-bench/can_bench.py                 # listen until Ctrl+C
-python src/tools/can-bench/can_bench.py --send --duration 30
-python src/tools/can-bench/can_bench.py --quiet         # only gaps and summary
+python src/tools/can-bench/can_bench.py --duration 12 --request 126996 --request 126464
+python src/tools/can-bench/can_bench.py --duration 12 --request-unsupported   # expects a NACK
+python src/tools/can-bench/can_bench.py --duration 8 --conflict --quiet
 ```
+
+`--conflict` sends two address claims from the address of the last node that
+claimed: first with the highest possible NAME (the node must re-assert its
+claim), then with NAME 0 (the node must move to another address).
+`--quiet` prints only address claims and acknowledgements.
 
 The default interface is `candle`, which drives candleLight/gs_usb adapters
 (USB ID 1D50:606F) on Windows through WinUSB; the first adapter found is

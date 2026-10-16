@@ -46,7 +46,7 @@ AINx (single-ended against GND_I).
   to about 24 V.
 - Input impedance about 92 kΩ. The divider source impedance (about 10 kΩ)
   against the ADS1115 input impedance causes a gain error of a few tenths of a
-  percent; calibrate `analogScale` per channel for accuracy.
+  percent; calibrate each channel for accuracy (see Calibration below).
 
 ## Digital inputs (D0..D3)
 
@@ -69,7 +69,6 @@ semantic_modules::AdInputIso12vConfig config{
     0x48u,                                            // ADS1115 address
     slstm32::drivers::Ads1115Driver::Gain::fsr2048,   // 0..18.8 V
     slstm32::drivers::Ads1115Driver::DataRate::sps128,
-    {9.2f, 9.2f, 9.2f, 9.2f},                         // calibrated scale per channel
     board::isolatedModuleInputs(),                    // MCU pins for OUT_D_0..3
     20u,                                              // debounce, ms
 };
@@ -78,3 +77,22 @@ semantic_modules::AdInputIso12v module{runtime, i2cBus, config};
 
 Unconnected digital inputs use a binding without a read callback. With
 128 samples/s each analog channel refreshes about 27 times per second.
+
+## Calibration
+
+`AdInputIso12vCalibrator` keeps one calibration per module, keyed by the
+ADS1115 address, in the host EEPROM (`AdInputIso12vCalibrationStore`, one
+128-byte power-loss-tolerant slot per address 0x48..0x4B). Per channel it
+stores a scale factor and a zero offset: terminal mV = ADC uV x scale / 1000
+- offset. Stored calibrations are applied at startup.
+
+With the console commands registered:
+
+1. Optional: short the input to GND_I (P1.5) and run `cal <addr> <ch> zero`.
+2. Connect a steady reference to the input, measure it at the terminal, and
+   run `cal <addr> <ch> <volts>`, for example `cal 0x49 1 11.972`.
+3. Check with `ain`.
+
+A measurement averages 32 samples (about 1.2 s) and is rejected if the scale
+deviates more than 5 % from the design value 9.2 or the offset exceeds
+100 mV. Several channels can share one reference by bridging their terminals.

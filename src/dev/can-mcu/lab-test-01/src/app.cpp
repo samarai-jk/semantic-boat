@@ -15,6 +15,8 @@
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
+#include "semantic_modules/ad_input_iso_12v_calibration.hpp"
+#include "slstm32/console.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
@@ -80,16 +82,19 @@ slstm32::drivers::CanBusDriver can{runtime, can_mcu::canBusHardware(), canReceiv
                                    canTransmitBuffer.size()};
 slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
 
-// 12v-ad-input-iso module on the I2C connectors, DI0..DI3 wired to PA4..PA7.
+// 12v-ad-input-iso module on the I2C connectors (ADS1115 at 0x49, R34 fitted),
+// DI0..DI3 wired to PA4..PA7.
 semantic_modules::AdInputIso12vConfig inputModuleConfig{
-    0x48u,
+    0x49u,
     slstm32::drivers::Ads1115Driver::Gain::fsr2048,
     slstm32::drivers::Ads1115Driver::DataRate::sps128,
-    {9.2f, 9.2f, 9.2f, 9.2f},
     lab_test_01::board::isolatedModuleInputs(),
     20u,
 };
 semantic_modules::AdInputIso12v inputModule{runtime, i2c, inputModuleConfig};
+semantic_modules::AdInputIso12v* const inputModules[]{&inputModule};
+semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eeprom,
+                                                                            lab_test_01::moduleCalibrationOffset};
 
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
@@ -118,6 +123,9 @@ lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 lab_test_01::TemperatureReportService temperatureReport{runtime, n2kNode, boardTemperature, mcu};
 lab_test_01::InputModuleTestService inputModuleTest{runtime, logger, inputModule};
+semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
+    runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
+slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
 
 namespace component {
 struct SerialLog;
@@ -137,6 +145,8 @@ struct N2kNode;
 struct CanMonitor;
 struct TemperatureReport;
 struct InputModuleTest;
+struct InputModuleCalibrator;
+struct Console;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -158,7 +168,9 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::N2kNode>(n2kNode),
         slstm32::bind<component::CanMonitor>(canMonitor),
         slstm32::bind<component::TemperatureReport>(temperatureReport),
-        slstm32::bind<component::InputModuleTest>(inputModuleTest)));
+        slstm32::bind<component::InputModuleTest>(inputModuleTest),
+        slstm32::bind<component::InputModuleCalibrator>(inputModuleCalibrator),
+        slstm32::bind<component::Console>(console)));
 
 bool saveSettings() {
     eepromBinding.clearError();
@@ -218,6 +230,9 @@ extern "C" void lab_test_01_app_init(void) {
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
+    if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console)) {
+        logger.write(LogLevel::error, "console: commands not registered");
+    }
     if (!application.init()) {
         logger.write(LogLevel::error, "application init failed");
         redLed.blink(250u, 125u);

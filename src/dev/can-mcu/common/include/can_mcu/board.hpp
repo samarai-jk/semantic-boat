@@ -29,6 +29,11 @@ void delayMicroseconds(std::uint32_t microseconds);
 // Non-blocking transmitter on the ST-Link virtual COM port (USART1).
 slstm32::drivers::SerialOutputHardware vcpOutput();
 
+// Receiver on the ST-Link virtual COM port: the USART1 receive interrupt
+// fills a 64-byte ring that read() drains. This layer owns USART1_IRQHandler;
+// do not enable the USART1 interrupt in CubeMX.
+slstm32::drivers::SerialInputHardware vcpInput();
+
 enum class ButtonFrontend : std::uint8_t { fun0, fun1, fun2, fun3, fun4, fun5, power };
 
 // Interrupt-driven, active-low button on one of the seven frontends. The

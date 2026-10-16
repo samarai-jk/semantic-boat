@@ -27,6 +27,7 @@ constexpr KnownAddress knownAddresses[]{
     {0x44u, "SHT3x / SHT4x temp/humidity"},
     {0x45u, "SHT3x temp/humidity"},
     {0x48u, "ADS1115 ADC / TMP102 / LM75"},
+    {0x49u, "ADS1115 ADC (ADDR to VDD) / TMP102"},
     {0x4Fu, "can-mcu TMP75 (board temperature)"},
     {0x52u, "can-mcu AT24C256 (EEPROM)"},
     {0x57u, "MAX30102"},

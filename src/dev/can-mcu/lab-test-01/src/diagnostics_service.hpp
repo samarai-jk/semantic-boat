@@ -3,6 +3,7 @@
 #include <cstdint>
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "slstm32/console.hpp"
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
 #include "slstm32/event_bus.hpp"
@@ -12,9 +13,10 @@
 
 namespace lab_test_01 {
 
-// Board health for bring-up: logs every supply dip as it happens (checked in
-// 100 ms windows) and a periodic heartbeat with uptime, supply range, board
-// and MCU temperature, I2C bus faults, and dropped events.
+// Board health for bring-up: logs every supply dip below an adjustable
+// threshold as it happens (checked in 100 ms windows) and a periodic
+// heartbeat with uptime, supply range, board and MCU temperature, I2C bus
+// faults, and dropped events. Console command: "supply [<mV>]".
 class DiagnosticsService final : public slstm32::Service {
 public:
     DiagnosticsService(slstm32::Runtime runtime, slstm32::Logger log, slstm32::EventBus& events,
@@ -25,8 +27,10 @@ public:
 
     bool init() override;
     void run() override;
+    bool registerCommands(slstm32::CommandConsole& console);
 
 private:
+    static void supplyCommand(void* context, std::size_t argc, const char* const* argv);
     void checkSupply(std::uint32_t now);
     void heartbeat(std::uint32_t now);
 
@@ -39,6 +43,7 @@ private:
     slstm32::drivers::ToneDriver& buzzer_;
     std::uint32_t nextSupplyCheckAt_{};
     std::uint32_t nextHeartbeatAt_{};
+    std::uint16_t dipThresholdMv_{3150u};
     std::uint16_t minimumMv_{0xffffu};
     std::uint16_t maximumMv_{};
 };

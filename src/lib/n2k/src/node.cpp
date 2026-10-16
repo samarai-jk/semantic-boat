@@ -308,6 +308,9 @@ void Node::pumpFastPacket(std::uint32_t now) {
 }
 
 bool Node::sendFrame(const CanId& id, const std::uint8_t* data, std::uint8_t length) {
+    // Pending messages retry on every run(); only a frame that cannot be
+    // queued although space was reported counts as not sent.
+    if (can_.transmitSpace() == 0u) return false;
     CanFrame frame{};
     frame.id = encodeCanId(id);
     frame.extended = true;

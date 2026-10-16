@@ -6,6 +6,7 @@ endif()
 
 add_library(semantic_modules STATIC
     src/ad_input_iso_12v.cpp
+    src/ad_input_iso_12v_calibration.cpp
 )
 
 target_include_directories(semantic_modules PUBLIC include)

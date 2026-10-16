@@ -5,6 +5,7 @@ endif()
 
 add_library(slstm32 STATIC
     src/bare_executor.cpp
+    src/console.cpp
     src/event_bus.cpp
     src/log.cpp
     src/drivers/ads1115.cpp

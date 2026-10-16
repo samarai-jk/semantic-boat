@@ -46,7 +46,8 @@ void AdInputIso12v::run() {
 std::int32_t AdInputIso12v::analogMillivolts(std::size_t channel) const {
     if (channel >= channels) return 0;
     return static_cast<std::int32_t>(static_cast<float>(adc_.microvolts(channel)) *
-                                     config_.analogScale[channel] / 1000.0f);
+                                     calibration_.scale[channel] / 1000.0f) -
+           calibration_.offsetMv[channel];
 }
 
 } // namespace semantic_modules

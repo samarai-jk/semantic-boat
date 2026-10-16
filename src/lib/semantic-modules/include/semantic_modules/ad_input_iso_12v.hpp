@@ -12,6 +12,14 @@
 
 namespace semantic_modules {
 
+// Per-channel analog calibration: terminal mV = ADC uV * scale / 1000 -
+// offset mV. The design values are scale 9.2 ((82k + 10k) / 10k), offset 0.
+struct AdInputIso12vCalibration {
+    static constexpr float designScale = 9.2f;
+    std::array<float, 4> scale{designScale, designScale, designScale, designScale};
+    std::array<std::int16_t, 4> offsetMv{};
+};
+
 // Configuration of a 12v-ad-input-iso module. See ../../12v-ad-input-iso.md.
 struct AdInputIso12vConfig {
     static constexpr std::size_t channels = 4u;
@@ -23,9 +31,6 @@ struct AdInputIso12vConfig {
     // protection limits the usable range to about 24 V).
     slstm32::drivers::Ads1115Driver::Gain gain{slstm32::drivers::Ads1115Driver::Gain::fsr2048};
     slstm32::drivers::Ads1115Driver::DataRate dataRate{slstm32::drivers::Ads1115Driver::DataRate::sps128};
-    // Terminal volts per ADC volt for each analog channel: (82k + 10k) / 10k
-    // by design; replace with calibrated values per module.
-    std::array<float, channels> analogScale{9.2f, 9.2f, 9.2f, 9.2f};
     // MCU pins wired to the module's OUT_D_0..3 (header H1). Each binding
     // reports the physical pin level; the module drives the pin low while
     // 12 V is present, which the driver accounts for. A binding without a
@@ -57,6 +62,11 @@ public:
     std::uint32_t adcErrors() const { return adc_.errors(); }
     std::uint8_t adcAddress() const { return adc_.address(); }
 
+    // Starts with the design values; a stored calibration is applied with
+    // setCalibration() (see AdInputIso12vCalibrator).
+    void setCalibration(const AdInputIso12vCalibration& calibration) { calibration_ = calibration; }
+    const AdInputIso12vCalibration& calibration() const { return calibration_; }
+
     bool analogValid(std::size_t channel) const { return adc_.valid(channel); }
     std::int32_t analogMillivolts(std::size_t channel) const;
     std::int32_t adcMicrovolts(std::size_t channel) const { return adc_.microvolts(channel); }
@@ -76,6 +86,7 @@ private:
     static slstm32::drivers::DigitalInputHardware activeLow(slstm32::drivers::DigitalInputHardware hardware);
 
     const AdInputIso12vConfig& config_;
+    AdInputIso12vCalibration calibration_{};
     std::array<slstm32::drivers::Ads1115Driver::Channel, channels> adcChannels_;
     slstm32::drivers::Ads1115Driver adc_;
     std::array<slstm32::drivers::DigitalInputDriver, channels> inputs_;

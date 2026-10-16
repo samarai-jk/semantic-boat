@@ -43,6 +43,14 @@ struct SerialOutputHardware {
     std::size_t (*write)(void*, const std::uint8_t*, std::size_t){};
 };
 
+// Byte-serial input such as a UART receiver. read() must not block: it copies
+// up to `size` bytes that have already arrived and returns how many.
+struct SerialInputHardware {
+    void* context{};
+    bool (*configure)(void*){};
+    std::size_t (*read)(void*, std::uint8_t*, std::size_t){};
+};
+
 struct AnalogInputHardware {
     void* context{};
     bool (*configure)(void*){};

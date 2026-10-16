@@ -11,6 +11,9 @@ namespace lab_test_01 {
 // device settings, of which the redundant store uses the first 128 bytes.
 inline constexpr std::uint32_t settingsOffset = 32u * 1024u - 256u;
 inline constexpr std::size_t settingsBytes = 256u;
+// Calibration of up to four 12v-ad-input-iso modules (one 128-byte slot per
+// ADS1115 address 0x48..0x4B) directly below the settings.
+inline constexpr std::uint32_t moduleCalibrationOffset = settingsOffset - 512u;
 
 struct DeviceSettings {
     std::uint32_t bootCount{};

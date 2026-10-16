@@ -121,6 +121,26 @@ power-on and boots the ST bootloader instead of the application. The flag is
 only re-evaluated on a power-on reset, so after the very first programming
 remove the 12 V supply once. A reset alone is not enough.
 
+## Watching the device
+
+| Tool | Purpose |
+| --- | --- |
+| `script\serial-log.ps1` (task **Serial log**) | Owns COM4, writes `build/logs/serial.log`, sends console commands |
+| `script\monitor.ps1` (task **Monitor**) | Live events in colour (restarts, buttons, supply dips, CAN state, module changes, console), warns when the board goes silent, sends typed commands; `-All` shows every line |
+| `script\swd-probe.ps1` (task **SWD probe**, **SWD log (follow)**) | Pin and CAN register probes over SWD into `build/logs/swd.log`; `-Follow` tails it, `-Every <s>` repeats |
+
+Only one serial logger can run at a time. The monitor only reads the logs,
+so any number of monitors can run next to it.
+
+Console commands (type into the monitor or the serial logger):
+
+| Command | Purpose |
+| --- | --- |
+| `help` | List all commands |
+| `supply [<mV>]` | Supply voltage now and since the last heartbeat; set the dip threshold (default 3150 mV) |
+| `ain` | Terminal and ADC voltages of the input module |
+| `cal <addr> [<ch> <volts>\|zero\|reset]` | Show or calibrate an input module channel (see the module notes) |
+
 ## Bring-up behavior
 
 Log output: ST-Link VCP, 115200 8N1. Run `script\serial-log.ps1` (or the VS

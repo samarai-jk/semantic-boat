@@ -47,6 +47,31 @@ std::size_t vcpWrite(void*, const std::uint8_t* data, std::size_t size) {
     return written;
 }
 
+constexpr std::size_t vcpReceiveCapacity = 64u;
+constexpr std::uint32_t vcpIrqPriority = 7u;
+std::uint8_t vcpReceiveBuffer[vcpReceiveCapacity];
+volatile std::size_t vcpReceiveHead{};
+volatile std::size_t vcpReceiveTail{};
+
+bool vcpEnableReceive(void*) {
+    if (!vcpReady(nullptr)) return false;
+    USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF;
+    USART1->CR1 |= USART_CR1_RXNEIE;
+    HAL_NVIC_SetPriority(USART1_IRQn, vcpIrqPriority, 0u);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+    return true;
+}
+
+std::size_t vcpRead(void*, std::uint8_t* data, std::size_t size) {
+    std::size_t count = 0u;
+    while (count < size && vcpReceiveTail != vcpReceiveHead) {
+        const std::size_t tail = vcpReceiveTail;
+        data[count++] = vcpReceiveBuffer[tail];
+        vcpReceiveTail = (tail + 1u) % vcpReceiveCapacity;
+    }
+    return count;
+}
+
 // --- Button frontends ------------------------------------------------------
 
 struct FrontendInput {
@@ -141,6 +166,10 @@ slstm32::drivers::SerialOutputHardware vcpOutput() {
     return {nullptr, &vcpReady, &vcpWrite};
 }
 
+slstm32::drivers::SerialInputHardware vcpInput() {
+    return {nullptr, &vcpEnableReceive, &vcpRead};
+}
+
 slstm32::drivers::ButtonConfig buttonFrontend(ButtonFrontend frontend, std::uint8_t id) {
     auto& input = frontendInputs[static_cast<std::size_t>(frontend)];
     return {
@@ -177,6 +206,23 @@ void logBoardInfo(const slstm32::Logger& log) {
 }
 
 } // namespace can_mcu
+
+extern "C" void USART1_IRQHandler(void) {
+    const auto status = USART1->ISR;
+    if (status & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE)) {
+        USART1->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NECF;
+    }
+    if (status & USART_ISR_RXNE) {
+        const auto byte = static_cast<std::uint8_t>(USART1->RDR);
+        const std::size_t head = can_mcu::vcpReceiveHead;
+        const std::size_t next = (head + 1u) % can_mcu::vcpReceiveCapacity;
+        // A full ring drops the byte; the console then sees a damaged line.
+        if (next != can_mcu::vcpReceiveTail) {
+            can_mcu::vcpReceiveBuffer[head] = byte;
+            can_mcu::vcpReceiveHead = next;
+        }
+    }
+}
 
 extern "C" void can_mcu_fatal_error(const char* reason) {
     __disable_irq();

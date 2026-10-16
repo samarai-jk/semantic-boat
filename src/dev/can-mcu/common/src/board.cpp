@@ -1,5 +1,7 @@
 #include "can_mcu/board.hpp"
 #include "can_mcu/fatal.h"
+#include "can_mcu/supervision.hpp"
+#include <cstring>
 #include <cstddef>
 extern "C" {
 #include "main.h"
@@ -115,19 +117,33 @@ bool readFrontend(void* context) {
 // --- Reset cause -----------------------------------------------------------
 
 const char* capturedResetCause = "unknown";
+ResetCause capturedResetCode = ResetCause::other;
 
-const char* readResetCause() {
+void readResetCause() {
     const auto flags = RCC->CSR;
     // Every internal reset also pulses NRST, so the pin flag is checked last.
-    if (flags & RCC_CSR_LPWRRSTF) return "low-power";
-    if (flags & RCC_CSR_WWDGRSTF) return "window watchdog";
-    if (flags & RCC_CSR_IWDGRSTF) return "independent watchdog";
-    if (flags & RCC_CSR_SFTRSTF) return "software";
-    if (flags & RCC_CSR_BORRSTF) return "power-on/brown-out";
-    if (flags & RCC_CSR_OBLRSTF) return "option-byte load";
-    if (flags & RCC_CSR_FWRSTF) return "firewall";
-    if (flags & RCC_CSR_PINRSTF) return "reset pin";
-    return "unknown";
+    struct Cause {
+        std::uint32_t flag;
+        ResetCause code;
+        const char* name;
+    };
+    static constexpr Cause causes[]{
+        {RCC_CSR_LPWRRSTF, ResetCause::lowPower, "low-power"},
+        {RCC_CSR_WWDGRSTF, ResetCause::windowWatchdog, "window watchdog"},
+        {RCC_CSR_IWDGRSTF, ResetCause::independentWatchdog, "independent watchdog"},
+        {RCC_CSR_SFTRSTF, ResetCause::software, "software"},
+        {RCC_CSR_BORRSTF, ResetCause::powerOn, "power-on/brown-out"},
+        {RCC_CSR_OBLRSTF, ResetCause::other, "option-byte load"},
+        {RCC_CSR_FWRSTF, ResetCause::other, "firewall"},
+        {RCC_CSR_PINRSTF, ResetCause::pin, "reset pin"},
+    };
+    for (const auto& cause : causes) {
+        if (flags & cause.flag) {
+            capturedResetCode = cause.code;
+            capturedResetCause = cause.name;
+            return;
+        }
+    }
 }
 
 // --- Fatal state -----------------------------------------------------------
@@ -147,7 +163,7 @@ void fatalWrite(const char* text) {
 
 void init() {
     enableCycleCounter();
-    capturedResetCause = readResetCause();
+    readResetCause();
     RCC->CSR |= RCC_CSR_RMVF;
 }
 
@@ -182,6 +198,10 @@ slstm32::drivers::ButtonConfig buttonFrontend(ButtonFrontend frontend, std::uint
 
 const char* resetCause() {
     return capturedResetCause;
+}
+
+ResetCause resetCauseCode() {
+    return capturedResetCode;
 }
 
 void uniqueId(std::uint8_t (&out)[12]) {
@@ -226,9 +246,12 @@ extern "C" void USART1_IRQHandler(void) {
 
 extern "C" void can_mcu_fatal_error(const char* reason) {
     __disable_irq();
+    const bool hardFault = reason && std::strcmp(reason, "HardFault") == 0;
+    can_mcu::storeCrashRecord(hardFault ? can_mcu::CrashRecord::Kind::hardFault
+                                        : can_mcu::CrashRecord::Kind::errorHandler);
     can_mcu::fatalWrite("\r\n*** FATAL: ");
     can_mcu::fatalWrite(reason ? reason : "unspecified");
-    can_mcu::fatalWrite("\r\n");
+    can_mcu::fatalWrite(can_mcu::watchdogRunning() ? ", watchdog reset follows\r\n" : "\r\n");
 
     // Yellow CAN LED on PB0, active low.
     __HAL_RCC_GPIOB_CLK_ENABLE();

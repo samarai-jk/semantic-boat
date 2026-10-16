@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "n2k/bytes.hpp"
+#include "n2k/can_id.hpp"
 
 namespace n2k {
 
@@ -17,8 +18,6 @@ enum class TemperatureSource : std::uint8_t {
     freezer = 13u,
     exhaustGas = 14u,
 };
-
-inline constexpr std::uint8_t noSequenceId = 0xFFu;
 
 // PGN 130316 Temperature, Extended Range: SID, instance, source, actual
 // temperature (24 bit, 0.001 K), set temperature (16 bit, 0.1 K, not set).

@@ -369,9 +369,14 @@ therefore deliberately outside `slstm32`. It currently provides:
   calibration. It currently owns ADC1;
 - all EXTI interrupt vectors, forwarded to `HAL_GPIO_EXTI_Callback()`;
 - reset-cause capture and a board-info log;
+- supervision: independent watchdog (`startWatchdog()`, frozen while a
+  debugger halts the core), power monitor counting every VDD drop below a
+  threshold (`startPowerMonitor()`, PVD interrupt), and a crash record in the
+  RTC backup registers (`takeCrashRecord()`) with the fault status registers;
 - `can_mcu_fatal_error()` for `Error_Handler` and `HardFault_Handler`: it
-  writes the reason to the VCP (if USART1 is running) and blinks the yellow
-  CAN LED at 5 Hz.
+  stores the crash record, writes the reason to the VCP (if USART1 is
+  running), and blinks the yellow CAN LED until the watchdog (if started)
+  resets the MCU.
 
 Requirements on a device's CubeMX project: USART1 on PB6/PB7, and no EXTI
 interrupts enabled in CubeMX (the shared layer owns those vectors).

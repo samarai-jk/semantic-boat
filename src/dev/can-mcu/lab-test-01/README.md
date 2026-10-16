@@ -139,7 +139,29 @@ Console commands (type into the monitor or the serial logger):
 | `help` | List all commands |
 | `supply [<mV>]` | Supply voltage now and since the last heartbeat; set the dip threshold (default 3150 mV) |
 | `ain` | Terminal and ADC voltages of the input module |
+| `health [clear]` | Restarts per cause, supply drops, this and the previous run; `clear` resets the statistics |
+| `trap hang\|fault` | Provoke a watchdog restart or a HardFault to verify the traps |
 | `cal <addr> [<ch> <volts>\|zero\|reset]` | Show or calibrate an input module channel (see the module notes) |
+
+## Unattended runs
+
+- The independent watchdog (4 s) restarts a hung firmware; the restart is
+  logged with cause "independent watchdog" and counted.
+- The power monitor counts every VDD drop below 2.9 V by interrupt and logs
+  it (`power: VDD fell below 2.9 V`); the ADC-based dip check (`supply`)
+  covers slower sags above that.
+- A HardFault or `Error_Handler` stores a crash record with the fault status
+  registers in the RTC backup registers; after the watchdog restart it is
+  logged (`health: previous run ended by ...`) and counted.
+- The health record in EEPROM keeps restarts per cause, supply drops, and the
+  previous run's duration and lowest supply (saved every minute), so the
+  outcome is known even if the PC log was lost.
+- The red LED blinks once an issue was seen (latched until the next reset).
+- Background load: module values as PGN 127508 and digital inputs as PGN
+  127501 every second, temperatures every 2 s, heartbeat every 60 s, I2C
+  scans every 5 s, green LED blink every 2 s. The buzzer stays silent.
+- On the PC, `can_bench.py --quiet --stats 60` acknowledges the CAN traffic
+  and logs statistics and heartbeat gaps.
 
 ## Bring-up behavior
 

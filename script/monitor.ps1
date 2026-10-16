@@ -10,6 +10,8 @@ lines such as the per-second module values are hidden unless -All is given;
 events are highlighted:
 
   RESTART      reset cause after a restart (red)
+  FATAL/POWER  fatal errors, supply drops below 2.9 V, crash or hang of the previous run (red)
+  health       restart statistics and the previous run (white)
   button       button presses (cyan)
   supply       supply dips below the firmware threshold (yellow)
   can          CAN controller state changes (magenta)
@@ -32,7 +34,7 @@ script\monitor.ps1 -All
 #>
 param(
     [switch]$All,
-    [int]$SilenceSeconds = 5,
+    [int]$SilenceSeconds = 15,
     [int]$History = 300
 )
 
@@ -51,6 +53,10 @@ try { $interactive = -not [Console]::IsInputRedirected } catch { $interactive = 
 # colour hides the line unless -All is given.
 $serialRules = @(
     @{ Pattern = 'reset cause: (.+)$'; Color = 'Red'; Label = 'RESTART' },
+    @{ Pattern = '\*\*\* FATAL'; Color = 'Red'; Label = 'FATAL' },
+    @{ Pattern = 'power: VDD fell'; Color = 'Red'; Label = 'POWER' },
+    @{ Pattern = 'health: (previous run (ended|hung)|.*hung)'; Color = 'Red'; Label = 'health' },
+    @{ Pattern = 'health:|supervision:'; Color = 'White'; Label = 'health' },
     @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },

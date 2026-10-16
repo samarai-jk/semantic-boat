@@ -7,6 +7,8 @@ namespace n2k {
 inline constexpr std::uint8_t broadcastAddress = 255u;
 inline constexpr std::uint8_t nullAddress = 254u; // "cannot claim"
 inline constexpr std::uint8_t maximumAddress = 251u;
+// SID value meaning "not tied to other messages".
+inline constexpr std::uint8_t noSequenceId = 0xFFu;
 
 // Fields of a 29-bit NMEA 2000 / J1939 CAN identifier. For PDU1 PGNs (PF below
 // 240) the PGN is stored with its low byte cleared and the destination is

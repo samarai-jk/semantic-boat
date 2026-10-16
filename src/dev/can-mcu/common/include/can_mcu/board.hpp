@@ -41,7 +41,18 @@ enum class ButtonFrontend : std::uint8_t { fun0, fun1, fun2, fun3, fun4, fun5, p
 // GPIO pin mask passed to HAL_GPIO_EXTI_Callback().
 slstm32::drivers::ButtonConfig buttonFrontend(ButtonFrontend frontend, std::uint8_t id);
 
+enum class ResetCause : std::uint8_t {
+    powerOn, // power-on or brown-out
+    pin,     // NRST: reset button or debug probe
+    software,
+    independentWatchdog,
+    windowWatchdog,
+    lowPower,
+    other,
+};
+
 const char* resetCause();
+ResetCause resetCauseCode();
 
 // The MCU's 96-bit factory unique ID, little-endian.
 void uniqueId(std::uint8_t (&out)[12]);

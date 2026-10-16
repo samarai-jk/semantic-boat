@@ -27,6 +27,8 @@ public:
     void run() override;
     std::uint16_t supplyMv() const { return supplyMv_; }
     SupplyWindow takeWindow();
+    // Lowest supply reading since init(), never reset.
+    std::uint16_t lowestMv() const { return lowestMv_; }
     bool temperatureValid() const { return temperatureValid_; }
     std::int32_t dieMilliCelsius() const { return dieMilliCelsius_; }
 
@@ -39,6 +41,7 @@ private:
 
     SupplyWindow window_{};
     std::uint16_t supplyMv_{};
+    std::uint16_t lowestMv_{0xffffu};
     std::uint32_t conversions_{};
     std::int32_t temperatureSum_{};
     std::uint32_t temperatureCount_{};

@@ -57,6 +57,7 @@ void McuMonitor::run() {
         const auto millivolts = static_cast<std::uint16_t>(
             __LL_ADC_CALC_VREFANALOG_VOLTAGE(static_cast<std::uint32_t>(raw), LL_ADC_RESOLUTION_12B));
         supplyMv_ = millivolts;
+        if (millivolts < lowestMv_) lowestMv_ = millivolts;
         if (millivolts < window_.minimumMv) window_.minimumMv = millivolts;
         if (millivolts > window_.maximumMv) window_.maximumMv = millivolts;
         ++window_.samples;

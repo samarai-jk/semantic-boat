@@ -12,6 +12,10 @@ inline constexpr std::uint32_t pgnList = 126464u;
 inline constexpr std::uint32_t heartbeat = 126993u;
 inline constexpr std::uint32_t productInformation = 126996u;
 
+// Electrical
+inline constexpr std::uint32_t binarySwitchBankStatus = 127501u;
+inline constexpr std::uint32_t batteryStatus = 127508u;
+
 // Environment
 inline constexpr std::uint32_t temperatureExtendedRange = 130316u;
 

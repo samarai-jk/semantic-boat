@@ -1,14 +1,17 @@
 #include "lab_test_01/app.h"
+#include "activity_service.hpp"
 #include "board.hpp"
 #include "can_mcu/board.hpp"
 #include "can_mcu/can_bus.hpp"
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "can_mcu/supervision.hpp"
 #include "can_monitor_service.hpp"
 #include "device_settings.hpp"
 #include "diagnostics_service.hpp"
 #include "events.hpp"
 #include "hardware_test_service.hpp"
+#include "health_service.hpp"
 #include "i2c_scan_service.hpp"
 #include "input_module_test_service.hpp"
 #include "n2k/name.hpp"
@@ -31,6 +34,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 extern "C" {
 #include "main.h"
 }
@@ -45,6 +49,7 @@ constexpr std::uint8_t eepromAddress = 0x52u;
 constexpr std::uint8_t boardTemperatureAddress = 0x4Fu;
 constexpr std::size_t canReceiveFrames = 16u;
 constexpr std::size_t canTransmitFrames = 8u;
+constexpr std::uint32_t watchdogTimeoutMs = 4000u;
 
 // NMEA 2000 identity. 2046 is not an assigned manufacturer code; it is the
 // usual choice for development and must be replaced for a released product.
@@ -99,7 +104,8 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange};
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::batteryStatus,
+                                           n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
               n2kDeviceClassSensors, 0u, 4u, true},
@@ -126,6 +132,8 @@ lab_test_01::InputModuleTestService inputModuleTest{runtime, logger, inputModule
 semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
     runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
+lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRecordOffset, mcu};
+lab_test_01::ActivityService activity{runtime, n2kNode, inputModule, health, greenLed, redLed};
 
 namespace component {
 struct SerialLog;
@@ -147,6 +155,8 @@ struct TemperatureReport;
 struct InputModuleTest;
 struct InputModuleCalibrator;
 struct Console;
+struct Health;
+struct Activity;
 } // namespace component
 
 auto application = slstm32::makeApplication(
@@ -163,6 +173,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::InputModule>(inputModule)),
     slstm32::makeServiceSet(
         slstm32::bind<component::HardwareTest>(hardwareTest),
+        slstm32::bind<component::Health>(health),
+        slstm32::bind<component::Activity>(activity),
         slstm32::bind<component::Diagnostics>(diagnostics),
         slstm32::bind<component::I2cScan>(i2cScan),
         slstm32::bind<component::N2kNode>(n2kNode),
@@ -207,6 +219,22 @@ void configureN2kIdentity() {
                   static_cast<unsigned>(n2kConfig.preferredAddress));
 }
 
+// Deliberate failures to verify the supervision traps before long runs.
+void trapCommand(void*, std::size_t argc, const char* const* argv) {
+    if (argc == 2u && std::strcmp(argv[1], "hang") == 0) {
+        logger.write(LogLevel::warning, "trap: hanging, expect a watchdog restart");
+        serialLog.flush(startupLogFlushMs);
+        for (;;) {
+        }
+    }
+    if (argc == 2u && std::strcmp(argv[1], "fault") == 0) {
+        logger.write(LogLevel::warning, "trap: invalid memory access, expect a HardFault");
+        serialLog.flush(startupLogFlushMs);
+        (void)*reinterpret_cast<volatile std::uint32_t*>(0xFFFFFFF0u);
+    }
+    logger.write(LogLevel::warning, "usage: trap hang|fault");
+}
+
 void onN2kAddressChange(void*, std::uint8_t address) {
     if (!settingsAvailable || settings.n2kAddress == address) return;
     settings.n2kAddress = address;
@@ -219,6 +247,7 @@ void onN2kAddressChange(void*, std::uint8_t address) {
 
 extern "C" void lab_test_01_app_init(void) {
     can_mcu::init();
+    can_mcu::startPowerMonitor(can_mcu::PowerThreshold::v2_9);
     logger.write(LogLevel::info, "");
     logger.writef(LogLevel::info, "lab-test-01 (can-mcu + host-dev), built %s %s", __DATE__,
                   __TIME__);
@@ -230,7 +259,9 @@ extern "C" void lab_test_01_app_init(void) {
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
-    if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console)) {
+    if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
+        !health.registerCommands(console) ||
+        !console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault", &trapCommand, nullptr})) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {
@@ -238,9 +269,14 @@ extern "C" void lab_test_01_app_init(void) {
         redLed.blink(250u, 125u);
     }
     serialLog.flush(startupLogFlushMs);
+    // A hang from here on becomes a logged watchdog restart.
+    can_mcu::startWatchdog(watchdogTimeoutMs);
+    logger.writef(LogLevel::info, "supervision: watchdog %lu ms, power monitor below 2.9 V",
+                  static_cast<unsigned long>(watchdogTimeoutMs));
 }
 
 extern "C" void lab_test_01_app_run(void) {
+    can_mcu::refreshWatchdog();
     events.process();
     application.run();
 }

@@ -8,7 +8,8 @@ namespace {
 
 using slstm32::LogLevel;
 
-constexpr std::uint32_t reportPeriodMs = 1000u;
+// Long enough to keep overnight logs readable; changes are logged at once.
+constexpr std::uint32_t reportPeriodMs = 10000u;
 
 bool due(std::uint32_t now, std::uint32_t deadline) {
     return static_cast<std::int32_t>(now - deadline) >= 0;

@@ -32,6 +32,8 @@ PGN_NAMES = {
     126464: "PGN List",
     126993: "Heartbeat",
     126996: "Product Information",
+    127501: "Binary Switch Bank Status",
+    127508: "Battery Status",
     130312: "Temperature",
     130316: "Temperature, Extended Range",
 }
@@ -97,6 +99,16 @@ def decode_payload(pgn, data):
     if pgn == 126464 and len(data) >= 1:
         pgns = [int.from_bytes(data[i:i + 3], "little") for i in range(1, len(data) - 2, 3)]
         return f"{'transmit' if data[0] == 0 else 'receive'} PGNs {pgns}"
+    if pgn == 127508 and len(data) >= 8:
+        voltage = struct.unpack_from("<h", data, 1)[0]
+        return f"instance {data[0]}, {voltage / 100:.2f} V"
+    if pgn == 127501 and len(data) >= 2:
+        states = []
+        for index in range(28):
+            value = (data[1 + index // 4] >> (2 * (index % 4))) & 3
+            if value != 3:
+                states.append("1" if value == 1 else "0")
+        return f"bank {data[0]}, states {''.join(states)}"
     if pgn == 130316 and len(data) >= 8:
         kelvin = int.from_bytes(data[3:6], "little") / 1000.0
         source = TEMPERATURE_SOURCES.get(data[2], data[2])
@@ -163,6 +175,10 @@ class Bench:
         self.messages = 0
         self.send_failures = 0
         self.actions = []
+        self.next_stats = None
+        self.window = {"frames": 0, "errors": 0, "pgns": {}, "sources": {}}
+        self.heartbeats = {}      # source -> last sequence counter
+        self.heartbeat_gaps = 0
 
     def elapsed(self):
         return time.monotonic() - self.started
@@ -214,10 +230,22 @@ class Bench:
             self.actions.append((at + 3.0, lambda: self.contend(lower=True)))
         self.actions.sort(key=lambda item: item[0])
 
+    def stats(self):
+        window = self.window
+        seconds = self.args.stats
+        pgns = ", ".join(f"{pgn}:{count}" for pgn, count in sorted(window["pgns"].items()))
+        sources = ", ".join(f"{source}:{count}" for source, count in sorted(window["sources"].items()))
+        print(f"{self.elapsed():9.3f}  STATS {window['frames']} frames ({window['frames'] / seconds:.1f}/s), "
+              f"{window['errors']} error frames, heartbeat gaps {self.heartbeat_gaps}; "
+              f"messages per PGN {{{pgns}}}; per source {{{sources}}}", flush=True)
+        self.window = {"frames": 0, "errors": 0, "pgns": {}, "sources": {}}
+
     def handle(self, message):
         self.frames += 1
+        self.window["frames"] += 1
         now = self.elapsed()
         if message.is_error_frame:
+            self.window["errors"] += 1
             print(f"{now:9.3f}  ERROR FRAME", flush=True)
             return
         if not message.is_extended_id:
@@ -230,6 +258,16 @@ class Bench:
             if data is None:
                 return
         self.messages += 1
+        self.window["pgns"][pgn] = self.window["pgns"].get(pgn, 0) + 1
+        self.window["sources"][source] = self.window["sources"].get(source, 0) + 1
+        if pgn == 126993 and len(data) >= 3:
+            sequence = data[2]
+            last = self.heartbeats.get(source)
+            if last is not None and sequence != (last + 1) % 253:
+                self.heartbeat_gaps += 1
+                print(f"{now:9.3f}  !! heartbeat sequence from {source}: {last} -> {sequence} "
+                      f"(restart or lost heartbeats)", flush=True)
+            self.heartbeats[source] = sequence
         if pgn == 60928 and len(data) >= 8:
             name = struct.unpack_from("<Q", data)[0]
             if source != BENCH_ADDRESS and source != 254 and name not in (0, (1 << 64) - 1):
@@ -244,7 +282,12 @@ class Bench:
 
     def loop(self):
         self.schedule()
+        if self.args.stats > 0:
+            self.next_stats = self.args.stats
         while self.args.duration <= 0 or self.elapsed() < self.args.duration:
+            if self.next_stats is not None and self.elapsed() >= self.next_stats:
+                self.next_stats += self.args.stats
+                self.stats()
             while self.actions and self.elapsed() >= self.actions[0][0]:
                 self.actions.pop(0)[1]()
             message = self.bus.recv(timeout=0.05)
@@ -273,6 +316,8 @@ def main():
     parser.add_argument("--conflict", action="store_true",
                         help="contend for the claimed address with a higher, then a lower NAME")
     parser.add_argument("--quiet", action="store_true", help="only print address claims and acknowledgements")
+    parser.add_argument("--stats", type=float, default=0.0, metavar="SECONDS",
+                        help="print traffic statistics every SECONDS")
     args = parser.parse_args()
 
     bus = open_bus(args)

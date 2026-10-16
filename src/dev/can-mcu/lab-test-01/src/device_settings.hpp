@@ -14,6 +14,8 @@ inline constexpr std::size_t settingsBytes = 256u;
 // Calibration of up to four 12v-ad-input-iso modules (one 128-byte slot per
 // ADS1115 address 0x48..0x4B) directly below the settings.
 inline constexpr std::uint32_t moduleCalibrationOffset = settingsOffset - 512u;
+// Health record for unattended runs (128 bytes) below the module calibration.
+inline constexpr std::uint32_t healthRecordOffset = moduleCalibrationOffset - 128u;
 
 struct DeviceSettings {
     std::uint32_t bootCount{};

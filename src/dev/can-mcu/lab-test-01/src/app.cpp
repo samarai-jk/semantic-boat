@@ -29,7 +29,6 @@
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
-#include "slstm32/drivers/ct1780.hpp"
 #include "slstm32/drivers/dht20.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
@@ -146,10 +145,10 @@ lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardT
 lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 
-// Measurement channels: the board and MCU probes, a DFRobot DHT20 on the I2C
-// connectors as reference ("air"), and the CT1780 thermocouple converter on
-// the 1-Wire input PA4 ("tc", cold junction "tc-cj"). No alarm rules while
-// sensors are being brought up; the annunciator stays silent without them.
+// Measurement channels: the board and MCU probes and a DFRobot DHT20 on the
+// I2C connectors as reference ("air"). No alarm rules while sensors are being
+// brought up; the annunciator stays silent without them. PA4 is prepared as a
+// 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
     "board", sensors::Quantity::temperature, 0u, 10000u, 4000u, nullptr, 0u};
 constexpr sensors::MeasurementConfig mcuChannelConfig{
@@ -158,25 +157,15 @@ constexpr sensors::MeasurementConfig airChannelConfig{
     "air", sensors::Quantity::temperature, 2u, 10000u, 0u, nullptr, 0u};
 constexpr sensors::MeasurementConfig airHumidityChannelConfig{
     "air-rh", sensors::Quantity::relativeHumidity, 0u, 10000u, 0u, nullptr, 0u};
-constexpr sensors::MeasurementConfig thermocoupleChannelConfig{
-    "tc", sensors::Quantity::temperature, 6u, 10000u, 0u, nullptr, 0u};
-constexpr sensors::MeasurementConfig coldJunctionChannelConfig{
-    "tc-cj", sensors::Quantity::temperature, 7u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
 sensors::Measurement airChannel{airChannelConfig};
 sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
-sensors::Measurement thermocoupleChannel{thermocoupleChannelConfig};
-sensors::Measurement coldJunctionChannel{coldJunctionChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,          &airChannel,
-                                       &airHumidityChannel, &thermocoupleChannel, &coldJunctionChannel};
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, &airHumidityChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
-constexpr std::uint32_t thermocouplePeriodMs = 333u; // 3 readings per second
-slstm32::drivers::Ct1780Driver ct1780{runtime,          oneWire0,           logger, &thermocoupleChannel,
-                                      &coldJunctionChannel, thermocouplePeriodMs};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
@@ -191,7 +180,6 @@ const n2k::MeasurementPublication publications[]{
     {&mcuChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
-    {&thermocoupleChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::exhaustGas)},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -221,7 +209,7 @@ lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRe
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const lab_test_01::DevToolsContext devToolsContext{
     runtime, events, logger, serialLog, console, buttons, static_cast<std::uint8_t>(buttonConfigs.size()),
-    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health, ct1780};
+    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health};
 
 namespace component {
 struct SerialLog;
@@ -232,7 +220,6 @@ struct Buzzer;
 struct Mcu;
 struct BoardTemperature;
 struct Dht20;
-struct Ct1780;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -264,8 +251,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Dht20>(dht20),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
-        slstm32::bind<component::InputModule>(inputModule),
-        slstm32::bind<component::Ct1780>(ct1780)),
+        slstm32::bind<component::InputModule>(inputModule)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Health>(health),
         slstm32::bind<component::Diagnostics>(diagnostics),
@@ -401,7 +387,8 @@ extern "C" void lab_test_01_app_init(void) {
     }
     if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
         !health.registerCommands(console) || !measurementConsole.registerCommands(console) ||
-        !lab_test_01::registerOneWireCommand(console, oneWirePorts, sizeof oneWirePorts / sizeof oneWirePorts[0])) {
+        !lab_test_01::registerOneWireCommand(console, oneWirePorts, sizeof oneWirePorts / sizeof oneWirePorts[0]) ||
+        !oneWire0.init()) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {

@@ -31,15 +31,11 @@ public:
                                         &trapCommand, this});
         ok = context_.console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  raw bus access (dev)",
                                    &i2cCommand, this}) && ok;
-        ok = context_.console.add({"tcrate", "tcrate [<period ms>]  CT1780 readings per second (dev, temporary)",
-                                   &tcrateCommand, this}) && ok;
-        ok = context_.console.add({"tcwatch", "tcwatch on|off  log every CT1780 reading (dev, temporary)",
-                                   &tcwatchCommand, this}) && ok;
         ok = hardwareTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
         ok = activity_.init() && ok;
         context_.log.write(LogLevel::warning,
-                           "dev tools: hardware and module tests, background load, trap, i2c, tcrate, tcwatch commands");
+                           "dev tools: hardware and module tests, background load, trap and i2c commands");
         return ok;
     }
 
@@ -47,7 +43,6 @@ public:
         hardwareTest_.run();
         inputModuleTest_.run();
         activity_.run();
-        watchThermocouple();
     }
 
 private:
@@ -66,73 +61,6 @@ private:
             (void)*reinterpret_cast<volatile std::uint32_t*>(0xFFFFFFF0u);
         }
         self.context_.log.write(LogLevel::warning, "usage: trap hang|fault");
-    }
-
-    // TEMPORARY test aid (remove after the CT1780 response test): logs every
-    // new thermocouple reading with the time since the previous one.
-    void watchThermocouple() {
-        const auto& tc = context_.thermocouple;
-        if (!tcWatch_ || tc.samples() == watchSamples_) return;
-        watchSamples_ = tc.samples();
-        const auto now = context_.runtime.millis();
-        const auto tenths = [](std::int32_t milli) {
-            return static_cast<long>(milli >= 0 ? (milli + 50) / 100 : (milli - 50) / 100);
-        };
-        const auto celsius = tenths(tc.milliCelsius());
-        const auto cold = tenths(tc.coldJunctionMilliCelsius());
-        context_.log.writef(LogLevel::info, "tcwatch: %s%ld.%ld C  (cold junction %s%ld.%ld C, +%lu ms)",
-                            celsius < 0 ? "-" : "", (celsius < 0 ? -celsius : celsius) / 10,
-                            (celsius < 0 ? -celsius : celsius) % 10, cold < 0 ? "-" : "",
-                            (cold < 0 ? -cold : cold) / 10, (cold < 0 ? -cold : cold) % 10,
-                            static_cast<unsigned long>(now - watchAt_));
-        watchAt_ = now;
-    }
-
-    static void tcwatchCommand(void* context, std::size_t argc, const char* const* argv) {
-        auto& self = *static_cast<DevToolsService*>(context);
-        if (argc == 2u && (std::strcmp(argv[1], "on") == 0 || std::strcmp(argv[1], "off") == 0)) {
-            self.tcWatch_ = argv[1][1] == 'n';
-            self.context_.log.writef(LogLevel::info, "tcwatch: %s", self.tcWatch_ ? "on" : "off");
-            return;
-        }
-        self.context_.log.write(LogLevel::warning, "usage: tcwatch on|off");
-    }
-
-    // TEMPORARY test aid (remove after the CT1780 rate test): sets the
-    // conversion period and reports readings per second since the last call.
-    static void tcrateCommand(void* context, std::size_t argc, const char* const* argv) {
-        using Polling = slstm32::drivers::Ct1780Driver::Polling;
-        auto& self = *static_cast<DevToolsService*>(context);
-        auto& tc = self.context_.thermocouple;
-        const auto now = self.context_.runtime.millis();
-        const auto samples = tc.samples();
-        const auto elapsed = now - self.rateSince_;
-        const auto count = samples - self.rateSamples_;
-        const char* polling = tc.polling() == Polling::supported     ? "polled"
-                              : tc.polling() == Polling::unsupported ? "fixed wait"
-                                                                     : "unknown";
-        const auto hundredths = elapsed ? count * 100000u / elapsed : 0u;
-        self.context_.log.writef(LogLevel::info,
-                                 "tcrate: %lu readings in %lu ms = %lu.%02lu/s, period %lu ms, %s, "
-                                 "conversion last %lu max %lu ms, errors %lu",
-                                 static_cast<unsigned long>(count), static_cast<unsigned long>(elapsed),
-                                 static_cast<unsigned long>(hundredths / 100u),
-                                 static_cast<unsigned long>(hundredths % 100u),
-                                 static_cast<unsigned long>(tc.period()), polling,
-                                 static_cast<unsigned long>(tc.lastConversionMs()),
-                                 static_cast<unsigned long>(tc.maxConversionMs()),
-                                 static_cast<unsigned long>(tc.errors()));
-        if (argc == 2u) {
-            char* end = nullptr;
-            const auto period = std::strtoul(argv[1], &end, 0);
-            if (end != argv[1] && *end == '\0') {
-                tc.setPeriod(static_cast<std::uint32_t>(period));
-                tc.resetConversionStatistics();
-                self.context_.log.writef(LogLevel::info, "tcrate: period %lu ms", period);
-            }
-        }
-        self.rateSince_ = now;
-        self.rateSamples_ = samples;
     }
 
     // Raw register access for exploring sensors.
@@ -183,11 +111,6 @@ private:
     }
 
     DevToolsContext context_;
-    std::uint32_t rateSince_{};
-    std::uint32_t rateSamples_{};
-    bool tcWatch_{true};
-    std::uint32_t watchSamples_{};
-    std::uint32_t watchAt_{};
     HardwareTestService hardwareTest_;
     InputModuleTestService inputModuleTest_;
     ActivityService activity_;

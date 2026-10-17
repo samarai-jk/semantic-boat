@@ -7,7 +7,6 @@
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "slstm32/console.hpp"
 #include "slstm32/drivers/button.hpp"
-#include "slstm32/drivers/ct1780.hpp"
 #include "slstm32/drivers/i2c_bus.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/serial_log.hpp"
@@ -21,8 +20,7 @@
 // code categories and build profiles"). The composition root always binds
 // devTools(); the build decides what it is:
 // - with development tools: src/dev/dev_tools.cpp runs the hardware and input
-//   module tests, the background load, and the "trap", "i2c", and "tcrate"
-//   commands;
+//   module tests, the background load, and the "trap" and "i2c" commands;
 // - without: src/dev_tools_disabled.cpp returns a service that does nothing.
 // Product code must not depend on anything inside src/dev/.
 namespace lab_test_01 {
@@ -44,7 +42,6 @@ struct DevToolsContext {
     semantic_modules::AdInputIso12v& inputModule;
     n2k::Node& n2kNode;
     HealthService& health;
-    slstm32::drivers::Ct1780Driver& thermocouple;
 };
 
 slstm32::Service& devTools(const DevToolsContext& context);

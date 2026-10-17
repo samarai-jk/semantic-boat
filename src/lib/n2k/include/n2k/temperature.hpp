@@ -32,4 +32,14 @@ inline void encodeTemperatureExtendedRange(std::uint8_t (&out)[8], std::uint8_t 
     bytes::put16(out + 6, 0xFFFFu);
 }
 
+// PGN 130316 with the actual temperature "not available" (sensor failed).
+inline void encodeTemperatureNotAvailable(std::uint8_t (&out)[8], std::uint8_t sequenceId, std::uint8_t instance,
+                                          TemperatureSource source) {
+    out[0] = sequenceId;
+    out[1] = instance;
+    out[2] = static_cast<std::uint8_t>(source);
+    bytes::put24(out + 3, 0xFFFFFFu);
+    bytes::put16(out + 6, 0xFFFFu);
+}
+
 } // namespace n2k

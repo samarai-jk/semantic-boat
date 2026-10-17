@@ -1,6 +1,7 @@
 #include "lab_test_01/app.h"
 #include "board.hpp"
 #include "can_mcu/board.hpp"
+#include "can_mcu/board_temperatures.hpp"
 #include "can_mcu/can_bus.hpp"
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
@@ -12,9 +13,11 @@
 #include "events.hpp"
 #include "health_service.hpp"
 #include "i2c_scan_service.hpp"
+#include "n2k/measurement_publisher.hpp"
 #include "n2k/name.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
+#include "n2k/temperature.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "semantic_modules/ad_input_iso_12v_calibration.hpp"
 #include "slstm32/console.hpp"
@@ -28,8 +31,13 @@
 #include "slstm32/drivers/serial_log.hpp"
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
+#include "slstm32/drivers/tone_pattern.hpp"
 #include "slstm32/event_bus.hpp"
-#include "temperature_report_service.hpp"
+#include "slstm32/sensors/alarm_annunciator.hpp"
+#include "slstm32/sensors/measurement.hpp"
+#include "slstm32/sensors/measurement_console.hpp"
+#include "slstm32/sensors/registry.hpp"
+#include "slstm32/storage/keyed_record_store.hpp"
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -40,6 +48,10 @@ extern "C" {
 namespace {
 
 using slstm32::LogLevel;
+namespace sensors = slstm32::sensors;
+using sensors::AlarmKind;
+using sensors::Severity;
+using slstm32::drivers::ToneStep;
 
 constexpr std::size_t logBufferBytes = 1024u;
 constexpr std::uint32_t startupLogFlushMs = 200u;
@@ -104,8 +116,8 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::batteryStatus,
-                                           n2k::pgn::binarySwitchBankStatus};
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
+                                           n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
               n2kDeviceClassSensors, 0u, 4u, true},
@@ -127,7 +139,56 @@ lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardT
                                             i2c, buzzer};
 lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
-lab_test_01::TemperatureReportService temperatureReport{runtime, n2kNode, boardTemperature, mcu};
+
+// Measurement channels. The alarm rules of the board channel are bench test
+// values: a heat gun on the board reaches all three severities.
+constexpr sensors::AlarmRule boardAlarms[]{
+    {AlarmKind::high, Severity::warning, 40000, 2000, 3000u, false, true},
+    {AlarmKind::high, Severity::alarm, 50000, 2000, 2000u, false, true},
+    {AlarmKind::high, Severity::emergency, 60000, 3000, 1000u, true, false},
+    {AlarmKind::sensorFault, Severity::alarm, 0, 0, 5000u, false, false},
+};
+constexpr sensors::AlarmRule mcuAlarms[]{
+    {AlarmKind::riseRate, Severity::warning, 10000, 3000, 0u, false, false},
+    {AlarmKind::high, Severity::alarm, 75000, 3000, 2000u, false, true},
+};
+constexpr sensors::MeasurementConfig boardChannelConfig{
+    "board", sensors::Quantity::temperature, 0u, 10000u, 4000u, boardAlarms, sizeof boardAlarms / sizeof boardAlarms[0]};
+constexpr sensors::MeasurementConfig mcuChannelConfig{
+    "mcu", sensors::Quantity::temperature, 1u, 10000u, 8000u, mcuAlarms, sizeof mcuAlarms / sizeof mcuAlarms[0]};
+sensors::Measurement boardChannel{boardChannelConfig};
+sensors::Measurement mcuChannel{mcuChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel};
+
+can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
+slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[lab_test_01::sensorSettingsSlots]{};
+slstm32::storage::KeyedRecordStore sensorSettings{eeprom, lab_test_01::sensorSettingsOffset, sensorSettingsKeys};
+sensors::MeasurementRegistry measurements{runtime, logger, channels, sizeof channels / sizeof channels[0],
+                                          &sensorSettings, &events, lab_test_01::alarmChanged};
+sensors::MeasurementConsole measurementConsole{measurements, logger};
+const n2k::MeasurementPublication publications[]{
+    {&boardChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
+    {&mcuChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
+};
+n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
+                                               sizeof publications / sizeof publications[0]};
+
+// Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
+// severity: a quiet "have a look" (the fridge is warm), firm beeps that ask
+// for action, and a full-level siren for "the engine is about to fail".
+constexpr ToneStep warningSteps[]{{2700u, 40u, 0.05f}, {0u, 120u}, {2700u, 40u, 0.05f}, {0u, 30000u}};
+constexpr ToneStep alarmSteps[]{{2700u, 150u, 0.3f}, {0u, 150u}, {2700u, 150u, 0.3f},
+                                {0u, 150u},          {2700u, 150u, 0.3f}, {0u, 2500u}};
+constexpr ToneStep emergencySteps[]{{2400u, 250u, 1.0f}, {3000u, 250u, 1.0f}};
+constexpr slstm32::drivers::TonePattern warningSound{warningSteps, sizeof warningSteps / sizeof warningSteps[0], true};
+constexpr slstm32::drivers::TonePattern alarmSound{alarmSteps, sizeof alarmSteps / sizeof alarmSteps[0], true};
+constexpr slstm32::drivers::TonePattern emergencySound{emergencySteps, sizeof emergencySteps / sizeof emergencySteps[0],
+                                                       true};
+slstm32::drivers::TonePatternPlayer tonePlayer{runtime, buzzer};
+void showAlarms(void*, const sensors::AlarmSummary& summary);
+const sensors::AlarmAnnunciator::Config annunciatorConfig{
+    {&warningSound, &alarmSound, &emergencySound}, &showAlarms, nullptr};
+sensors::AlarmAnnunciator annunciator{measurements, tonePlayer, annunciatorConfig};
 semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
     runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
@@ -153,7 +214,11 @@ struct Diagnostics;
 struct I2cScan;
 struct N2kNode;
 struct CanMonitor;
-struct TemperatureReport;
+struct BoardTemperatures;
+struct Measurements;
+struct MeasurementPublisher;
+struct Annunciator;
+struct TonePlayer;
 struct InputModuleCalibrator;
 struct Console;
 struct Health;
@@ -178,7 +243,11 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::I2cScan>(i2cScan),
         slstm32::bind<component::N2kNode>(n2kNode),
         slstm32::bind<component::CanMonitor>(canMonitor),
-        slstm32::bind<component::TemperatureReport>(temperatureReport),
+        slstm32::bind<component::BoardTemperatures>(boardTemperatures),
+        slstm32::bind<component::Measurements>(measurements),
+        slstm32::bind<component::MeasurementPublisher>(measurementPublisher),
+        slstm32::bind<component::Annunciator>(annunciator),
+        slstm32::bind<component::TonePlayer>(tonePlayer),
         slstm32::bind<component::InputModuleCalibrator>(inputModuleCalibrator),
         slstm32::bind<component::Console>(console),
         slstm32::bind<component::DevTools>(lab_test_01::devTools(devToolsContext))));
@@ -246,6 +315,29 @@ void onCalibrationEvent(void*, std::size_t, semantic_modules::AdInputIso12vCalib
     }
 }
 
+// Red LED for measurement alarms: blinking while unacknowledged, faster the
+// more severe; steady while acknowledged alarms are still active.
+void showAlarms(void*, const sensors::AlarmSummary& summary) {
+    if (summary.unacknowledged) {
+        switch (summary.highestUnacknowledged) {
+        case Severity::warning: redLed.blink(2000u, 100u); break;
+        case Severity::alarm: redLed.blink(500u, 250u); break;
+        case Severity::emergency: redLed.blink(160u, 80u); break;
+        }
+    } else if (summary.active) {
+        redLed.on();
+    } else {
+        redLed.off();
+    }
+}
+
+// Any button press acknowledges the measurement alarms.
+void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
+    if (size != sizeof(slstm32::drivers::ButtonEvent)) return;
+    const auto& event = *static_cast<const slstm32::drivers::ButtonEvent*>(payload);
+    if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
+}
+
 void onN2kAddressChange(void*, std::uint8_t address) {
     if (!settingsAvailable || settings.n2kAddress == address) return;
     settings.n2kAddress = address;
@@ -274,8 +366,11 @@ extern "C" void lab_test_01_app_init(void) {
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
+    if (!events.subscribe(lab_test_01::buttonPressed, &onButton, nullptr)) {
+        logger.write(LogLevel::error, "events: alarm acknowledge button not subscribed");
+    }
     if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
-        !health.registerCommands(console)) {
+        !health.registerCommands(console) || !measurementConsole.registerCommands(console)) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {

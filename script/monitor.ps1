@@ -12,6 +12,8 @@ events are highlighted:
   RESTART      reset cause after a restart (red)
   FATAL/POWER  fatal errors, supply drops below 2.9 V, crash or hang of the previous run (red)
   health       restart statistics and the previous run (white)
+  ALARM        measurement alarms becoming active (red: alarm/emergency, yellow: warning)
+  alarm/sensor alarms clearing or acknowledged, sensor console replies (white)
   button       button presses (cyan)
   supply       supply dips below the firmware threshold (yellow)
   can          CAN controller state changes (magenta)
@@ -57,6 +59,10 @@ $serialRules = @(
     @{ Pattern = 'power: VDD fell'; Color = 'Red'; Label = 'POWER' },
     @{ Pattern = 'health: (previous run (ended|hung)|.*hung)'; Color = 'Red'; Label = 'health' },
     @{ Pattern = 'health:|supervision:'; Color = 'White'; Label = 'health' },
+    @{ Pattern = 'alarm: .*(ALARM|EMERGENCY) ACTIVE'; Color = 'Red'; Label = 'ALARM' },
+    @{ Pattern = 'alarm: .*WARNING ACTIVE'; Color = 'Yellow'; Label = 'ALARM' },
+    @{ Pattern = '\] [IWE] alarm: '; Color = 'White'; Label = 'alarm' },
+    @{ Pattern = '\] [IWE] (sensors?:|ack:|[a-z][a-z0-9_-]*: ((temperature|humidity|voltage) instance|offset|stored|applied|defaults|statistics|no valid|cal2|gain))'; Color = 'White'; Label = 'sensor' },
     @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },

@@ -23,9 +23,15 @@ add_library(slstm32 STATIC
     src/drivers/serial_log.cpp
     src/drivers/tmp75.cpp
     src/drivers/tone.cpp
+    src/drivers/tone_pattern.cpp
     src/epd/font5x7.cpp
     src/epd/monochrome_canvas.cpp
     src/epd/waveshare_3in7.cpp
+    src/sensors/alarm_annunciator.cpp
+    src/sensors/measurement.cpp
+    src/sensors/measurement_console.cpp
+    src/sensors/registry.cpp
+    src/storage/keyed_record_store.cpp
     src/storage/redundant_blob_store.cpp
 )
 

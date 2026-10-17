@@ -76,7 +76,8 @@ slstm32/
 |   |-- error.hpp             minimal error reporting abstraction
 |   |-- log.hpp               application-provided logging sink
 |   |-- drivers/              generic hardware drivers and bindings
-|   |-- storage/              byte-addressable persistent-storage interface
+|   |-- sensors/              measurement channels, alarms, registry, console
+|   |-- storage/              persistent-storage interface, blob and keyed stores
 |   `-- epd/                  canvas, region queue, and E-paper support
 `-- src/                      non-template implementations
 ```
@@ -244,6 +245,7 @@ storage is normally simplest in embedded firmware.
 | `PwmLedDriver` | Dimmable LED on a PWM output with the same steady, pulse, and blink modes as `LedDriver`; brightness can change at any time. Output polarity belongs in the binding or timer setup. |
 | `PwmOutputDriver` | Controls one normalized PWM duty value in the range 0.0 to 1.0. |
 | `RgbLedDriver` | Controls red, green, and blue PWM bindings; supports common-anode inversion and non-blocking blinking. |
+| `TonePatternPlayer` | Service that plays `TonePattern` tables (tone and pause steps, optionally repeating) on a `ToneDriver`, for beep sequences and sirens. Keeps only a pointer to the pattern, which normally lives in flash. |
 | `ToneDriver` | Starts a hardware tone at a normalized output level and stops it after a non-blocking duration. Call `onTick()` from a periodic interrupt when tone deadlines must remain accurate during long foreground work; the board's stop callback must then be interrupt-safe. |
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |
 | `LatchingRelayDriver` | Drives set/reset coils with non-blocking pulses and queues a changed request while a pulse is active. |
@@ -260,6 +262,14 @@ alternating 64-byte slots. CRC validation and a commit marker written last keep
 the previous generation usable if power is lost during a settings write. It is
 intended for small device preferences, calibration values, and similar setup
 data rather than large application packages.
+
+`storage::KeyedRecordStore` keeps small records (up to 31 bytes) addressed by
+a key (64-bit id plus an 8-bit tag) instead of a position. Each key occupies
+its own `RedundantBlobStore` slot of 128 bytes, so adding a key never moves or
+rewrites another record, and a key whose hardware is removed keeps its slot
+until erased. The keys live in a caller-provided array (16 bytes of RAM per
+slot); `scan()` reads all slots once at startup (about 12 ms per slot on a
+100 kHz I2C EEPROM).
 
 All PWM and RGB values are normalized floats. Board code is responsible for
 mapping them to the timer's actual auto-reload range.
@@ -310,6 +320,48 @@ methods. They should not configure GPIO, call board-specific HAL peripherals, or
 hide dependencies behind global getters.
 
 Disabled services remain initialized but their `run()` calls are skipped.
+
+## Measurements and alarms
+
+The `sensors` namespace is the common layer between sensor drivers and
+everything that uses measured values (alarms, NMEA 2000, consoles, displays):
+
+- `Measurement` is one measured quantity (`temperature`, `relativeHumidity`,
+  `voltage`), in thousandths of its unit (m°C, 0.001 %, mV). A driver calls
+  `update(raw, now)` or `fail(fault, now)`; the channel applies the
+  calibration (`value = raw * gainPpm / 1e6 + offset`), an optional smoothing
+  filter, minimum and maximum, a rate of change per minute (internal ring of 8
+  points over one minute), staleness, and up to four alarm rules. A
+  combined sensor (temperature and humidity) feeds one channel per quantity.
+- `MeasurementConfig` names the channel, sets its quantity and instance
+  (unique per quantity; it is also the NMEA 2000 instance), its stale timeout,
+  filter time constant, and `AlarmRule`s: `high`, `low`, `riseRate`, or
+  `sensorFault`, each with a severity (`warning` "have a look", `alarm` "act",
+  `emergency` "act now"), threshold, hysteresis, delay, optional latching
+  (stays active until acknowledged), and the choice of filtered or latest
+  value. Value rules keep their state while the channel has no valid value;
+  the `sensorFault` rule covers that case.
+- `Identity` names the physical sensor behind a channel (`internal`, `i2c`
+  bus/mux/address, `oneWire` ROM code, `analog` input, plus a subchannel for
+  multi-quantity sensors). It is the key of the persisted settings.
+- `MeasurementRegistry` (service) runs all channels of a device: it checks
+  names and instances for duplicates, ticks every channel, applies and
+  persists calibration and changed thresholds per identity in a
+  `KeyedRecordStore` (adding or reordering sensors never touches the settings
+  of the others), logs every alarm transition, and publishes `AlarmEvent`s on
+  the event bus. `summary()` reports the most severe active and unacknowledged
+  alarm.
+- `AlarmAnnunciator` (service) plays one `TonePattern` per severity while an
+  alarm waits for acknowledgement and reports summary changes to an indicator
+  callback (LEDs, display). Patterns and the acknowledge input are device
+  decisions.
+- `MeasurementConsole` adds the service commands `sensors`, `sensor <name>
+  [cal|cal2 <ref> | alarm <rule> <value> | reset | stats]`, and `ack`.
+
+Publishing on NMEA 2000 lives in the `n2k` library (`n2k::MeasurementPublisher`:
+PGN 130316 for temperatures, 130313 for humidity, "not available" for failed
+channels). Sensor drivers stay ordinary drivers; a small adapter or the
+driver itself pushes results into the channels.
 
 ## Application composition
 

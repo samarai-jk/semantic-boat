@@ -17,6 +17,7 @@ inline constexpr std::uint32_t binarySwitchBankStatus = 127501u;
 inline constexpr std::uint32_t batteryStatus = 127508u;
 
 // Environment
+inline constexpr std::uint32_t humidity = 130313u;
 inline constexpr std::uint32_t temperatureExtendedRange = 130316u;
 
 } // namespace n2k::pgn

@@ -97,13 +97,12 @@ cmake --build build/lab-test-01/product-check
 | --- | --- |
 | `cmx/` | CubeMX project; only `USER CODE` sections are edited by hand |
 | `../common/` | can-mcu board support shared by all can-mcu devices |
-| `src/app.cpp` | Composition root and the C hooks called from `main.c` |
+| `src/app.cpp` | Composition root and the C hooks called from `main.c`; measurement channels, alarm rules and sounds |
 | `src/dev_tools.hpp`, `src/dev_tools_disabled.cpp` | Seam to the development tools and its no-op stand-in |
 | `src/dev/` | **Development and test code only**: tool aggregator with `trap` and `i2c`, hardware test, input module test, background load |
 | `src/board.cpp` | LT1 host bindings: buttons, TIM1 LEDs and buzzer |
 | `src/diagnostics_service.cpp` | Supply dips and the heartbeat |
 | `src/can_monitor_service.cpp` | CAN state, activity LED, N2K message log and summary |
-| `src/temperature_report_service.cpp` | Board and MCU temperature as PGN 130316 |
 | `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection (read-only) |
 | `src/device_settings.cpp` | Settings record in EEPROM: boot counter and NMEA 2000 address |
 
@@ -114,9 +113,53 @@ initialization and `lab_test_01_app_run()` in the main loop. SysTick calls
 
 ## EEPROM layout
 
-The AT24C256 (32 KiB) reserves its last 256 bytes (from 0x7F00) for device
-settings. The redundant settings store uses the first 128 bytes of that range;
-the rest of the EEPROM is free.
+The AT24C256 (32 KiB) is used from the top down (`src/device_settings.hpp`):
+
+| Range | Content |
+| --- | --- |
+| 0x7F00-0x7FFF | Device settings (boot counter, NMEA 2000 address) |
+| 0x7D00-0x7EFF | Calibration of up to four 12v-ad-input-iso modules, one slot per ADS1115 address |
+| 0x7C80-0x7CFF | Health record (restart and supply statistics) |
+| 0x6C80-0x7C7F | Measurement settings: 32 slots of 128 bytes, one per sensor identity |
+| 0x0000-0x6C7F | Free |
+
+Measurement settings (calibration, changed alarm thresholds) are keyed by the
+identity of the sensor (internal probe, I2C address, 1-Wire ROM code, analog
+input), not by position, so adding or swapping sensors never costs another
+sensor its calibration.
+
+## Measurements and alarms
+
+Channels (`sensors` lists them, `sensor <name>` shows the details):
+
+| Channel | Source | NMEA 2000 | Alarm rules |
+| --- | --- | --- | --- |
+| `board` | TMP75 on the can-mcu (case temperature) | 130316 instance 0, inside | > 40 °C warning, > 50 °C alarm, > 60 °C emergency (latching), sensor fault alarm |
+| `mcu` | MCU die sensor | 130316 instance 1, inside | rise > 10 °C/min warning, > 75 °C alarm |
+
+The board thresholds are bench values: a heat gun on the board reaches all
+three severities. Each severity sounds different on the buzzer and blinks the
+red LED at its own rate:
+
+| Severity | Meaning | Sound | Red LED |
+| --- | --- | --- | --- |
+| warning | have a look (fridge warm) | two quiet chirps every 30 s | short flash every 2 s |
+| alarm | act (overheating) | three firm beeps every 3 s | 2 Hz blink |
+| emergency | act now (engine about to fail) | continuous two-tone siren | fast blink |
+
+Any button or the `ack` command acknowledges: the sound stops and the red LED
+stays on while the condition lasts. A new or more severe alarm sounds again.
+A latching alarm stays active after its condition has cleared until it is
+acknowledged.
+
+Console examples:
+
+```text
+sensor board alarm 0 30      warning threshold to 30 C (stored)
+sensor board cal 21.5        offset calibration against a reference of 21.5 C
+sensor board cal2 80.0       second point: gain and offset from both points
+sensor board reset           calibration and thresholds back to the defaults
+```
 
 ## Build and flash
 

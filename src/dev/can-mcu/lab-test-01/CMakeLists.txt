@@ -28,7 +28,6 @@ target_sources(${LAB_TEST_01_TARGET} PRIVATE
     src/diagnostics_service.cpp
     src/health_service.cpp
     src/i2c_scan_service.cpp
-    src/temperature_report_service.cpp
 )
 
 # LT1 is a lab device: development tools are on by default. Check that it also

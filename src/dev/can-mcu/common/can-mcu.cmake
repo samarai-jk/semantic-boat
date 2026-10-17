@@ -6,6 +6,7 @@ set(CAN_MCU_COMMON_DIR ${CMAKE_CURRENT_LIST_DIR})
 function(can_mcu_add_common target)
     target_sources(${target} PRIVATE
         ${CAN_MCU_COMMON_DIR}/src/board.cpp
+        ${CAN_MCU_COMMON_DIR}/src/board_temperatures.cpp
         ${CAN_MCU_COMMON_DIR}/src/can_bus.cpp
         ${CAN_MCU_COMMON_DIR}/src/interrupts.cpp
         ${CAN_MCU_COMMON_DIR}/src/i2c_bus.cpp

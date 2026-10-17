@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "slstm32/storage/byte_storage.hpp"
+#include "slstm32/storage/keyed_record_store.hpp"
 #include "slstm32/storage/redundant_blob_store.hpp"
 
 namespace lab_test_01 {
@@ -16,6 +17,13 @@ inline constexpr std::size_t settingsBytes = 256u;
 inline constexpr std::uint32_t moduleCalibrationOffset = settingsOffset - 512u;
 // Health record for unattended runs (128 bytes) below the module calibration.
 inline constexpr std::uint32_t healthRecordOffset = moduleCalibrationOffset - 128u;
+// Settings of the measurement channels (calibration, changed alarm
+// thresholds), one 128-byte slot per sensor identity, below the health
+// record. Generous on purpose: sensors come and go on the bench, and each
+// keeps its slot, so no sensor loses its calibration when others are added.
+inline constexpr std::size_t sensorSettingsSlots = 32u;
+inline constexpr std::uint32_t sensorSettingsOffset =
+    healthRecordOffset - slstm32::storage::KeyedRecordStore::requiredBytes(sensorSettingsSlots);
 
 struct DeviceSettings {
     std::uint32_t bootCount{};

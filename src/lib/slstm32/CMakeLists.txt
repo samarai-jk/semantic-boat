@@ -13,6 +13,7 @@ add_library(slstm32 STATIC
     src/drivers/at24c256.cpp
     src/drivers/button.cpp
     src/drivers/can_bus.cpp
+    src/drivers/dht20.cpp
     src/drivers/digital_io.cpp
     src/drivers/i2c_bus.cpp
     src/drivers/latching_relay.cpp
@@ -30,6 +31,7 @@ add_library(slstm32 STATIC
     src/sensors/alarm_annunciator.cpp
     src/sensors/measurement.cpp
     src/sensors/measurement_console.cpp
+    src/sensors/measurement_log.cpp
     src/sensors/registry.cpp
     src/storage/keyed_record_store.cpp
     src/storage/redundant_blob_store.cpp

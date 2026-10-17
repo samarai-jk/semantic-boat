@@ -14,6 +14,7 @@ events are highlighted:
   health       restart statistics and the previous run (white)
   ALARM        measurement alarms becoming active (red: alarm/emergency, yellow: warning)
   alarm/sensor alarms clearing or acknowledged, sensor console replies (white)
+  values       measurement values every 5 s, sensors found or lost (green)
   button       button presses (cyan)
   supply       supply dips below the firmware threshold (yellow)
   can          CAN controller state changes (magenta)
@@ -63,6 +64,8 @@ $serialRules = @(
     @{ Pattern = 'alarm: .*WARNING ACTIVE'; Color = 'Yellow'; Label = 'ALARM' },
     @{ Pattern = '\] [IWE] alarm: '; Color = 'White'; Label = 'alarm' },
     @{ Pattern = '\] [IWE] (sensors?:|ack:|[a-z][a-z0-9_-]*: ((temperature|humidity|voltage) instance|offset|stored|applied|defaults|statistics|no valid|cal2|gain))'; Color = 'White'; Label = 'sensor' },
+    @{ Pattern = '\] [IWE] values: '; Color = 'Green'; Label = 'values' },
+    @{ Pattern = '\] [IWE] dht20 '; Color = 'Green'; Label = 'sensor' },
     @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },

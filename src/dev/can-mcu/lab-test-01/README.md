@@ -140,18 +140,12 @@ are logged every 5 s as `values: ...`):
 | `air`, `air-rh` | DFRobot DHT20 on the I2C connectors (reference) | 130316 instance 2 / 130313 instance 0, inside |
 | `light` | DFRobot VEML7700 ambient light sensor on the I2C connectors | - |
 
-The DFRobot SEN0290 lightning sensor (AS3935, I2C address 3) has its IRQ on
-PA6 (EXTI6, module input DI2 is not connected). At every start the driver
-tunes the antenna by counting its resonance on the IRQ pin and logs the
-frequency of all 16 capacitor steps; events are read 2 ms after the IRQ. The
-dev command `lightning` shows the state and offers `tune`, `antenna on|off`
-(resonance / 16 on PA6 for a scope), capacitor, noise floor, gain, and
-disturber settings.
-
 Drivers for the other bench-tested DFRobot sensors are in slstm32
 (`Sht31Driver`, `Ds18b20Driver`, `Ct1780Driver`, `AnalogSensor` with
-`rtdBridgeConversion` for the SEN0198 PT100); LT1 wires up only what is
-connected. PA4 is kept as a 1-Wire bus for the next sensor; `onewire` shows
+`rtdBridgeConversion` for the SEN0198 PT100, `As3935Driver` for the SEN0290
+lightning sensor); LT1 wires up only what is connected. What was measured
+with each of them, and what is open (for example the storm warning), is in
+[slstm32/SENSORS.md](../../../lib/slstm32/SENSORS.md). PA4 is kept as a 1-Wire bus for the next sensor; `onewire` shows
 its line level, presence pulse, and ROM code.
 
 The channels carry no alarm rules while sensors are being brought up. The

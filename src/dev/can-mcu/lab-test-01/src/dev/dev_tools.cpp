@@ -31,14 +31,11 @@ public:
                                         &trapCommand, this});
         ok = context_.console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  raw bus access (dev)",
                                    &i2cCommand, this}) && ok;
-        ok = context_.console.add({"lightning",
-                                   "lightning [tune | antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | disturbers on|off | poll <ms>] (dev)",
-                                   &lightningCommand, this}) && ok;
         ok = hardwareTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
         ok = activity_.init() && ok;
         context_.log.write(LogLevel::warning,
-                           "dev tools: hardware and module tests, background load, trap, i2c, lightning commands");
+                           "dev tools: hardware and module tests, background load, trap and i2c commands");
         return ok;
     }
 
@@ -64,61 +61,6 @@ private:
             (void)*reinterpret_cast<volatile std::uint32_t*>(0xFFFFFFF0u);
         }
         self.context_.log.write(LogLevel::warning, "usage: trap hang|fault");
-    }
-
-    // Lightning sensor bench tests: status, antenna resonance on the IRQ pin
-    // (scope: 31.25 kHz = 500 kHz / 16), tuning, noise floor, front end gain.
-    static void lightningCommand(void* context, std::size_t argc, const char* const* argv) {
-        using Location = slstm32::drivers::As3935Driver::Location;
-        auto& self = *static_cast<DevToolsService*>(context);
-        auto& sensor = self.context_.lightning;
-        const auto& log = self.context_.log;
-        bool ok = true;
-        if (argc == 3u && std::strcmp(argv[1], "antenna") == 0) {
-            const bool on = std::strcmp(argv[2], "on") == 0;
-            ok = sensor.showAntennaFrequency(on);
-            if (ok && on) log.write(LogLevel::info, "lightning: IRQ pin shows antenna resonance / 16, expect 31.25 kHz +-3.5 %");
-        } else if (argc == 3u && std::strcmp(argv[1], "cap") == 0) {
-            ok = sensor.setTuningCapacitor(static_cast<std::uint8_t>(std::strtoul(argv[2], nullptr, 0)));
-        } else if (argc == 3u && std::strcmp(argv[1], "nf") == 0) {
-            ok = sensor.setNoiseFloor(static_cast<std::uint8_t>(std::strtoul(argv[2], nullptr, 0)));
-        } else if (argc == 2u && std::strcmp(argv[1], "indoor") == 0) {
-            ok = sensor.setLocation(Location::indoor);
-        } else if (argc == 2u && std::strcmp(argv[1], "outdoor") == 0) {
-            ok = sensor.setLocation(Location::outdoor);
-        } else if (argc == 3u && std::strcmp(argv[1], "disturbers") == 0) {
-            ok = sensor.setDisturberReporting(std::strcmp(argv[2], "on") == 0);
-        } else if (argc == 2u && std::strcmp(argv[1], "tune") == 0) {
-            ok = sensor.startAntennaTuning();
-            if (ok) return; // the result is logged when done
-        } else if (argc == 3u && std::strcmp(argv[1], "poll") == 0) {
-            sensor.setPollPeriod(static_cast<std::uint32_t>(std::strtoul(argv[2], nullptr, 0)));
-        } else if (argc != 1u) {
-            log.write(LogLevel::warning,
-                      "usage: lightning [tune | antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | "
-                      "disturbers on|off | poll <ms>]");
-            return;
-        }
-        if (!ok) log.write(LogLevel::warning, "lightning: failed (sensor absent or value out of range)");
-        // Share of reads that found a disturber since the last status.
-        const auto polls = sensor.polls() - self.lightningPolls_;
-        const auto found = sensor.disturberCount() - self.lightningDisturbers_;
-        self.lightningPolls_ = sensor.polls();
-        self.lightningDisturbers_ = sensor.disturberCount();
-        log.writef(LogLevel::info,
-                   "lightning: %lu IRQ edges in total; since last status %lu reads, %lu with a disturber (%lu %%)",
-                   static_cast<unsigned long>(sensor.interrupts()), static_cast<unsigned long>(polls),
-                   static_cast<unsigned long>(found), static_cast<unsigned long>(polls ? found * 100u / polls : 0u));
-        log.writef(LogLevel::info,
-                   "lightning: %s, %s, tuning %u pF, noise floor %u, disturbers %s; %lu lightning (last %u km, energy %lu), "
-                   "%lu disturbers, %lu noise high",
-                   sensor.present() ? (sensor.calibrated() ? "present" : "present, NOT calibrated") : "absent",
-                   sensor.location() == Location::outdoor ? "outdoor" : "indoor",
-                   static_cast<unsigned>(sensor.tuningCapacitor()) * 8u, static_cast<unsigned>(sensor.noiseFloor()),
-                   sensor.disturberReporting() ? "reported" : "masked",
-                   static_cast<unsigned long>(sensor.lightningCount()), static_cast<unsigned>(sensor.lastDistanceKm()),
-                   static_cast<unsigned long>(sensor.lastEnergy()), static_cast<unsigned long>(sensor.disturberCount()),
-                   static_cast<unsigned long>(sensor.noiseHighCount()));
     }
 
     // Raw register access for exploring sensors.
@@ -169,8 +111,6 @@ private:
     }
 
     DevToolsContext context_;
-    std::uint32_t lightningPolls_{};
-    std::uint32_t lightningDisturbers_{};
     HardwareTestService hardwareTest_;
     InputModuleTestService inputModuleTest_;
     ActivityService activity_;

@@ -255,6 +255,14 @@ storage is normally simplest in embedded firmware.
 | `At24c256I2cBinding` | Provides those callbacks on an `I2cBus`: 16-bit addressing, page writes, acknowledge polling for the write cycle, and optional read-back verification with a last-error code. |
 | `CanBusDriver` | Queued CAN access through a `CanBusHardware` binding: caller-provided receive and transmit rings, frames moved into hardware mailboxes in order from `run()` and the transmit-complete interrupt, `transmitSpace()` for paced senders, counters for received, transmitted, and dropped frames and hardware overruns, and the controller state (error-active/warning/passive, bus-off) with error counters. |
 | `I2cBus` | Abstract blocking 7-bit I2C master (`probe`, `write`, `read`, `readFrom` with a register prefix) plus register helpers. Boards implement it for a concrete peripheral, including timeouts and bus recovery. `scanI2c()` returns an `I2cAddressSet` of responding addresses. |
+| `Dht20Driver` | Aosong DHT20/AHT20 temperature and humidity (I2C 0x38): non-blocking trigger and 80 ms conversion, CRC, register initialization when the sensor asks for it. Feeds two measurement channels. |
+| `Sht31Driver` | Sensirion SHT30/31/35 temperature and humidity (I2C 0x44/0x45): single shot without clock stretching, CRC per word, soft reset on first contact, heater control. |
+| `OneWireBus` | Bit-banged 1-Wire master on a `OneWireHardware` binding (open-drain GPIO, microsecond delay): reset/presence, time slots with interrupts disabled, Read/Match/Skip ROM, Dallas CRC, presence profile for diagnosis. |
+| `Ds18b20Driver` | DS18B20/DS1822 on its own `OneWireBus`: ROM code as channel identity, non-blocking conversion at the configured resolution, sensor swap detection. |
+| `Ct1780Driver` | CT1780/MAX31850K thermocouple converter on its own `OneWireBus`: thermocouple and cold junction, open/short faults, DIP address, completion polling (about 10 readings per second possible). |
+| `AnalogSensor` | Converts an `AnalogInputHardware` reading (usually mV) through an `AnalogConversion` (linear, or `sensors::rtdBridgeConversion` for amplified PT100/PT1000) into a channel, with a fault range and an optional input voltage channel. |
+| `Veml7700Driver` | Vishay VEML7700 ambient light (I2C 0x10): automatic ranging from darkness to 120 klx, non-linearity correction, illuminance channel. |
+| `As3935Driver` | ams/ScioSense AS3935 lightning sensor (I2C 1..3): lightning distance/energy, disturber and noise events to a listener, adaptive noise floor, optional IRQ input with automatic antenna tuning. |
 | `Tmp75Driver` | TMP75/TMP175/TMP275 (LM75-style) temperature sensor on an `I2cBus` in 12-bit continuous mode, sampled periodically. A missing sensor is reported through `valid()` and reconfigured when it answers again; it never fails `init()`. |
 
 `storage::RedundantBlobStore` persists blobs of up to 40 bytes in two
@@ -322,6 +330,9 @@ hide dependencies behind global getters.
 Disabled services remain initialized but their `run()` calls are skipped.
 
 ## Measurements and alarms
+
+Bench findings for every sensor driver (what was measured, pitfalls, open
+items) are in [SENSORS.md](SENSORS.md).
 
 The `sensors` namespace is the common layer between sensor drivers and
 everything that uses measured values (alarms, NMEA 2000, consoles, displays):

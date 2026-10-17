@@ -27,7 +27,7 @@ public:
           inputModuleTest_{context.runtime, context.log, context.inputModule},
           activity_{context.runtime, context.n2kNode, context.inputModule, context.health, context.greenLed,
                     context.redLed},
-          speakerTest_{context.runtime, context.events, buttonPressed, context.log, context.console} {}
+          speakerTest_{context.runtime, context.events, buttonPressed, context.log, context.console, context.buzzer} {}
 
     bool init() override {
         bool ok = context_.console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault (dev)",

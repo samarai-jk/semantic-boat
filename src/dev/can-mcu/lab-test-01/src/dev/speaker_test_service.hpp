@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "slstm32/console.hpp"
+#include "slstm32/drivers/tone.hpp"
 #include "slstm32/event_bus.hpp"
 #include "slstm32/log.hpp"
 #include "slstm32/runtime.hpp"
@@ -16,20 +17,22 @@ namespace lab_test_01 {
 // TEMPORARY speaker experiment (DFRobot FIT0449, 8002 amplifier, on PA4):
 // the DAC on PA4 plays samples at 16 kHz from a TIM6 interrupt, mixed from
 // three oscillators (sine, square, triangle) whose frequency and level the
-// main loop changes every millisecond. Buttons: BF1/BF2 volume, BF3 sweep,
-// BF4 waveforms, BF5 alarm sounds, BF6 chimes; console "speaker".
+// main loop changes every millisecond. Buttons: BF1/BF2 volume, BF3 buzzer
+// versus speaker (2.7 kHz, buzzer at full power, then the speaker), BF4
+// waveforms, BF5 alarm sounds, BF6 chimes; console "speaker".
 // Takes PA4 from the 1-Wire bus while compiled in; remove after the test.
 class SpeakerTestService final : public slstm32::Service {
 public:
     SpeakerTestService(slstm32::Runtime runtime, slstm32::EventBus& events, slstm32::EventId buttonEvent,
-                       slstm32::Logger log, slstm32::CommandConsole& console)
-        : runtime_(runtime), events_(events), buttonEvent_(buttonEvent), log_(log), console_(console) {}
+                       slstm32::Logger log, slstm32::CommandConsole& console, slstm32::drivers::ToneDriver& buzzer)
+        : runtime_(runtime), events_(events), buttonEvent_(buttonEvent), log_(log), console_(console),
+          buzzer_(buzzer) {}
 
     bool init() override;
     void run() override;
 
 private:
-    enum class Program : std::uint8_t { none, tone, sweep, waveform, alarm, chime };
+    enum class Program : std::uint8_t { none, tone, sweep, waveform, alarm, chime, compare };
     static void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void* context);
     static void command(void* context, std::size_t argc, const char* const* argv);
     void pressed(std::uint8_t id);
@@ -43,6 +46,7 @@ private:
     slstm32::EventId buttonEvent_{};
     slstm32::Logger log_;
     slstm32::CommandConsole& console_;
+    slstm32::drivers::ToneDriver& buzzer_;
     Program program_{Program::none};
     std::uint8_t variant_{};
     std::uint8_t waveformVariant_{};

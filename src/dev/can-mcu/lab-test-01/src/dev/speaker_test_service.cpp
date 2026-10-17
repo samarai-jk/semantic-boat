@@ -114,11 +114,11 @@ bool SpeakerTestService::init() {
     setVolume(volumeStep_);
     const bool ok = events_.subscribe(buttonEvent_, &onButton, this) &&
                     console_.add({"speaker",
-                                  "speaker [stop | tone <Hz> <ms> [sine|square|triangle] | volume <1-10>]  "
+                                  "speaker [stop | sweep | tone <Hz> <ms> [sine|square|triangle] | volume <1-10>]  "
                                   "speaker test (dev, temporary)",
                                   &command, this});
     log_.write(LogLevel::warning,
-               "speaker test on PA4 (DAC, 16 kHz): BF1/BF2 volume, BF3 sweep, BF4 waveforms, BF5 alarms, BF6 chimes");
+               "speaker test on PA4 (DAC, 16 kHz): BF1/BF2 volume, BF3 buzzer vs speaker, BF4 waveforms, BF5 alarms, BF6 chimes");
     return ok;
 }
 
@@ -145,11 +145,7 @@ void SpeakerTestService::pressed(std::uint8_t id) {
         setVolume(static_cast<std::uint8_t>(volumeStep_ + 1u));
         break;
     case 2u:
-        if (program_ == Program::sweep) {
-            stop();
-        } else {
-            start(Program::sweep, 0u, now);
-        }
+        start(Program::compare, 0u, now);
         break;
     case 3u:
         start(Program::waveform, waveformVariant_, now);
@@ -197,6 +193,10 @@ void SpeakerTestService::start(Program program, std::uint8_t variant, std::uint3
     case Program::chime:
         log_.writef(LogLevel::info, "speaker: %s", chimeNames[variant]);
         break;
+    case Program::compare:
+        log_.write(LogLevel::info, "speaker: compare at 2.7 kHz: buzzer at full power for 2 s, then the speaker");
+        buzzer_.play(2700u, 2000u, 1.0f);
+        break;
     case Program::tone:
         log_.writef(LogLevel::info, "speaker: %s %lu Hz, %lu ms", waveNames[toneWave_],
                     static_cast<unsigned long>(toneHz_), static_cast<unsigned long>(toneMs_));
@@ -223,6 +223,18 @@ void SpeakerTestService::update(std::uint32_t t) {
             return;
         }
         set(0, toneHz_, full, toneWave_);
+        return;
+    case Program::compare:
+        // 0..2 s the buzzer (started in start()), 2..4 s the speaker.
+        if (t >= 4000u) {
+            stop();
+            return;
+        }
+        if (t >= 2000u) {
+            if (t < 2001u) log_.writef(LogLevel::info, "speaker: now the speaker, square 2.7 kHz at %u %%",
+                                       static_cast<unsigned>(volumePercent[volumeStep_]));
+            set(0, 2700u, full, square);
+        }
         return;
     case Program::sweep: {
         // Sine steps for loudness by frequency, 2 s each.
@@ -333,6 +345,10 @@ void SpeakerTestService::command(void* context, std::size_t argc, const char* co
         self.stop();
         return;
     }
+    if (argc == 2u && std::strcmp(argv[1], "sweep") == 0) {
+        self.start(Program::sweep, 0u, self.runtime_.millis());
+        return;
+    }
     if (argc == 3u && std::strcmp(argv[1], "volume") == 0) {
         const auto step = std::strtoul(argv[2], nullptr, 10);
         if (step >= 1u && step <= 10u) {
@@ -354,7 +370,7 @@ void SpeakerTestService::command(void* context, std::size_t argc, const char* co
             return;
         }
     }
-    self.log_.write(LogLevel::warning, "usage: speaker [stop | tone <Hz> <ms> [sine|square|triangle] | volume <1-10>]");
+    self.log_.write(LogLevel::warning, "usage: speaker [stop | sweep | tone <Hz> <ms> [sine|square|triangle] | volume <1-10>]");
 }
 
 } // namespace lab_test_01

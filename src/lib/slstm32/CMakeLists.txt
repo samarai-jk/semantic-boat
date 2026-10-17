@@ -10,6 +10,7 @@ add_library(slstm32 STATIC
     src/log.cpp
     src/drivers/ads1115.cpp
     src/drivers/analog_input.cpp
+    src/drivers/analog_sensor.cpp
     src/drivers/at24c256.cpp
     src/drivers/button.cpp
     src/drivers/can_bus.cpp
@@ -36,6 +37,7 @@ add_library(slstm32 STATIC
     src/sensors/measurement_console.cpp
     src/sensors/measurement_log.cpp
     src/sensors/registry.cpp
+    src/sensors/rtd.cpp
     src/storage/keyed_record_store.cpp
     src/storage/redundant_blob_store.cpp
 )

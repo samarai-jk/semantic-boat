@@ -25,6 +25,7 @@
 #include "slstm32/console.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/build_profile.hpp"
+#include "slstm32/drivers/analog_sensor.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
@@ -44,6 +45,7 @@
 #include "slstm32/sensors/measurement_console.hpp"
 #include "slstm32/sensors/measurement_log.hpp"
 #include "slstm32/sensors/registry.hpp"
+#include "slstm32/sensors/rtd.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
 #include <array>
 #include <cstdint>
@@ -67,6 +69,7 @@ constexpr std::uint8_t boardTemperatureAddress = 0x4Fu;
 constexpr std::size_t canReceiveFrames = 16u;
 constexpr std::size_t canTransmitFrames = 8u;
 constexpr std::uint32_t watchdogTimeoutMs = 4000u;
+constexpr std::uint8_t pt100AdcChannel = 5u; // PA0 = ADC1_IN5
 
 // NMEA 2000 identity. LT1 is a lab device and uses the development
 // manufacturer code; product firmware must use the code assigned by NMEA.
@@ -179,6 +182,12 @@ constexpr sensors::MeasurementConfig outHumidityChannelConfig{
     "out-rh", sensors::Quantity::relativeHumidity, 1u, 10000u, 0u, nullptr, 0u};
 constexpr sensors::MeasurementConfig probeChannelConfig{
     "probe", sensors::Quantity::temperature, 4u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
+// DFRobot SEN0198 PT100 amplifier on the analog input PA0, with its output
+// voltage as a second channel for checking the characteristic.
+constexpr sensors::MeasurementConfig pt100ChannelConfig{
+    "pt100", sensors::Quantity::temperature, 5u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
+constexpr sensors::MeasurementConfig pt100VoltageChannelConfig{
+    "pt100-v", sensors::Quantity::voltage, 0u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
 sensors::Measurement airChannel{airChannelConfig};
@@ -186,14 +195,29 @@ sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
 sensors::Measurement outChannel{outChannelConfig};
 sensors::Measurement outHumidityChannel{outHumidityChannelConfig};
 sensors::Measurement probeChannel{probeChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel, &airChannel,        &airHumidityChannel,
-                                       &outChannel,         &outHumidityChannel, &probeChannel};
+sensors::Measurement pt100Channel{pt100ChannelConfig};
+sensors::Measurement pt100VoltageChannel{pt100VoltageChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel,         &airChannel,
+                                       &airHumidityChannel, &outChannel,   &outHumidityChannel,
+                                       &probeChannel, &pt100Channel,       &pt100VoltageChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Sht31Driver sht31{runtime, i2c, logger, &outChannel, &outHumidityChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 slstm32::drivers::Ds18b20Driver ds18b20{runtime, oneWire0, logger, &probeChannel};
+// SEN0198: PT100 bridge with the constants of DFRobot's library (its
+// "0.2-2.8 V for 30-350 C" is only approximate). Below 50 mV or above 3.2 V
+// the probe, the amplifier, or its supply is missing.
+constexpr sensors::RtdBridge sen0198Bridge{1800.0f, 3976.2f, 39.762f};
+const slstm32::drivers::AnalogSensorConfig pt100Config{sensors::rtdBridgeConversion(sen0198Bridge), 50, 3200,
+                                                       1000u};
+slstm32::drivers::AnalogSensor pt100{runtime,
+                                     mcu.inputHardware(0u),
+                                     pt100Config,
+                                     &pt100Channel,
+                                     sensors::Identity::analog(pt100AdcChannel),
+                                     &pt100VoltageChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[lab_test_01::sensorSettingsSlots]{};
@@ -210,6 +234,7 @@ const n2k::MeasurementPublication publications[]{
     {&outChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::outside)},
     {&outHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::outside)},
     {&probeChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
+    {&pt100Channel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -251,6 +276,7 @@ struct BoardTemperature;
 struct Dht20;
 struct Sht31;
 struct Ds18b20;
+struct Pt100;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -284,7 +310,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule),
-        slstm32::bind<component::Ds18b20>(ds18b20)),
+        slstm32::bind<component::Ds18b20>(ds18b20),
+        slstm32::bind<component::Pt100>(pt100)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Health>(health),
         slstm32::bind<component::Diagnostics>(diagnostics),
@@ -412,6 +439,7 @@ extern "C" void lab_test_01_app_init(void) {
     configureN2kIdentity();
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
+    (void)mcu.addInput(pt100AdcChannel);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);

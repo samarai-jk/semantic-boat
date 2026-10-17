@@ -56,6 +56,21 @@ Measurement::Measurement(const MeasurementConfig& config) : config_(config) {
     for (std::size_t index = 0u; index < alarmCount_; ++index) rules_[index] = config.alarms[index];
 }
 
+void Measurement::setIdentity(const Identity& identity) {
+    if (identity.kind == identity_.kind && identity.id == identity_.id && identity.subchannel == identity_.subchannel) {
+        return;
+    }
+    const bool replaced = identity_.known();
+    identity_ = identity;
+    ++identityRevision_;
+    if (!replaced) return;
+    calibration_ = {};
+    for (std::size_t index = 0u; index < alarmCount_; ++index) rules_[index].threshold = config_.alarms[index].threshold;
+    samples_ = 0u;
+    rateCount_ = 0u;
+    rateValid_ = false;
+}
+
 void Measurement::update(std::int32_t raw, std::uint32_t now) {
     raw_ = raw;
     value_ = static_cast<std::int32_t>(static_cast<std::int64_t>(raw) * calibration_.gainPpm / 1000000 +

@@ -123,7 +123,7 @@ bool MeasurementRegistry::init() {
 void MeasurementRegistry::run() {
     const auto now = runtime_.millis();
     for (std::size_t index = 0u; index < count_ && index < maxChannels; ++index) {
-        if (!loaded_[index]) loadSettings(index);
+        if (loadedRevision_[index] != channels_[index]->identityRevision()) loadSettings(index);
         channels_[index]->tick(now);
     }
 }
@@ -144,9 +144,8 @@ std::size_t MeasurementRegistry::indexOf(const Measurement& channel) const {
 
 void MeasurementRegistry::loadSettings(std::size_t index) {
     auto& channel = *channels_[index];
-    if (!channel.identity().known()) return;
-    loaded_[index] = true;
-    if (!storeReady_) return;
+    loadedRevision_[index] = channel.identityRevision();
+    if (!channel.identity().known() || !storeReady_) return;
     std::uint8_t data[settingsBytes]{};
     std::size_t size = 0u;
     if (!store_->load(keyOf(channel.identity()), data, sizeof data, size) || size < settingsBytes ||

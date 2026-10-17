@@ -136,7 +136,8 @@ std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
 
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs() {
     std::array<slstm32::drivers::DigitalInputHardware, 4> result{};
-    for (std::size_t index = 0; index < result.size(); ++index) {
+    // PA4 is the 1-Wire bus of the sensor tests: DI0 stays unconnected.
+    for (std::size_t index = 1; index < result.size(); ++index) {
         result[index] = {&moduleInputPins[index], &configureModuleInput, &readModuleInput, true};
     }
     return result;

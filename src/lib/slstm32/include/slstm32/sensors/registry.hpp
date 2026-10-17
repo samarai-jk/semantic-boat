@@ -32,7 +32,8 @@ struct AlarmSummary {
 // All measurement channels of a device. On init() it checks the
 // configuration (unique names, unique instance per quantity) and applies the
 // settings persisted for each channel's sensor identity; channels whose
-// identity becomes known later (sensors discovered on a bus) get theirs then.
+// identity becomes known or changes later (sensors discovered on a bus, a
+// sensor swapped) get theirs then.
 // run() ticks every channel for staleness and alarm delays. Alarm
 // transitions are logged and, if an event bus is given, published.
 //
@@ -81,7 +82,7 @@ private:
     EventBus* events_{};
     EventId alarmEvent_{};
     bool storeReady_{};
-    bool loaded_[maxChannels]{};
+    std::uint8_t loadedRevision_[maxChannels]{}; // identity revision whose settings are applied
 };
 
 // Formats thousandths as "12.345" (decimals 0..3), without floating point.

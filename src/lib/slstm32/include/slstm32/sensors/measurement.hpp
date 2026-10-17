@@ -121,7 +121,10 @@ public:
     explicit Measurement(const MeasurementConfig& config);
 
     // --- Driver side ---
-    void setIdentity(const Identity& identity) { identity_ = identity; }
+    // A different identity (another sensor on the same input) resets the
+    // calibration, thresholds, and statistics; the registry then applies
+    // the settings stored for the new sensor.
+    void setIdentity(const Identity& identity);
     void update(std::int32_t raw, std::uint32_t now);
     void fail(Fault fault, std::uint32_t now);
 
@@ -130,6 +133,8 @@ public:
     const char* name() const { return config_.name; }
     Quantity quantity() const { return config_.quantity; }
     const Identity& identity() const { return identity_; }
+    // Incremented on every identity change.
+    std::uint8_t identityRevision() const { return identityRevision_; }
     Status status() const { return status_; }
     bool valid() const { return status_ == Status::valid; }
     Fault fault() const { return fault_; }
@@ -191,6 +196,7 @@ private:
     std::array<AlarmState, maxAlarms> alarms_{};
     std::size_t alarmCount_{};
     Identity identity_{};
+    std::uint8_t identityRevision_{};
     Calibration calibration_{};
     Status status_{Status::unknown};
     Fault fault_{Fault::none};

@@ -5,6 +5,7 @@
 #include "can_mcu/can_bus.hpp"
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "can_mcu/one_wire_pin.hpp"
 #include "can_mcu/supervision.hpp"
 #include "can_monitor_service.hpp"
 #include "device_settings.hpp"
@@ -28,6 +29,8 @@
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
 #include "slstm32/drivers/dht20.hpp"
+#include "slstm32/drivers/ds18b20.hpp"
+#include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/serial_log.hpp"
@@ -157,7 +160,8 @@ constexpr sensors::AlarmRule mcuAlarms[]{
     {AlarmKind::high, Severity::alarm, 75000, 3000, 2000u, false, true},
 };
 // DFRobot DHT20 ("air") and SHT31 outdoor sensor ("out") on the I2C
-// connectors: a missing or failing sensor is a warning after 10 s.
+// connectors, DS18B20 probe ("probe") on the 1-Wire input PA4: a missing or
+// failing sensor is a warning after 10 s.
 constexpr sensors::AlarmRule airAlarms[]{
     {AlarmKind::sensorFault, Severity::warning, 0, 0, 10000u, false, false},
 };
@@ -173,17 +177,23 @@ constexpr sensors::MeasurementConfig outChannelConfig{
     "out", sensors::Quantity::temperature, 3u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
 constexpr sensors::MeasurementConfig outHumidityChannelConfig{
     "out-rh", sensors::Quantity::relativeHumidity, 1u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig probeChannelConfig{
+    "probe", sensors::Quantity::temperature, 4u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
 sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
 sensors::Measurement airChannel{airChannelConfig};
 sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
 sensors::Measurement outChannel{outChannelConfig};
 sensors::Measurement outHumidityChannel{outHumidityChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel, &mcuChannel,         &airChannel,
-                                       &airHumidityChannel, &outChannel, &outHumidityChannel};
+sensors::Measurement probeChannel{probeChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel, &airChannel,        &airHumidityChannel,
+                                       &outChannel,         &outHumidityChannel, &probeChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Sht31Driver sht31{runtime, i2c, logger, &outChannel, &outHumidityChannel};
+can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
+slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
+slstm32::drivers::Ds18b20Driver ds18b20{runtime, oneWire0, logger, &probeChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[lab_test_01::sensorSettingsSlots]{};
@@ -199,6 +209,7 @@ const n2k::MeasurementPublication publications[]{
     {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
     {&outChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::outside)},
     {&outHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::outside)},
+    {&probeChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -239,6 +250,7 @@ struct Mcu;
 struct BoardTemperature;
 struct Dht20;
 struct Sht31;
+struct Ds18b20;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -271,7 +283,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Sht31>(sht31),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
-        slstm32::bind<component::InputModule>(inputModule)),
+        slstm32::bind<component::InputModule>(inputModule),
+        slstm32::bind<component::Ds18b20>(ds18b20)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Health>(health),
         slstm32::bind<component::Diagnostics>(diagnostics),

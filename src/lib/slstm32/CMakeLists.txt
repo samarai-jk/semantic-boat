@@ -15,9 +15,11 @@ add_library(slstm32 STATIC
     src/drivers/can_bus.cpp
     src/drivers/dht20.cpp
     src/drivers/digital_io.cpp
+    src/drivers/ds18b20.cpp
     src/drivers/i2c_bus.cpp
     src/drivers/latching_relay.cpp
     src/drivers/led.cpp
+    src/drivers/one_wire.cpp
     src/drivers/pwm_led.cpp
     src/drivers/pwm_output.cpp
     src/drivers/rgb_led.cpp

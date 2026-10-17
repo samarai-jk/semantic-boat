@@ -4,7 +4,7 @@
 namespace slstm32::sensors {
 
 namespace {
-constexpr std::size_t lineLimit = 100u; // stays below Logger::formatCapacity with the prefix
+constexpr std::size_t lineLimit = 118u; // with "values: " just below Logger::formatCapacity
 } // namespace
 
 bool MeasurementLog::init() {

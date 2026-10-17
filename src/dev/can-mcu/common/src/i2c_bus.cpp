@@ -48,13 +48,20 @@ bool HalI2cBus::finish(int status) {
 }
 
 bool HalI2cBus::probe(std::uint8_t address) {
-    // A one-byte read, like i2cdetect's read probe. An empty write (address
-    // and stop only, HAL_I2C_IsDeviceReady) confuses some devices: the BNO055
-    // then took its next register access wrongly and stopped its fusion with
-    // a configuration error after every bus scan.
+    // A one-byte read first, then, only if the device does not answer it, an
+    // empty write (address and stop, HAL_I2C_IsDeviceReady):
+    // - the empty write confuses the BNO055 (its next register access went
+    //   wrong and its fusion stopped with a configuration error after every
+    //   bus scan); it answers the read, so it never gets the empty write;
+    // - Sensirion sensors (SHT3x, SCD4x) do not acknowledge a read without a
+    //   preceding command, but do acknowledge the empty write.
     std::uint8_t byte = 0u;
-    const auto status = HAL_I2C_Master_Receive(&hi2c1, deviceAddress(address), &byte, 1u, probeTimeoutMs);
+    auto status = HAL_I2C_Master_Receive(&hi2c1, deviceAddress(address), &byte, 1u, probeTimeoutMs);
     if (status == HAL_OK) return true;
+    if (status == HAL_ERROR && hi2c1.ErrorCode == HAL_I2C_ERROR_AF) {
+        status = HAL_I2C_IsDeviceReady(&hi2c1, deviceAddress(address), 1u, probeTimeoutMs);
+        if (status == HAL_OK) return true;
+    }
     // Absent devices are expected during scans and write-cycle polling: the
     // HAL reports them as HAL_ERROR with an acknowledge failure, so only a
     // busy bus or a bus/arbitration error is a fault.

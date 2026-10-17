@@ -266,6 +266,7 @@ storage is normally simplest in embedded firmware.
 | `Bmp585Driver` | Bosch BMP585/BMP581 barometer (I2C 0x47/0x46): forced measurements with x16 pressure oversampling, or read-only on modules that manage the chip themselves (DFRobot Gravity). Pressure channel in 0.1 Pa. |
 | `Bno055Driver` | Bosch BNO055 orientation sensor (I2C 0x28/0x29): non-blocking reset and start-up, NDOF/IMU/AMG modes, all fusion outputs in one burst per period, calibration status, automatic restart of a stopped fusion. Heading, pitch, roll channels. |
 | `Bmp280Driver` | Bosch BMP280 (and BME280 without humidity) barometer (I2C 0x76/0x77): forced mode, x16, Bosch integer compensation. |
+| `Scd4xDriver` | Sensirion SCD40/SCD41 CO2 sensor (I2C 0x62): periodic measurement, data-ready polling, CRC, serial number and variant, ambient pressure compensation. CO2 (concentration quantity, ppm), temperature, and humidity channels. |
 | `As3935Driver` | ams/ScioSense AS3935 lightning sensor (I2C 1..3): lightning distance/energy, disturber and noise events to a listener, adaptive noise floor, optional IRQ input with automatic antenna tuning. |
 | `Tmp75Driver` | TMP75/TMP175/TMP275 (LM75-style) temperature sensor on an `I2cBus` in 12-bit continuous mode, sampled periodically. A missing sensor is reported through `valid()` and reconfigured when it answers again; it never fails `init()`. |
 

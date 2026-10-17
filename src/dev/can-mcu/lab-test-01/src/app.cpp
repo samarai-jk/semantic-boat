@@ -38,6 +38,7 @@
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
+#include "slstm32/drivers/scd4x.hpp"
 #include "slstm32/drivers/serial_log.hpp"
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
@@ -158,7 +159,8 @@ lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActi
 // I2C connectors as reference ("air"), and a DFRobot VEML7700 ambient light
 // sensor ("light"), a Bosch BMP585 barometer ("baro", die temperature
 // "baro-t"), and the DFRobot SEN0253 10-DOF module: BNO055 orientation
-// ("heading", "pitch", "roll") and BMP280 barometer ("baro2", "baro2-t"). No alarm rules while sensors are being
+// ("heading", "pitch", "roll") and BMP280 barometer ("baro2", "baro2-t"),
+// and a Sensirion SCD4x CO2 sensor ("co2", "co2-t", "co2-rh"). No alarm rules while sensors are being
 // brought up; the annunciator stays silent without them. PA4 is prepared as a
 // 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
@@ -212,16 +214,27 @@ sensors::Measurement pitchChannel{pitchChannelConfig};
 sensors::Measurement rollChannel{rollChannelConfig};
 sensors::Measurement baro2Channel{baro2ChannelConfig};
 sensors::Measurement baro2TemperatureChannel{baro2TemperatureChannelConfig};
+constexpr sensors::MeasurementConfig co2ChannelConfig{
+    "co2", sensors::Quantity::concentration, 0u, 15000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig co2TemperatureChannelConfig{
+    "co2-t", sensors::Quantity::temperature, 10u, 15000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig co2HumidityChannelConfig{
+    "co2-rh", sensors::Quantity::relativeHumidity, 2u, 15000u, 0u, nullptr, 0u};
+sensors::Measurement co2Channel{co2ChannelConfig};
+sensors::Measurement co2TemperatureChannel{co2TemperatureChannelConfig};
+sensors::Measurement co2HumidityChannel{co2HumidityChannelConfig};
 sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,   &airChannel,    &airHumidityChannel,
                                        &lightChannel,       &baroChannel,  &baroTemperatureChannel,
                                        &headingChannel,     &pitchChannel, &rollChannel,   &baro2Channel,
-                                       &baro2TemperatureChannel};
+                                       &baro2TemperatureChannel,           &co2Channel,    &co2TemperatureChannel,
+                                       &co2HumidityChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
 slstm32::drivers::Bmp585Driver bmp585{runtime, i2c, logger, &baroChannel, &baroTemperatureChannel};
 slstm32::drivers::Bno055Driver bno055{runtime, i2c, logger, &headingChannel, &pitchChannel, &rollChannel};
 slstm32::drivers::Bmp280Driver bmp280{runtime, i2c, logger, &baro2Channel, &baro2TemperatureChannel};
+slstm32::drivers::Scd4xDriver scd4x{runtime, i2c, logger, &co2Channel, &co2TemperatureChannel, &co2HumidityChannel};
 // The BNO055 runs at 10 Hz; the bus gets a 1 s summary (heading, rate of
 // turn, attitude) and the log one every 10 s with the extremes and spread.
 sensors::AttitudeSummarizer attitudeSummarizer{runtime};
@@ -288,6 +301,7 @@ struct Bmp585;
 struct Bno055;
 struct Bmp280;
 struct AttitudeSummarizer;
+struct Scd4x;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -321,6 +335,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Bmp585>(bmp585),
         slstm32::bind<component::Bno055>(bno055),
         slstm32::bind<component::Bmp280>(bmp280),
+        slstm32::bind<component::Scd4x>(scd4x),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),
@@ -449,6 +464,17 @@ void onAttitudeSummary(void*, const sensors::AttitudeSummary& summary) {
                   static_cast<unsigned long>(summary.samples));
 }
 
+// The CO2 reading depends on the air pressure: pass the barometer's value
+// to the SCD4x every minute (BMP585 first, else the BMP280).
+void compensateCo2Pressure() {
+    static std::uint32_t nextAt = 0u;
+    const auto now = runtime.millis();
+    if (static_cast<std::int32_t>(now - nextAt) < 0) return;
+    nextAt = now + 60000u;
+    const auto& barometer = baroChannel.valid() ? baroChannel : baro2Channel;
+    if (barometer.valid()) scd4x.setAmbientPressure(static_cast<std::uint16_t>((barometer.value() + 500) / 1000));
+}
+
 // Any button press acknowledges the measurement alarms.
 void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (size != sizeof(slstm32::drivers::ButtonEvent)) return;
@@ -514,6 +540,7 @@ extern "C" void lab_test_01_app_run(void) {
     can_mcu::refreshWatchdog();
     events.process();
     application.run();
+    compensateCo2Pressure();
 }
 
 extern "C" void lab_test_01_app_tick(void) {

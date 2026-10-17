@@ -19,13 +19,17 @@ channels, alarms, and settings storage are described in the
 | UV index (DFRobot SEN0636) | `DfrobotUvIndexDriver` | I2C 0x23 | Communication verified; UV only seen as 0 indoors; not suited behind ordinary windows |
 | BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
 | BNO055 + BMP280 (DFRobot SEN0253 10-DOF) | `Bno055Driver`, `Bmp280Driver` | I2C 0x28, 0x76 | Verified (orientation, pressure) |
+| SCD41 CO2 (generic module, sold as "SD40/SD41") | `Scd4xDriver` | I2C 0x62 | Verified |
 
 ## Common behaviour
 
-- I2C presence probes (bus scan, `I2cBus::probe()`) are one-byte reads. The
-  former empty write (address + stop, `HAL_I2C_IsDeviceReady`) made the
-  BNO055 misinterpret its next register access: its fusion stopped with
-  error 9 after every 5 s rescan.
+- I2C presence probes (bus scan, `I2cBus::probe()`) first read one byte and
+  only if that is refused send an empty write (address + stop,
+  `HAL_I2C_IsDeviceReady`). The empty write made the BNO055 misinterpret its
+  next register access (fusion stopped with error 9 after every 5 s
+  rescan); it answers the read, so it never gets one. Sensirion sensors
+  (SCD4x, SHT3x) refuse a read without a preceding command and are found by
+  the empty write.
 
 - Drivers never block the main loop for longer than a bus transfer (except
   the documented one-time initializations), never fail `init()` because a
@@ -206,6 +210,25 @@ in [motion-sensing.md](../../dev/can-mcu/motion-sensing.md).
   mode, pressure x16, temperature x2, Bosch's integer compensation.
 - Bench: 1010.07..1010.13 hPa, within 0.25 hPa of the BMP585 measured
   earlier the same day.
+
+## SCD41 CO2 (I2C 0x62)
+
+- The module is labelled "SD40/SD41"; the sensor identifies itself as an
+  SCD41 (get_sensor_variant 0x202F), serial 57D003073B89, i.e. a genuine
+  Sensirion part or a faithful copy.
+- Periodic measurement (one result every 5 s, the driver polls "data ready"
+  every second), CRC per word. A measurement left running by a previous
+  MCU run is stopped first (500 ms).
+- Pressure compensation: LT1 passes the barometer value (BMP585, else
+  BMP280) every minute (set_ambient_pressure, accepted during measurement).
+- Bench: 577..599 ppm indoors (room air with people, plausible), sensor
+  temperature 27.1..27.5 C (Sensirion's default 4 C self-heating offset
+  applied), humidity 49..51 %, close to the DHT20.
+- Automatic self-calibration is left on (sensor default): it needs fresh air
+  (about 400 ppm) at least once a week, which a boat cabin usually gets;
+  in a permanently closed boat it drifts. The SCD41 also has a single-shot
+  mode for low power (not used).
+- No standard NMEA 2000 PGN for CO2: the project's own messages.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

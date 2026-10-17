@@ -17,6 +17,9 @@ constexpr std::uint32_t sessionTimeoutMs = 5000u;
 constexpr float maximumScaleDeviation = 0.05f;
 constexpr std::int32_t maximumOffsetMv = 100;
 constexpr std::int32_t minimumSpanAdcMicrovolts = 100000; // about 0.9 V at the terminal
+constexpr std::uint32_t autoTimeoutMs = 600000u;
+constexpr std::uint32_t autoSettleMs = 300u;
+constexpr std::uint32_t autoSamples = 24u;
 
 bool slotFor(std::uint8_t address, std::size_t& slot) {
     if (address < firstAddress || address >= firstAddress + AdInputIso12vCalibrationStore::slots) {
@@ -147,7 +150,7 @@ bool AdInputIso12vCalibrationStore::save(std::uint8_t address, const AdInputIso1
 // --- Calibrator -------------------------------------------------------------
 
 bool AdInputIso12vCalibrator::registerCommands(slstm32::CommandConsole& console) {
-    return console.add({"cal", "cal <addr> [<ch> <volts>|zero|reset]  calibrate 12v-ad-input-iso", &calCommand, this}) &&
+    return console.add({"cal", "cal <addr> [<ch> <volts>|zero|reset | auto <volts>]  calibrate 12v-ad-input-iso", &calCommand, this}) &&
            console.add({"ain", "ain  readings of all 12v-ad-input-iso modules", &ainCommand, this});
 }
 
@@ -219,6 +222,7 @@ bool AdInputIso12vCalibrator::reset(std::uint8_t address, std::size_t channel) {
 }
 
 void AdInputIso12vCalibrator::run() {
+    if (autoActive_) runAuto();
     if (!active_) return;
     auto& module = *session_.module;
     const auto channel = session_.channel;
@@ -243,7 +247,6 @@ void AdInputIso12vCalibrator::finish() {
     const auto address = static_cast<unsigned>(module.adcAddress());
     const auto averageUv = static_cast<std::int32_t>(session_.sumMicrovolts / session_.count);
     auto calibration = module.calibration();
-    char before[24];
     char after[24];
 
     if (session_.kind == Kind::zero) {
@@ -264,17 +267,8 @@ void AdInputIso12vCalibrator::finish() {
                         address, static_cast<unsigned>(channel));
             return;
         }
-        const float scale = static_cast<float>(session_.referenceMv + calibration.offsetMv[channel]) *
-                            1000.0f / static_cast<float>(averageUv);
-        if (!plausibleScale(scale)) {
-            log_.writef(LogLevel::warning, "cal 0x%02X AI%u: scale %s implausible (design 9.2000)", address,
-                        static_cast<unsigned>(channel), fixed(after, scaleTimes10000(scale), 4u));
-            return;
-        }
-        log_.writef(LogLevel::info, "cal 0x%02X AI%u: scale %s -> %s", address, static_cast<unsigned>(channel),
-                    fixed(before, scaleTimes10000(calibration.scale[channel]), 4u),
-                    fixed(after, scaleTimes10000(scale), 4u));
-        calibration.scale[channel] = scale;
+        applySpan(module, channel, session_.referenceMv, averageUv);
+        return;
     }
     module.setCalibration(calibration);
     persist(module);
@@ -283,6 +277,133 @@ void AdInputIso12vCalibrator::finish() {
                             calibration.offsetMv[channel];
     log_.writef(LogLevel::info, "cal 0x%02X AI%u: averaged input now reads %s V", address,
                 static_cast<unsigned>(channel), fixed(after, terminalMv, 3u));
+}
+
+bool AdInputIso12vCalibrator::applySpan(AdInputIso12v& module, std::size_t channel, std::int32_t referenceMv,
+                                        std::int32_t averageUv) {
+    const auto address = static_cast<unsigned>(module.adcAddress());
+    auto calibration = module.calibration();
+    char before[24];
+    char after[24];
+    const float scale = static_cast<float>(referenceMv + calibration.offsetMv[channel]) * 1000.0f /
+                        static_cast<float>(averageUv);
+    if (!plausibleScale(scale)) {
+        log_.writef(LogLevel::warning, "cal 0x%02X AI%u: scale %s implausible (design 9.2000)", address,
+                    static_cast<unsigned>(channel), fixed(after, scaleTimes10000(scale), 4u));
+        return false;
+    }
+    log_.writef(LogLevel::info, "cal 0x%02X AI%u: scale %s -> %s", address, static_cast<unsigned>(channel),
+                fixed(before, scaleTimes10000(calibration.scale[channel]), 4u),
+                fixed(after, scaleTimes10000(scale), 4u));
+    calibration.scale[channel] = scale;
+    module.setCalibration(calibration);
+    persist(module);
+    const auto terminalMv = static_cast<std::int32_t>(static_cast<float>(averageUv) * scale / 1000.0f) -
+                            calibration.offsetMv[channel];
+    log_.writef(LogLevel::info, "cal 0x%02X AI%u: averaged input now reads %s V", address,
+                static_cast<unsigned>(channel), fixed(after, terminalMv, 3u));
+    return true;
+}
+
+bool AdInputIso12vCalibrator::startAuto(std::uint8_t address, std::int32_t referenceMv) {
+    auto* module = find(address);
+    if (!module || !module->adcPresent()) {
+        log_.writef(LogLevel::warning, "cal: no module answering at 0x%02X", static_cast<unsigned>(address));
+        return false;
+    }
+    if (active_ || autoActive_) {
+        log_.write(LogLevel::warning, "cal: a measurement is already running");
+        return false;
+    }
+    if (referenceMv < 1000) {
+        log_.write(LogLevel::warning, "cal: use a reference of at least 1 V");
+        return false;
+    }
+    autoModule_ = module;
+    autoReferenceMv_ = referenceMv;
+    autoStartedAt_ = runtime_.millis();
+    for (std::size_t channel = 0u; channel < AdInputIso12v::channels; ++channel) {
+        autoChannels_[channel] = {};
+        autoChannels_[channel].lastSamples = module->analogSamples(channel);
+    }
+    autoActive_ = true;
+    char reference[24];
+    log_.writef(LogLevel::info, "cal 0x%02X auto: touch each channel with %s V for 2 s, one after another",
+                static_cast<unsigned>(address), fixed(reference, referenceMv, 3u));
+    return true;
+}
+
+void AdInputIso12vCalibrator::runAuto() {
+    auto& module = *autoModule_;
+    const auto address = static_cast<unsigned>(module.adcAddress());
+    const auto now = runtime_.millis();
+    const auto low = autoReferenceMv_ * 4 / 5;
+    const auto high = autoReferenceMv_ * 6 / 5;
+    std::size_t done = 0u;
+    for (std::size_t channel = 0u; channel < AdInputIso12v::channels; ++channel) {
+        auto& state = autoChannels_[channel];
+        if (state.phase == AutoPhase::done) {
+            ++done;
+            continue;
+        }
+        const auto samples = module.analogSamples(channel);
+        if (samples == state.lastSamples || !module.analogValid(channel)) continue;
+        state.lastSamples = samples;
+        const auto millivolts = module.analogMillivolts(channel);
+        const bool present = millivolts > low && millivolts < high;
+        switch (state.phase) {
+        case AutoPhase::waiting:
+            if (present) {
+                state.phase = AutoPhase::settling;
+                state.since = now;
+                char reading[24];
+                log_.writef(LogLevel::info, "cal 0x%02X AI%u: voltage detected (%s V), hold the contact", address,
+                            static_cast<unsigned>(channel), fixed(reading, millivolts, 3u));
+                notify(channel, AutoEvent::detected);
+            }
+            break;
+        case AutoPhase::settling:
+            if (!present) {
+                log_.writef(LogLevel::warning, "cal 0x%02X AI%u: contact lost, touch again", address,
+                            static_cast<unsigned>(channel));
+                state.phase = AutoPhase::waiting;
+                notify(channel, AutoEvent::lost);
+            } else if (static_cast<std::uint32_t>(now - state.since) >= autoSettleMs) {
+                state.phase = AutoPhase::measuring;
+                state.sumMicrovolts = 0;
+                state.count = 0u;
+            }
+            break;
+        case AutoPhase::measuring:
+            if (!present) {
+                log_.writef(LogLevel::warning, "cal 0x%02X AI%u: contact lost while measuring, touch again",
+                            address, static_cast<unsigned>(channel));
+                state.phase = AutoPhase::waiting;
+                notify(channel, AutoEvent::lost);
+                break;
+            }
+            state.sumMicrovolts += module.adcMicrovolts(channel);
+            if (++state.count == autoSamples) {
+                const auto averageUv = static_cast<std::int32_t>(state.sumMicrovolts / state.count);
+                const bool applied = applySpan(module, channel, autoReferenceMv_, averageUv);
+                state.phase = applied ? AutoPhase::done : AutoPhase::waiting;
+                notify(channel, applied ? AutoEvent::done : AutoEvent::rejected);
+            }
+            break;
+        case AutoPhase::done:
+            break;
+        }
+    }
+    if (done == AdInputIso12v::channels) {
+        log_.writef(LogLevel::info, "cal 0x%02X auto: all channels calibrated", address);
+        autoActive_ = false;
+        notify(AdInputIso12v::channels, AutoEvent::finished);
+    } else if (static_cast<std::uint32_t>(now - autoStartedAt_) > autoTimeoutMs) {
+        log_.writef(LogLevel::warning, "cal 0x%02X auto: timeout, %u of 4 channels calibrated", address,
+                    static_cast<unsigned>(done));
+        autoActive_ = false;
+        notify(AdInputIso12v::channels, AutoEvent::finished);
+    }
 }
 
 void AdInputIso12vCalibrator::persist(AdInputIso12v& module) {
@@ -335,12 +456,20 @@ void AdInputIso12vCalibrator::calCommand(void* context, std::size_t argc, const 
         self.show(address);
         return;
     }
+    std::int32_t referenceMv{};
+    if (argc == 4u && std::strcmp(argv[2], "auto") == 0) {
+        if (parseMillivolts(argv[3], referenceMv)) {
+            self.startAuto(address, referenceMv);
+        } else {
+            self.log_.writef(LogLevel::warning, "cal: '%s' is not a voltage", argv[3]);
+        }
+        return;
+    }
     std::size_t channel{};
     if (argc != 4u || !parseChannel(argv[2], channel)) {
         self.log_.write(LogLevel::warning, "usage: cal <addr> <ch 0..3> <volts>|zero|reset");
         return;
     }
-    std::int32_t referenceMv{};
     if (std::strcmp(argv[3], "zero") == 0) {
         self.startZero(address, channel);
     } else if (std::strcmp(argv[3], "reset") == 0) {

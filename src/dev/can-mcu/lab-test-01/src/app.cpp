@@ -219,6 +219,34 @@ void configureN2kIdentity() {
                   static_cast<unsigned>(n2kConfig.preferredAddress));
 }
 
+// Bench feedback for the automatic input module calibration: red LED on while
+// a channel is measured, green flash and a quiet click when it is done, fast
+// red blinking when the contact was lost or the result was rejected.
+void onCalibrationEvent(void*, std::size_t, semantic_modules::AdInputIso12vCalibrator::AutoEvent event) {
+    using Event = semantic_modules::AdInputIso12vCalibrator::AutoEvent;
+    constexpr std::uint32_t clickHz = 2700u;
+    constexpr std::uint32_t clickMs = 60u;
+    constexpr float clickLevel = 0.02f;
+    switch (event) {
+    case Event::detected:
+        redLed.on();
+        break;
+    case Event::lost:
+    case Event::rejected:
+        redLed.blink(150u, 75u);
+        break;
+    case Event::done:
+        redLed.off();
+        greenLed.pulse(800u);
+        buzzer.play(clickHz, clickMs, clickLevel);
+        break;
+    case Event::finished:
+        redLed.off();
+        greenLed.blink(2000u, 60u);
+        break;
+    }
+}
+
 // Deliberate failures to verify the supervision traps before long runs.
 void trapCommand(void*, std::size_t argc, const char* const* argv) {
     if (argc == 2u && std::strcmp(argv[1], "hang") == 0) {
@@ -259,6 +287,7 @@ extern "C" void lab_test_01_app_init(void) {
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
+    inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
     if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
         !health.registerCommands(console) || !i2cScan.registerCommands(console) ||
         !console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault", &trapCommand, nullptr})) {

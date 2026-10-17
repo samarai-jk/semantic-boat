@@ -93,6 +93,17 @@ With the console commands registered:
    run `cal <addr> <ch> <volts>`, for example `cal 0x49 1 11.972`.
 3. Check with `ain`.
 
-A measurement averages 32 samples (about 1.2 s) and is rejected if the scale
+Automatic mode for bench work: `cal <addr> auto <volts>` waits up to ten
+minutes and calibrates every channel the reference touches, one after
+another (0.3 s to settle, 24 averaged samples). The calibrator reports its
+progress through `onAutoEvent()`; lab-test-01 turns that into feedback on the
+board: red LED while measuring, green flash and a quiet click when a channel
+is done, fast red blinking when the contact was lost.
+
+First calibration (module 0x49, 12.780 V reference): scales 9.2249, 9.2209,
+9.2228, 9.2200, all 0.22..0.27 % above the design value 9.2, as expected from
+the ADC input loading the divider. Repeating A0 gave 9.2250 vs. 9.2249.
+
+A single-channel measurement averages 32 samples (about 1.2 s) and is rejected if the scale
 deviates more than 5 % from the design value 9.2 or the offset exceeds
 100 mV. Several channels can share one reference by bridging their terminals.

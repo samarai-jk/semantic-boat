@@ -40,6 +40,9 @@ private:
 //   cal <addr> <ch> <volts>          reference applied (for example 11.972):
 //                                    measure the scale factor
 //   cal <addr> <ch> reset            back to the design values
+//   cal <addr> auto <volts>          span calibration of every channel that
+//                                    gets touched with the reference, one
+//                                    after another, within ten minutes
 // A measurement averages 32 samples (about 1.2 s), is checked for
 // plausibility (scale within 5 % of the design value, offset below 100 mV),
 // applied at once, and saved. Calibrate zero first, then the span.
@@ -57,6 +60,26 @@ public:
     bool startZero(std::uint8_t address, std::size_t channel);
     bool startSpan(std::uint8_t address, std::size_t channel, std::int32_t referenceMv);
     bool reset(std::uint8_t address, std::size_t channel);
+    // Calibrates each channel as soon as the reference appears on it: the
+    // reading must stay within 80..120 % of the reference for 0.3 s to settle
+    // and then for 24 samples (about 0.9 s) that are averaged. A broken
+    // contact discards the measurement; the channel waits for the next touch.
+    bool startAuto(std::uint8_t address, std::int32_t referenceMv);
+
+    // Optional progress events of the automatic calibration, for feedback on
+    // the device itself (LEDs, sounds) while the operator works at the bench.
+    enum class AutoEvent : std::uint8_t {
+        detected,  // reference seen on the channel, measurement starts
+        lost,      // reference gone before the measurement completed
+        done,      // channel calibrated and saved
+        rejected,  // measurement implausible, channel waits for a new touch
+        finished,  // session ended (all channels done or timeout)
+    };
+    using AutoFeedback = void (*)(void* context, std::size_t channel, AutoEvent event);
+    void onAutoEvent(AutoFeedback feedback, void* context) {
+        autoFeedback_ = feedback;
+        autoFeedbackContext_ = context;
+    }
     void show(std::uint8_t address) const;
     void showReadings() const;
 
@@ -79,6 +102,21 @@ private:
     bool begin(std::uint8_t address, std::size_t channel, Kind kind, std::int32_t referenceMv);
     void finish();
     void persist(AdInputIso12v& module);
+    void runAuto();
+    void notify(std::size_t channel, AutoEvent event) {
+        if (autoFeedback_) autoFeedback_(autoFeedbackContext_, channel, event);
+    }
+    bool applySpan(AdInputIso12v& module, std::size_t channel, std::int32_t referenceMv,
+                   std::int32_t averageUv);
+
+    enum class AutoPhase : std::uint8_t { waiting, settling, measuring, done };
+    struct AutoChannel {
+        AutoPhase phase{AutoPhase::waiting};
+        std::uint32_t since{};
+        std::uint32_t lastSamples{};
+        std::int64_t sumMicrovolts{};
+        std::uint32_t count{};
+    };
 
     slstm32::Runtime runtime_;
     slstm32::Logger log_;
@@ -87,6 +125,13 @@ private:
     std::size_t moduleCount_{};
     Session session_{};
     bool active_{};
+    AdInputIso12v* autoModule_{};
+    std::int32_t autoReferenceMv_{};
+    std::uint32_t autoStartedAt_{};
+    AutoChannel autoChannels_[AdInputIso12v::channels]{};
+    bool autoActive_{};
+    AutoFeedback autoFeedback_{};
+    void* autoFeedbackContext_{};
 };
 
 } // namespace semantic_modules

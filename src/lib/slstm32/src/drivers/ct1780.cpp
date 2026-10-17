@@ -7,8 +7,12 @@ namespace {
 constexpr std::uint8_t commandConvert = 0x44u;
 constexpr std::uint8_t commandReadScratchpad = 0xBEu;
 // The MAX31850 needs up to 100 ms; DFRobot's library waits 750 ms for the
-// CT1780, which is kept here.
+// CT1780. That is the wait without completion polling and the timeout with it.
 constexpr std::uint32_t conversionMs = 750u;
+constexpr std::uint32_t pollMs = 1u;
+// A conversion reported done this early means the converter does not drive
+// the read slots: the released line just reads 1.
+constexpr std::uint32_t implausiblyFastMs = 5u;
 constexpr std::uint8_t faultOpen = 0x01u;
 constexpr std::uint8_t faultShortGround = 0x02u;
 constexpr std::uint8_t faultShortSupply = 0x04u;
@@ -118,12 +122,36 @@ void Ct1780Driver::finish(std::uint32_t now) {
     if (thermocouple_) thermocouple_->update(milliCelsius, now);
 }
 
+void Ct1780Driver::converting(std::uint32_t now) {
+    const auto elapsed = static_cast<std::uint32_t>(now - convertAt_);
+    bool done = polling_ == Polling::unsupported ? elapsed >= conversionMs : bus_.readBit();
+    if (done && polling_ == Polling::unknown) {
+        polling_ = elapsed < implausiblyFastMs ? Polling::unsupported : Polling::supported;
+        char text[20];
+        log_.writef(LogLevel::info, "ct1780 %s: conversion %s", OneWireBus::formatRom(text, rom_),
+                    polling_ == Polling::supported ? "polled" : "not reported, fixed wait");
+        if (polling_ == Polling::unsupported) done = false;
+    }
+    if (!done) {
+        if (elapsed >= conversionMs && polling_ != Polling::unsupported) {
+            failed(sensors::Fault::notReady, now);
+            nextAt_ = cycleAt_;
+            return;
+        }
+        nextAt_ = polling_ == Polling::unsupported ? convertAt_ + conversionMs : now + pollMs;
+        return;
+    }
+    lastConversionMs_ = elapsed;
+    if (elapsed > maxConversionMs_) maxConversionMs_ = elapsed;
+    finish(now);
+    nextAt_ = cycleAt_;
+}
+
 void Ct1780Driver::run() {
     const auto now = runtime_.millis();
     if (static_cast<std::int32_t>(now - nextAt_) < 0) return;
     if (state_ == State::converting) {
-        finish(now);
-        nextAt_ = cycleAt_;
+        converting(now);
         return;
     }
     cycleAt_ += periodMs_;
@@ -137,7 +165,8 @@ void Ct1780Driver::run() {
     }
     bus_.writeByte(commandConvert);
     state_ = State::converting;
-    nextAt_ = now + conversionMs;
+    convertAt_ = now;
+    nextAt_ = polling_ == Polling::unsupported ? now + conversionMs : now + pollMs;
 }
 
 } // namespace slstm32::drivers

@@ -19,6 +19,12 @@ namespace slstm32::drivers {
 // short to GND, short to VDD), byte 4 configuration with the address pins
 // AD0..AD3 (the module's DIP switches) in the low nibble.
 //
+// The end of a conversion is polled with read slots (0 while converting,
+// 1 when done), so a reading is taken as soon as it is ready. A converter
+// that does not report it (the first poll already reads 1) gets the fixed
+// 750 ms wait of DFRobot's library instead. A period of 0 converts back to
+// back.
+//
 // The ROM code is the identity of the thermocouple channel (subchannel 0)
 // and the optional cold-junction channel (subchannel 1). A reported fault
 // (thermocouple open or shorted) fails the thermocouple channel with
@@ -34,6 +40,8 @@ public:
 
     bool init() override;
     void run() override;
+    void setPeriod(std::uint32_t periodMs) { periodMs_ = periodMs; }
+    std::uint32_t period() const { return periodMs_; }
 
     OneWireBus::Rom rom() const { return rom_; }
     // AD0..AD3 from the configuration register (DIP switches).
@@ -41,9 +49,16 @@ public:
     std::uint8_t faultBits() const { return faultBits_; }
     std::uint32_t samples() const { return samples_; }
     std::uint32_t errors() const { return errors_; }
+    // Conversion completion polling: unknown until the first conversion.
+    enum class Polling : std::uint8_t { unknown, supported, unsupported };
+    Polling polling() const { return polling_; }
+    std::uint32_t lastConversionMs() const { return lastConversionMs_; }
+    std::uint32_t maxConversionMs() const { return maxConversionMs_; }
+    void resetConversionStatistics() { maxConversionMs_ = 0u; }
 
 private:
     enum class State : std::uint8_t { idle, converting };
+    void converting(std::uint32_t now);
 
     bool discover(std::uint32_t now);
     bool readScratchpad(std::uint8_t (&data)[9]);
@@ -62,6 +77,10 @@ private:
     OneWireBus::Rom foreignRom_{};
     std::uint32_t nextAt_{};
     std::uint32_t cycleAt_{};
+    std::uint32_t convertAt_{};
+    std::uint32_t lastConversionMs_{};
+    std::uint32_t maxConversionMs_{};
+    Polling polling_{Polling::unknown};
     std::uint32_t samples_{};
     std::uint32_t errors_{};
     std::uint8_t address_{};

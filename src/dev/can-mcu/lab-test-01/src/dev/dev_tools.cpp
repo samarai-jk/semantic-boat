@@ -31,11 +31,13 @@ public:
                                         &trapCommand, this});
         ok = context_.console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  raw bus access (dev)",
                                    &i2cCommand, this}) && ok;
+        ok = context_.console.add({"tcrate", "tcrate [<period ms>]  CT1780 readings per second (dev, temporary)",
+                                   &tcrateCommand, this}) && ok;
         ok = hardwareTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
         ok = activity_.init() && ok;
         context_.log.write(LogLevel::warning,
-                           "dev tools: hardware and module tests, background load, trap and i2c commands");
+                           "dev tools: hardware and module tests, background load, trap, i2c, tcrate commands");
         return ok;
     }
 
@@ -61,6 +63,43 @@ private:
             (void)*reinterpret_cast<volatile std::uint32_t*>(0xFFFFFFF0u);
         }
         self.context_.log.write(LogLevel::warning, "usage: trap hang|fault");
+    }
+
+    // TEMPORARY test aid (remove after the CT1780 rate test): sets the
+    // conversion period and reports readings per second since the last call.
+    static void tcrateCommand(void* context, std::size_t argc, const char* const* argv) {
+        using Polling = slstm32::drivers::Ct1780Driver::Polling;
+        auto& self = *static_cast<DevToolsService*>(context);
+        auto& tc = self.context_.thermocouple;
+        const auto now = self.context_.runtime.millis();
+        const auto samples = tc.samples();
+        const auto elapsed = now - self.rateSince_;
+        const auto count = samples - self.rateSamples_;
+        const char* polling = tc.polling() == Polling::supported     ? "polled"
+                              : tc.polling() == Polling::unsupported ? "fixed wait"
+                                                                     : "unknown";
+        const auto hundredths = elapsed ? count * 100000u / elapsed : 0u;
+        self.context_.log.writef(LogLevel::info,
+                                 "tcrate: %lu readings in %lu ms = %lu.%02lu/s, period %lu ms, %s, "
+                                 "conversion last %lu max %lu ms, errors %lu",
+                                 static_cast<unsigned long>(count), static_cast<unsigned long>(elapsed),
+                                 static_cast<unsigned long>(hundredths / 100u),
+                                 static_cast<unsigned long>(hundredths % 100u),
+                                 static_cast<unsigned long>(tc.period()), polling,
+                                 static_cast<unsigned long>(tc.lastConversionMs()),
+                                 static_cast<unsigned long>(tc.maxConversionMs()),
+                                 static_cast<unsigned long>(tc.errors()));
+        if (argc == 2u) {
+            char* end = nullptr;
+            const auto period = std::strtoul(argv[1], &end, 0);
+            if (end != argv[1] && *end == '\0') {
+                tc.setPeriod(static_cast<std::uint32_t>(period));
+                tc.resetConversionStatistics();
+                self.context_.log.writef(LogLevel::info, "tcrate: period %lu ms", period);
+            }
+        }
+        self.rateSince_ = now;
+        self.rateSamples_ = samples;
     }
 
     // Raw register access for exploring sensors.
@@ -111,6 +150,8 @@ private:
     }
 
     DevToolsContext context_;
+    std::uint32_t rateSince_{};
+    std::uint32_t rateSamples_{};
     HardwareTestService hardwareTest_;
     InputModuleTestService inputModuleTest_;
     ActivityService activity_;

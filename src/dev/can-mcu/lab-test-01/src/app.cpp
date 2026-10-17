@@ -219,7 +219,7 @@ lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRe
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const lab_test_01::DevToolsContext devToolsContext{
     runtime, events, logger, serialLog, console, buttons, static_cast<std::uint8_t>(buttonConfigs.size()),
-    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health};
+    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health, ct1780};
 
 namespace component {
 struct SerialLog;

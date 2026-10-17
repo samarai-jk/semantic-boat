@@ -11,6 +11,7 @@ add_library(slstm32 STATIC
     src/drivers/ads1115.cpp
     src/drivers/analog_input.cpp
     src/drivers/analog_sensor.cpp
+    src/drivers/as3935.cpp
     src/drivers/at24c256.cpp
     src/drivers/button.cpp
     src/drivers/can_bus.cpp

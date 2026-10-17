@@ -26,6 +26,7 @@
 #include "slstm32/console.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/build_profile.hpp"
+#include "slstm32/drivers/as3935.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
@@ -170,6 +171,10 @@ sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, 
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
+// DFRobot SEN0290 lightning sensor (AS3935 at I2C address 3, antenna tuned
+// with 96 pF), polled; its IRQ pin is not needed.
+const slstm32::drivers::As3935Driver::Config lightningConfig{};
+slstm32::drivers::As3935Driver lightning{runtime, i2c, logger, lightningConfig};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -215,7 +220,7 @@ lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRe
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const lab_test_01::DevToolsContext devToolsContext{
     runtime, events, logger, serialLog, console, buttons, static_cast<std::uint8_t>(buttonConfigs.size()),
-    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health};
+    greenLed, redLed, buzzer, i2c, i2cScan, inputModule, n2kNode, health, lightning};
 
 namespace component {
 struct SerialLog;
@@ -227,6 +232,7 @@ struct Mcu;
 struct BoardTemperature;
 struct Dht20;
 struct Veml7700;
+struct Lightning;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -257,6 +263,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Dht20>(dht20),
         slstm32::bind<component::Veml7700>(veml7700),
+        slstm32::bind<component::Lightning>(lightning),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),

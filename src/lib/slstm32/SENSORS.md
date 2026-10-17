@@ -16,6 +16,7 @@ channels, alarms, and settings storage are described in the
 | PT100 amplifier (DFRobot SEN0198) | `AnalogSensor` + `sensors::rtdBridgeConversion` | ADC | Verified, not calibrated |
 | VEML7700 (DFRobot SEN0228) | `Veml7700Driver` | I2C 0x10 | Verified at indoor light |
 | AS3935 (DFRobot SEN0290) | `As3935Driver` | I2C 0x03 + IRQ | Verified incl. IRQ and antenna tuning; no real lightning seen |
+| UV index (DFRobot SEN0636) | `DfrobotUvIndexDriver` | I2C 0x23 | Communication verified; UV only seen as 0 indoors |
 
 ## Common behaviour
 
@@ -104,6 +105,21 @@ channels, alarms, and settings storage are described in the
   count). Measured about 227 lx indoors, stable to +-0.4 lx. Darkness and
   sunlight ranges not yet checked on the bench.
 - No standard NMEA 2000 PGN for illuminance; the channel is not published.
+
+## UV index (SEN0636, I2C 0x23)
+
+- A module with its own controller (I2C or UART by a switch on the board),
+  not a bare sensor chip. 16-bit registers, little-endian on I2C, sequential
+  reads work: 0x00 product ID 0x427C, 0x01 0x3334, 0x02 address 0x23, 0x03
+  0x0003, 0x04 0x0001, 0x05 version 0x1000, 0x06 raw UV, 0x07 UV index
+  (integer), 0x08 risk level 0..4.
+- Address 0x23 collides with the BH1750 light sensor (ADDR low); they cannot
+  share a bus.
+- Indoors behind glass every value reads 0 (glass blocks UVB and most UVA).
+  To be checked in sunlight or with a 365 nm UV torch: whether the raw value
+  is usable for a finer index than the integer register, and how fast it
+  reacts.
+- Quantity `uvIndex` (thousandths of the index); no NMEA 2000 PGN.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

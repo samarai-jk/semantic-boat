@@ -16,6 +16,7 @@ add_library(slstm32 STATIC
     src/drivers/button.cpp
     src/drivers/can_bus.cpp
     src/drivers/ct1780.cpp
+    src/drivers/dfrobot_uv_index.cpp
     src/drivers/dht20.cpp
     src/drivers/digital_io.cpp
     src/drivers/ds18b20.cpp

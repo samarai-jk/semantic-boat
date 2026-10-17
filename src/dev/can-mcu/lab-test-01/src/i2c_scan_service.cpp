@@ -18,7 +18,7 @@ struct KnownAddress {
 constexpr KnownAddress knownAddresses[]{
     {0x10u, "VEML7700 light"},
     {0x1Eu, "HMC5883L compass"},
-    {0x23u, "BH1750 light"},
+    {0x23u, "BH1750 light / DFRobot SEN0636 UV index"},
     {0x29u, "TSL2591 light / VL53L0X range"},
     {0x38u, "AHT20 temp/humidity"},
     {0x39u, "TSL2561 light / APDS9960"},

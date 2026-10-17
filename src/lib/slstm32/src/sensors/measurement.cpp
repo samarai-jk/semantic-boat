@@ -7,6 +7,7 @@ const char* quantityName(Quantity quantity) {
     case Quantity::temperature: return "temperature";
     case Quantity::relativeHumidity: return "humidity";
     case Quantity::voltage: return "voltage";
+    case Quantity::illuminance: return "illuminance";
     }
     return "?";
 }
@@ -16,6 +17,7 @@ const char* unitName(Quantity quantity) {
     case Quantity::temperature: return "C";
     case Quantity::relativeHumidity: return "%";
     case Quantity::voltage: return "V";
+    case Quantity::illuminance: return "lx";
     }
     return "";
 }

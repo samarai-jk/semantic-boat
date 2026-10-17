@@ -37,6 +37,7 @@
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
 #include "slstm32/drivers/tone_pattern.hpp"
+#include "slstm32/drivers/veml7700.hpp"
 #include "slstm32/event_bus.hpp"
 #include "slstm32/sensors/alarm_annunciator.hpp"
 #include "slstm32/sensors/measurement.hpp"
@@ -145,8 +146,9 @@ lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardT
 lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 
-// Measurement channels: the board and MCU probes and a DFRobot DHT20 on the
-// I2C connectors as reference ("air"). No alarm rules while sensors are being
+// Measurement channels: the board and MCU probes, a DFRobot DHT20 on the
+// I2C connectors as reference ("air"), and a DFRobot VEML7700 ambient light
+// sensor ("light"). No alarm rules while sensors are being
 // brought up; the annunciator stays silent without them. PA4 is prepared as a
 // 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
@@ -161,9 +163,13 @@ sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
 sensors::Measurement airChannel{airChannelConfig};
 sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, &airHumidityChannel};
+constexpr sensors::MeasurementConfig lightChannelConfig{
+    "light", sensors::Quantity::illuminance, 0u, 10000u, 0u, nullptr, 0u};
+sensors::Measurement lightChannel{lightChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, &airHumidityChannel, &lightChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
+slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -220,6 +226,7 @@ struct Buzzer;
 struct Mcu;
 struct BoardTemperature;
 struct Dht20;
+struct Veml7700;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -249,6 +256,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Dht20>(dht20),
+        slstm32::bind<component::Veml7700>(veml7700),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),

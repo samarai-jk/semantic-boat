@@ -30,6 +30,7 @@ add_library(slstm32 STATIC
     src/drivers/tmp75.cpp
     src/drivers/tone.cpp
     src/drivers/tone_pattern.cpp
+    src/drivers/veml7700.cpp
     src/epd/font5x7.cpp
     src/epd/monochrome_canvas.cpp
     src/epd/waveshare_3in7.cpp

@@ -57,6 +57,7 @@ bool As3935Driver::init() {
     noiseFloor_ = static_cast<std::uint8_t>(config_.noiseFloor & 0x07u);
     location_ = config_.location;
     reportDisturbers_ = config_.reportDisturbers;
+    pollMs_ = config_.pollMs ? config_.pollMs : 1u;
     nextAt_ = runtime_.millis();
     return true;
 }
@@ -146,7 +147,7 @@ void As3935Driver::handle(std::uint8_t interrupt, std::uint32_t now) {
 void As3935Driver::run() {
     const auto now = runtime_.millis();
     if (static_cast<std::int32_t>(now - nextAt_) < 0) return;
-    nextAt_ = now + config_.pollMs;
+    nextAt_ = now + pollMs_;
     if (!configured_) {
         if (!configure()) {
             lost();
@@ -164,6 +165,7 @@ void As3935Driver::run() {
         nextAt_ = now + retryMs;
         return;
     }
+    ++polls_;
     handle(static_cast<std::uint8_t>(interrupt & 0x0Fu), now);
     if (static_cast<std::uint32_t>(now - disturberLogAt_) >= disturberLogMs) {
         if (disturbers_ != disturbersLogged_) {

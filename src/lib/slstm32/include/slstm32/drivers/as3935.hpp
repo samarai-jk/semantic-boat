@@ -63,6 +63,12 @@ public:
     bool setNoiseFloor(std::uint8_t level);
     bool setLocation(Location location);
     bool setDisturberReporting(bool on);
+    // Interval of the interrupt register reads (the register holds the last
+    // event until read). Bus traffic near the antenna can itself be
+    // detected as disturbers, so polling less often may help.
+    void setPollPeriod(std::uint32_t pollMs) { pollMs_ = pollMs ? pollMs : 1u; }
+    std::uint32_t pollPeriod() const { return pollMs_; }
+    std::uint32_t polls() const { return polls_; }
 
     bool present() const { return configured_; }
     bool calibrated() const { return calibrated_; }
@@ -92,6 +98,8 @@ private:
     Listener listener_{};
     void* listenerContext_{};
     std::uint32_t nextAt_{};
+    std::uint32_t pollMs_{};
+    std::uint32_t polls_{};
     std::uint32_t quietSince_{};
     std::uint32_t disturberLogAt_{};
     std::uint32_t disturbersLogged_{};

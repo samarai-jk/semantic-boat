@@ -260,13 +260,16 @@ extern "C" void lab_test_01_app_init(void) {
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
-        !health.registerCommands(console) ||
+        !health.registerCommands(console) || !i2cScan.registerCommands(console) ||
         !console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault", &trapCommand, nullptr})) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {
         logger.write(LogLevel::error, "application init failed");
         redLed.blink(250u, 125u);
+    }
+    if (boardTemperature.defaultConfiguration()) {
+        logger.write(LogLevel::info, "tmp75: 12-bit setting not accepted, using the default configuration");
     }
     serialLog.flush(startupLogFlushMs);
     // A hang from here on becomes a logged watchdog restart.

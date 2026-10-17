@@ -1,4 +1,7 @@
 #include "i2c_scan_service.hpp"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace lab_test_01 {
 namespace {
@@ -73,6 +76,58 @@ void I2cScanService::run() {
         if (before && !after) logDevice("disappeared", address);
     }
     present_ = found;
+}
+
+bool I2cScanService::registerCommands(slstm32::CommandConsole& console) {
+    return console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  bus access", &i2cCommand, this});
+}
+
+void I2cScanService::i2cCommand(void* context, std::size_t argc, const char* const* argv) {
+    auto& self = *static_cast<I2cScanService*>(context);
+    const auto number = [](const char* text, unsigned long maximum, unsigned long& value) {
+        char* end = nullptr;
+        value = std::strtoul(text, &end, 0);
+        return end != text && *end == '\0' && value <= maximum;
+    };
+    if (argc == 1u) {
+        const auto found = slstm32::drivers::scanI2c(self.bus_);
+        for (auto address = I2cAddressSet::firstAddress; address <= I2cAddressSet::lastAddress; ++address) {
+            if (found.contains(address)) self.logDevice("present", address);
+        }
+        return;
+    }
+    unsigned long address{};
+    unsigned long reg{};
+    if (argc >= 4u && std::strcmp(argv[1], "read") == 0 && number(argv[2], 0x7Fu, address) &&
+        number(argv[3], 0xFFu, reg)) {
+        unsigned long count = 2u;
+        if (argc >= 5u && (!number(argv[4], 16u, count) || count == 0u)) {
+            self.log_.write(LogLevel::warning, "i2c read: count must be 1..16");
+            return;
+        }
+        std::uint8_t data[16]{};
+        if (!self.bus_.readRegister(static_cast<std::uint8_t>(address), static_cast<std::uint8_t>(reg), data,
+                                    count)) {
+            self.log_.writef(LogLevel::warning, "i2c 0x%02lX reg 0x%02lX: read failed", address, reg);
+            return;
+        }
+        char text[3u * 16u + 1u]{};
+        for (std::size_t index = 0u; index < count; ++index) {
+            std::snprintf(text + 3u * index, 4u, " %02X", static_cast<unsigned>(data[index]));
+        }
+        self.log_.writef(LogLevel::info, "i2c 0x%02lX reg 0x%02lX:%s", address, reg, text);
+        return;
+    }
+    unsigned long value{};
+    if (argc == 5u && std::strcmp(argv[1], "write") == 0 && number(argv[2], 0x7Fu, address) &&
+        number(argv[3], 0xFFu, reg) && number(argv[4], 0xFFu, value)) {
+        const bool ok = self.bus_.writeRegister(static_cast<std::uint8_t>(address), static_cast<std::uint8_t>(reg),
+                                                static_cast<std::uint8_t>(value));
+        self.log_.writef(ok ? LogLevel::info : LogLevel::warning, "i2c 0x%02lX reg 0x%02lX <- 0x%02lX: %s",
+                         address, reg, value, ok ? "ok" : "failed");
+        return;
+    }
+    self.log_.write(LogLevel::warning, "usage: i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]");
 }
 
 void I2cScanService::logDevice(const char* event, std::uint8_t address) const {

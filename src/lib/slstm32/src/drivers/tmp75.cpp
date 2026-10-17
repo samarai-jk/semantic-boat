@@ -6,6 +6,7 @@ namespace {
 constexpr std::uint8_t temperatureRegister = 0x00u;
 constexpr std::uint8_t configurationRegister = 0x01u;
 constexpr std::uint8_t resolution12Bit = 0x60u; // R1 = R0 = 1, continuous conversion
+constexpr std::uint8_t powerOnDefault = 0x00u;  // continuous conversion on all LM75-type parts
 } // namespace
 
 bool Tmp75Driver::init() {
@@ -16,7 +17,11 @@ bool Tmp75Driver::init() {
 }
 
 bool Tmp75Driver::configure() {
-    return bus_.writeRegister(address_, configurationRegister, resolution12Bit);
+    if (!bus_.writeRegister(address_, configurationRegister, resolution12Bit)) return false;
+    std::uint8_t readBack{};
+    if (!bus_.readRegister(address_, configurationRegister, &readBack, 1u)) return false;
+    defaultConfiguration_ = readBack != resolution12Bit;
+    return !defaultConfiguration_ || bus_.writeRegister(address_, configurationRegister, powerOnDefault);
 }
 
 bool Tmp75Driver::sample() {

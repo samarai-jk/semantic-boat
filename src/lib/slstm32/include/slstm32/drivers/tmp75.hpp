@@ -13,6 +13,11 @@ namespace slstm32::drivers {
 // A sensor that does not respond does not fail init(): it is reported through
 // valid() and reconfigured automatically when it answers again, so an absent
 // or unplugged sensor never stops the application.
+//
+// The configuration is read back. Compatible parts that do not accept the
+// 12-bit setting fall back to the power-on default (continuous conversion);
+// a UMW TMP75 clone, for example, reads 0x60 back as 0x20 and then stops
+// converting. defaultConfiguration() reports that fallback.
 class Tmp75Driver final : public Driver {
 public:
     static constexpr std::uint8_t baseAddress = 0x48u;
@@ -26,6 +31,7 @@ public:
     bool valid() const { return valid_; }
     std::int32_t milliCelsius() const { return milliCelsius_; }
     std::uint32_t errors() const { return errors_; }
+    bool defaultConfiguration() const { return defaultConfiguration_; }
 
 private:
     bool configure();
@@ -39,6 +45,7 @@ private:
     std::int32_t milliCelsius_{};
     std::uint32_t errors_{};
     bool configured_{};
+    bool defaultConfiguration_{};
     bool valid_{};
 };
 

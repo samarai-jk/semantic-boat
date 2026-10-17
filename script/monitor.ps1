@@ -65,7 +65,7 @@ $serialRules = @(
     @{ Pattern = '\] [IWE] alarm: '; Color = 'White'; Label = 'alarm' },
     @{ Pattern = '\] [IWE] (sensors?:|ack:|[a-z][a-z0-9_-]*: ((temperature|humidity|voltage) instance|offset|stored|applied|defaults|statistics|no valid|cal2|gain))'; Color = 'White'; Label = 'sensor' },
     @{ Pattern = '\] [IWE] values: '; Color = 'Green'; Label = 'values' },
-    @{ Pattern = '\] [IWE] dht20 '; Color = 'Green'; Label = 'sensor' },
+    @{ Pattern = '\] [IWE] (dht20|sht31) '; Color = 'Green'; Label = 'sensor' },
     @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },

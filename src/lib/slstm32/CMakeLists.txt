@@ -22,6 +22,7 @@ add_library(slstm32 STATIC
     src/drivers/pwm_output.cpp
     src/drivers/rgb_led.cpp
     src/drivers/serial_log.cpp
+    src/drivers/sht31.cpp
     src/drivers/tmp75.cpp
     src/drivers/tone.cpp
     src/drivers/tone_pattern.cpp

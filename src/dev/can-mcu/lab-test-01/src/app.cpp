@@ -31,6 +31,7 @@
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/serial_log.hpp"
+#include "slstm32/drivers/sht31.hpp"
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/drivers/tone.hpp"
 #include "slstm32/drivers/tone_pattern.hpp"
@@ -155,8 +156,8 @@ constexpr sensors::AlarmRule mcuAlarms[]{
     {AlarmKind::riseRate, Severity::warning, 10000, 3000, 0u, false, false},
     {AlarmKind::high, Severity::alarm, 75000, 3000, 2000u, false, true},
 };
-// DFRobot DHT20 on the I2C connectors: a missing or failing sensor is a
-// warning after 10 s.
+// DFRobot DHT20 ("air") and SHT31 outdoor sensor ("out") on the I2C
+// connectors: a missing or failing sensor is a warning after 10 s.
 constexpr sensors::AlarmRule airAlarms[]{
     {AlarmKind::sensorFault, Severity::warning, 0, 0, 10000u, false, false},
 };
@@ -168,13 +169,21 @@ constexpr sensors::MeasurementConfig airChannelConfig{
     "air", sensors::Quantity::temperature, 2u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
 constexpr sensors::MeasurementConfig airHumidityChannelConfig{
     "air-rh", sensors::Quantity::relativeHumidity, 0u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig outChannelConfig{
+    "out", sensors::Quantity::temperature, 3u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
+constexpr sensors::MeasurementConfig outHumidityChannelConfig{
+    "out-rh", sensors::Quantity::relativeHumidity, 1u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
 sensors::Measurement airChannel{airChannelConfig};
 sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, &airHumidityChannel};
+sensors::Measurement outChannel{outChannelConfig};
+sensors::Measurement outHumidityChannel{outHumidityChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel,         &airChannel,
+                                       &airHumidityChannel, &outChannel, &outHumidityChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
+slstm32::drivers::Sht31Driver sht31{runtime, i2c, logger, &outChannel, &outHumidityChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[lab_test_01::sensorSettingsSlots]{};
@@ -188,6 +197,8 @@ const n2k::MeasurementPublication publications[]{
     {&mcuChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
+    {&outChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::outside)},
+    {&outHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::outside)},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -227,6 +238,7 @@ struct Buzzer;
 struct Mcu;
 struct BoardTemperature;
 struct Dht20;
+struct Sht31;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -256,6 +268,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Dht20>(dht20),
+        slstm32::bind<component::Sht31>(sht31),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),

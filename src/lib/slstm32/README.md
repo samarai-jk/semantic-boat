@@ -377,6 +377,10 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   alarm waits for acknowledgement and reports summary changes to an indicator
   callback (LEDs, display). Patterns and the acknowledge input are device
   decisions.
+- `AttitudeSummarizer` (service) reduces a fast orientation stream to one
+  summary per interval: circular heading mean, pitch and roll mean, extremes,
+  and standard deviation, yaw rate mean and maximum. `n2k::AttitudePublisher`
+  sends it as PGN 127250/127251/127257.
 - `MeasurementConsole` adds the service commands `sensors`, `sensor <name>
   [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]`, and
   `ack`.

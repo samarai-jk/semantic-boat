@@ -116,6 +116,7 @@ void Bno055Driver::read(std::uint32_t now) {
     if (heading_) heading_->update(static_cast<std::int32_t>(euler_.x) * 1000 / 16, now);
     if (roll_) roll_->update(static_cast<std::int32_t>(euler_.y) * 1000 / 16, now);
     if (pitch_) pitch_->update(static_cast<std::int32_t>(euler_.z) * 1000 / 16, now);
+    if (sampleListener_) sampleListener_(sampleContext_, *this);
 }
 
 void Bno055Driver::run() {

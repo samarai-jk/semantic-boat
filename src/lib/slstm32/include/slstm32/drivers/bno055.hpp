@@ -54,8 +54,15 @@ public:
         : runtime_(runtime), bus_(bus), log_(log), heading_(heading), pitch_(pitch), roll_(roll), periodMs_(periodMs),
           busIndex_(busIndex), address_(address) {}
 
+    using SampleListener = void (*)(void* context, const Bno055Driver& sensor);
+
     bool init() override;
     void run() override;
+    // Called after every successful read (for summaries and motion analysis).
+    void setSampleListener(SampleListener listener, void* context) {
+        sampleListener_ = listener;
+        sampleContext_ = context;
+    }
     // Selects the operation mode (default ndof) and restarts the sensor.
     void setMode(Mode mode);
     Mode mode() const { return mode_; }
@@ -99,6 +106,8 @@ private:
     std::uint32_t nextAt_{};
     std::uint32_t stateSince_{};
     std::uint32_t statusAt_{};
+    SampleListener sampleListener_{};
+    void* sampleContext_{};
     Mode mode_{Mode::ndof};
     Vector acceleration_{};
     Vector magnetic_{};

@@ -173,6 +173,10 @@ channels, alarms, and settings storage are described in the
 
 ## BNO055 orientation (SEN0253, I2C 0x28)
 
+What the data is for, what goes on the bus (1 Hz summaries), and the
+application ideas (marina storm alarm, anchoring, comfort index, waves) are
+in [motion-sensing.md](../../dev/can-mcu/motion-sensing.md).
+
 - Chip ID 0xA0, accelerometer 0xFB, magnetometer 0x32, gyroscope 0x0F,
   software 3.17, self test 0xF. The chip answers its chip ID about 550 ms
   after a reset, before it is fully started; the driver waits 700 ms.

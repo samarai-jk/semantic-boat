@@ -40,6 +40,7 @@ add_library(slstm32 STATIC
     src/epd/monochrome_canvas.cpp
     src/epd/waveshare_3in7.cpp
     src/sensors/alarm_annunciator.cpp
+    src/sensors/attitude_summary.cpp
     src/sensors/measurement.cpp
     src/sensors/measurement_console.cpp
     src/sensors/measurement_log.cpp

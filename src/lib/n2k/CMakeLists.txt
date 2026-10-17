@@ -5,6 +5,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_library(n2k STATIC
+    src/attitude_publisher.cpp
     src/measurement_publisher.cpp
     src/node.cpp
 )

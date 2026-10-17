@@ -15,6 +15,7 @@
 #include "health_service.hpp"
 #include "i2c_scan_service.hpp"
 #include "one_wire_command.hpp"
+#include "n2k/attitude_publisher.hpp"
 #include "n2k/humidity.hpp"
 #include "n2k/measurement_publisher.hpp"
 #include "n2k/name.hpp"
@@ -44,6 +45,7 @@
 #include "slstm32/drivers/veml7700.hpp"
 #include "slstm32/event_bus.hpp"
 #include "slstm32/sensors/alarm_annunciator.hpp"
+#include "slstm32/sensors/attitude_summary.hpp"
 #include "slstm32/sensors/measurement.hpp"
 #include "slstm32/sensors/measurement_console.hpp"
 #include "slstm32/sensors/measurement_log.hpp"
@@ -127,7 +129,8 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity, n2k::pgn::actualPressure,
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::vesselHeading, n2k::pgn::rateOfTurn, n2k::pgn::attitude,
+                                           n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity, n2k::pgn::actualPressure,
                                            n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
@@ -219,6 +222,10 @@ slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
 slstm32::drivers::Bmp585Driver bmp585{runtime, i2c, logger, &baroChannel, &baroTemperatureChannel};
 slstm32::drivers::Bno055Driver bno055{runtime, i2c, logger, &headingChannel, &pitchChannel, &rollChannel};
 slstm32::drivers::Bmp280Driver bmp280{runtime, i2c, logger, &baro2Channel, &baro2TemperatureChannel};
+// The BNO055 runs at 10 Hz; the bus gets a 1 s summary (heading, rate of
+// turn, attitude) and the log one every 10 s with the extremes and spread.
+sensors::AttitudeSummarizer attitudeSummarizer{runtime};
+n2k::AttitudePublisher attitudePublisher{n2kNode};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -280,6 +287,7 @@ struct Veml7700;
 struct Bmp585;
 struct Bno055;
 struct Bmp280;
+struct AttitudeSummarizer;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -324,6 +332,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::CanMonitor>(canMonitor),
         slstm32::bind<component::BoardTemperatures>(boardTemperatures),
         slstm32::bind<component::Measurements>(measurements),
+        slstm32::bind<component::AttitudeSummarizer>(attitudeSummarizer),
         slstm32::bind<component::MeasurementLog>(measurementLog),
         slstm32::bind<component::MeasurementPublisher>(measurementPublisher),
         slstm32::bind<component::Annunciator>(annunciator),
@@ -411,6 +420,35 @@ void showAlarms(void*, const sensors::AlarmSummary& summary) {
     }
 }
 
+// BNO055 sample -> summary. Assumes the chip lies flat with its z axis up:
+// heading clockwise, yaw rate = -gyro z (turning to starboard positive).
+// Pitch and roll signs follow the chip until the mounting is decided.
+void onOrientationSample(void*, const slstm32::drivers::Bno055Driver& sensor) {
+    using Mode = slstm32::drivers::Bno055Driver::Mode;
+    const bool absolute = sensor.mode() == Mode::ndof || sensor.mode() == Mode::ndofFmcOff;
+    attitudeSummarizer.add({static_cast<std::int32_t>(sensor.heading16()) * 1000 / 16,
+                            static_cast<std::int32_t>(sensor.pitch16()) * 1000 / 16,
+                            static_cast<std::int32_t>(sensor.roll16()) * 1000 / 16,
+                            -static_cast<std::int32_t>(sensor.angularRate().z) * 1000 / 16,
+                            absolute && sensor.calibration().magnetometer >= 2u});
+}
+
+void onAttitudeSummary(void*, const sensors::AttitudeSummary& summary) {
+    (void)attitudePublisher.publish(summary);
+    static std::uint32_t count = 0u;
+    if (++count % 10u != 0u) return;
+    char h[20], pm[20], pl[20], ph[20], pd[20], rm[20], rl[20], rh[20], rd[20], ym[20], yx[20];
+    logger.writef(LogLevel::info, "attitude: heading %s%s | pitch %s (%s..%s, sd %s) | roll %s (%s..%s, sd %s)",
+                  sensors::formatMilli(h, summary.heading, 1u), summary.headingValid ? "" : " (not valid)",
+                  sensors::formatMilli(pm, summary.pitchMean, 1u), sensors::formatMilli(pl, summary.pitchMinimum, 1u),
+                  sensors::formatMilli(ph, summary.pitchMaximum, 1u), sensors::formatMilli(pd, summary.pitchDeviation, 2u),
+                  sensors::formatMilli(rm, summary.rollMean, 1u), sensors::formatMilli(rl, summary.rollMinimum, 1u),
+                  sensors::formatMilli(rh, summary.rollMaximum, 1u), sensors::formatMilli(rd, summary.rollDeviation, 2u));
+    logger.writef(LogLevel::info, "attitude: yaw rate %s deg/s (max %s), %lu samples",
+                  sensors::formatMilli(ym, summary.yawRateMean, 1u), sensors::formatMilli(yx, summary.yawRateMaximum, 1u),
+                  static_cast<unsigned long>(summary.samples));
+}
+
 // Any button press acknowledges the measurement alarms.
 void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (size != sizeof(slstm32::drivers::ButtonEvent)) return;
@@ -444,6 +482,8 @@ extern "C" void lab_test_01_app_init(void) {
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
     baroChannel.setTrendBuffer(baroTrend, sizeof baroTrend / sizeof baroTrend[0]);
+    bno055.setSampleListener(&onOrientationSample, nullptr);
+    attitudeSummarizer.setListener(&onAttitudeSummary, nullptr);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);

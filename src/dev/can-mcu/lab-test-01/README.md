@@ -140,6 +140,7 @@ Console commands (type into the monitor or the serial logger):
 | `supply [<mV>]` | Supply voltage now and since the last heartbeat; set the dip threshold (default 3150 mV) |
 | `i2c [read <addr> <reg> [n] \| write <addr> <reg> <value>]` | List the I2C devices, or read/write registers directly (for exploring sensors) |
 | `ain` | Terminal and ADC voltages of the input module |
+| `watch [off \| <channels> [<volts>]]` | Log the input module voltages every second while a watched channel is above the threshold (starts with A1..A3 above 1 V) |
 | `health [clear]` | Restarts per cause, supply drops, this and the previous run; `clear` resets the statistics |
 | `trap hang\|fault` | Provoke a watchdog restart or a HardFault to verify the traps |
 | `cal <addr> [<ch> <volts>\|zero\|reset]` | Show or calibrate an input module channel (see the module notes) |

@@ -290,6 +290,7 @@ extern "C" void lab_test_01_app_init(void) {
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
     if (!inputModuleCalibrator.registerCommands(console) || !diagnostics.registerCommands(console) ||
         !health.registerCommands(console) || !i2cScan.registerCommands(console) ||
+        !inputModuleTest.registerCommands(console) ||
         !console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault", &trapCommand, nullptr})) {
         logger.write(LogLevel::error, "console: commands not registered");
     }

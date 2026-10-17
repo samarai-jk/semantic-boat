@@ -130,16 +130,23 @@ sensor its calibration.
 
 ## Measurements and alarms
 
-Channels (`sensors` lists them, `sensor <name>` shows the details):
+Channels (`sensors` lists them, `sensor <name>` shows the details, all values
+are logged every 5 s as `values: ...`):
 
-| Channel | Source | NMEA 2000 | Alarm rules |
-| --- | --- | --- | --- |
-| `board` | TMP75 on the can-mcu (case temperature) | 130316 instance 0, inside | > 40 °C warning, > 50 °C alarm, > 60 °C emergency (latching), sensor fault alarm |
-| `mcu` | MCU die sensor | 130316 instance 1, inside | rise > 10 °C/min warning, > 75 °C alarm |
+| Channel | Source | NMEA 2000 |
+| --- | --- | --- |
+| `board` | TMP75 on the can-mcu (case temperature) | 130316 instance 0, inside |
+| `mcu` | MCU die sensor | 130316 instance 1, inside |
+| `air`, `air-rh` | DFRobot DHT20 on the I2C connectors (reference) | 130316 instance 2 / 130313 instance 0, inside |
+| `tc`, `tc-cj` | DFRobot CT1780 K-type thermocouple on the 1-Wire input PA4, and its cold junction | 130316 instance 6, exhaust gas (`tc` only) |
 
-The board thresholds are bench values: a heat gun on the board reaches all
-three severities. Each severity sounds different on the buzzer and blinks the
-red LED at its own rate:
+Drivers for the other bench-tested DFRobot sensors are in slstm32
+(`Sht31Driver`, `Ds18b20Driver`, `AnalogSensor` with `rtdBridgeConversion`
+for the SEN0198 PT100); LT1 wires up only what is connected.
+
+The channels carry no alarm rules while sensors are being brought up. The
+alarm path was tested on the board channel: each severity sounds different
+on the buzzer and blinks the red LED at its own rate:
 
 | Severity | Meaning | Sound | Red LED |
 | --- | --- | --- | --- |
@@ -155,10 +162,10 @@ acknowledged.
 Console examples:
 
 ```text
-sensor board alarm 0 30      warning threshold to 30 C (stored)
-sensor board cal 21.5        offset calibration against a reference of 21.5 C
-sensor board cal2 80.0       second point: gain and offset from both points
-sensor board reset           calibration and thresholds back to the defaults
+sensor air cal 21.5          offset calibration against a reference of 21.5 C (stored per sensor)
+sensor air cal2 80.0         second point: gain and offset from both points
+sensor air reset             calibration and thresholds back to the defaults
+onewire                      line level, presence pulse and ROM code on PA4
 ```
 
 ## Build and flash

@@ -21,7 +21,7 @@ slstm32::drivers::ToneOutputHardware buzzer();
 
 // PA5..PA7 wired to OUT_D_1..3 of the 12v-ad-input-iso module (physical pin
 // level, pull-up so an unplugged module reads "no 12 V"). PA4 (OUT_D_0) is
-// used as the 1-Wire bus of the sensor tests, so DI0 is not connected.
+// the 1-Wire bus of the sensor tests, so DI0 is not connected.
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs();
 
 } // namespace lab_test_01::board

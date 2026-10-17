@@ -37,9 +37,6 @@ public:
     std::uint32_t samples() const { return samples_; }
     std::uint32_t errors() const { return errors_; }
 
-    // Formats a ROM code like "28-0123456789ab" (family, serial number).
-    static const char* formatRom(char (&buffer)[20], OneWireBus::Rom rom);
-
 private:
     enum class State : std::uint8_t { idle, converting };
 
@@ -55,6 +52,7 @@ private:
     std::uint32_t periodMs_{};
     State state_{State::idle};
     OneWireBus::Rom rom_{};
+    OneWireBus::Rom foreignRom_{}; // last other device reported, to log it once
     std::uint32_t nextAt_{};
     std::uint32_t cycleAt_{};
     std::uint32_t conversionMs_{750u};

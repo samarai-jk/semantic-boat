@@ -1,5 +1,4 @@
 #include "slstm32/drivers/ds18b20.hpp"
-#include <cstdio>
 
 namespace slstm32::drivers {
 
@@ -12,14 +11,6 @@ constexpr std::uint8_t commandReadScratchpad = 0xBEu;
 constexpr std::int16_t powerOnValue = 0x0550; // 85 C
 
 } // namespace
-
-const char* Ds18b20Driver::formatRom(char (&buffer)[20], OneWireBus::Rom rom) {
-    const auto serial = rom >> 8u;
-    std::snprintf(buffer, sizeof buffer, "%02x-%04lx%08lx", static_cast<unsigned>(rom & 0xFFu),
-                  static_cast<unsigned long>((serial >> 32u) & 0xFFFFu),
-                  static_cast<unsigned long>(serial & 0xFFFFFFFFu));
-    return buffer;
-}
 
 bool Ds18b20Driver::init() {
     if (!runtime_.millis || !bus_.init()) return false;
@@ -43,7 +34,7 @@ bool Ds18b20Driver::discover(std::uint32_t now) {
         }
         if (rom_ != 0u) {
             char text[20];
-            log_.writef(LogLevel::warning, "ds18b20 %s: lost", formatRom(text, rom_));
+            log_.writef(LogLevel::warning, "ds18b20 %s: lost", OneWireBus::formatRom(text, rom_));
             rom_ = 0u;
         }
         failed(sensors::Fault::noResponse, now);
@@ -53,8 +44,11 @@ bool Ds18b20Driver::discover(std::uint32_t now) {
     char text[20];
     const auto family = OneWireBus::family(rom);
     if (family != familyDs18b20 && family != familyDs1822) {
-        log_.writef(LogLevel::warning, "ds18b20: %s on the bus is not a DS18B20", formatRom(text, rom));
-        failed(sensors::Fault::sensorReported, now);
+        if (rom != foreignRom_) {
+            log_.writef(LogLevel::warning, "ds18b20: %s on the bus is not a DS18B20", OneWireBus::formatRom(text, rom));
+            foreignRom_ = rom;
+        }
+        failed(sensors::Fault::noResponse, now);
         return false;
     }
     rom_ = rom;
@@ -65,7 +59,7 @@ bool Ds18b20Driver::discover(std::uint32_t now) {
         resolutionBits_ = static_cast<std::uint8_t>(9u + ((scratchpad[4] >> 5u) & 0x03u));
         conversionMs_ = 750u >> (12u - resolutionBits_);
     }
-    log_.writef(LogLevel::info, "ds18b20 %s: found, %u bit", formatRom(text, rom),
+    log_.writef(LogLevel::info, "ds18b20 %s: found, %u bit", OneWireBus::formatRom(text, rom),
                 static_cast<unsigned>(resolutionBits_));
     return true;
 }
@@ -88,7 +82,7 @@ void Ds18b20Driver::finish(std::uint32_t now) {
         const bool present = bus_.reset();
         if (!present) {
             char text[20];
-            log_.writef(LogLevel::warning, "ds18b20 %s: lost", formatRom(text, rom_));
+            log_.writef(LogLevel::warning, "ds18b20 %s: lost", OneWireBus::formatRom(text, rom_));
         }
         rom_ = 0u;
         failed(present ? sensors::Fault::checksum : sensors::Fault::noResponse, now);
@@ -126,7 +120,7 @@ void Ds18b20Driver::run() {
     if (rom_ == 0u && !discover(now)) return;
     if (!bus_.select(rom_)) {
         char text[20];
-        log_.writef(LogLevel::warning, "ds18b20 %s: lost", formatRom(text, rom_));
+        log_.writef(LogLevel::warning, "ds18b20 %s: lost", OneWireBus::formatRom(text, rom_));
         rom_ = 0u;
         failed(sensors::Fault::noResponse, now);
         return;

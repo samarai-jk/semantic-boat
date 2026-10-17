@@ -37,6 +37,17 @@ public:
     bool reset();
     // The released line reads high (a missing pull-up or a short reads low).
     bool idleHigh();
+    // Diagnosis: a reset pulse of the given length, then the line sampled
+    // every 2 us for 480 us. Reports whether the line actually went low while
+    // driven, when it was first and last seen low after the release (0 when
+    // never), and how many samples were low.
+    struct PresenceProfile {
+        bool drivenLow{};
+        std::uint16_t firstLowUs{};
+        std::uint16_t lastLowUs{};
+        std::uint16_t lowSamples{};
+    };
+    PresenceProfile presenceProfile(std::uint32_t resetLowMicroseconds = 480u);
     void writeBit(bool bit);
     bool readBit();
     void writeByte(std::uint8_t value);
@@ -54,6 +65,8 @@ public:
     static std::uint8_t crc8(const std::uint8_t* data, std::size_t size);
     static bool romValid(Rom rom);
     static std::uint8_t family(Rom rom) { return static_cast<std::uint8_t>(rom); }
+    // Formats a ROM code like "28-0123456789ab" (family, serial number).
+    static const char* formatRom(char (&buffer)[20], Rom rom);
 
 private:
     Runtime runtime_;

@@ -1,4 +1,5 @@
 #include "slstm32/drivers/one_wire.hpp"
+#include <cstdio>
 
 namespace slstm32::drivers {
 
@@ -33,6 +34,26 @@ bool OneWireBus::idleHigh() {
     hardware_.release(hardware_.context);
     hardware_.delayMicroseconds(5u);
     return hardware_.read(hardware_.context);
+}
+
+OneWireBus::PresenceProfile OneWireBus::presenceProfile(std::uint32_t resetLowMicroseconds) {
+    PresenceProfile profile{};
+    hardware_.release(hardware_.context);
+    hardware_.delayMicroseconds(5u);
+    hardware_.driveLow(hardware_.context);
+    hardware_.delayMicroseconds(resetLowMicroseconds / 2u);
+    profile.drivenLow = !hardware_.read(hardware_.context);
+    hardware_.delayMicroseconds(resetLowMicroseconds - resetLowMicroseconds / 2u);
+    CriticalSection critical{runtime_};
+    hardware_.release(hardware_.context);
+    for (std::uint16_t at = 2u; at <= 480u; at = static_cast<std::uint16_t>(at + 2u)) {
+        hardware_.delayMicroseconds(2u);
+        if (hardware_.read(hardware_.context)) continue;
+        if (profile.firstLowUs == 0u) profile.firstLowUs = at;
+        profile.lastLowUs = at;
+        ++profile.lowSamples;
+    }
+    return profile;
 }
 
 bool OneWireBus::reset() {
@@ -108,6 +129,14 @@ bool OneWireBus::romValid(Rom rom) {
     for (unsigned index = 0u; index < 8u; ++index) bytes[index] = static_cast<std::uint8_t>(rom >> (8u * index));
     // All zeros would pass the CRC: a line held low reads as zeros.
     return rom != 0u && crc8(bytes, 7u) == bytes[7];
+}
+
+const char* OneWireBus::formatRom(char (&buffer)[20], Rom rom) {
+    const auto serial = rom >> 8u;
+    std::snprintf(buffer, sizeof buffer, "%02x-%04lx%08lx", static_cast<unsigned>(rom & 0xFFu),
+                  static_cast<unsigned long>((serial >> 32u) & 0xFFFFu),
+                  static_cast<unsigned long>(serial & 0xFFFFFFFFu));
+    return buffer;
 }
 
 bool OneWireBus::readRom(Rom& rom) {

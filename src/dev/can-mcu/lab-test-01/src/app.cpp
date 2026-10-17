@@ -308,8 +308,9 @@ constexpr slstm32::drivers::TonePattern emergencySound{emergencySteps, sizeof em
                                                        true};
 slstm32::drivers::TonePatternPlayer tonePlayer{runtime, buzzer};
 void showAlarms(void*, const sensors::AlarmSummary& summary);
-const sensors::AlarmAnnunciator::Config annunciatorConfig{
-    {&warningSound, &alarmSound, &emergencySound}, &showAlarms, nullptr};
+// TEMPORARY for the overnight test: alarms are logged and shown on the red
+// LED, but silent. Restore {&warningSound, &alarmSound, &emergencySound}.
+const sensors::AlarmAnnunciator::Config annunciatorConfig{{nullptr, nullptr, nullptr}, &showAlarms, nullptr};
 sensors::AlarmAnnunciator annunciator{measurements, tonePlayer, annunciatorConfig};
 semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
     runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};

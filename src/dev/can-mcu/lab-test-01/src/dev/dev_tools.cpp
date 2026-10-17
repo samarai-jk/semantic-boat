@@ -8,6 +8,8 @@
 #include "activity_service.hpp"
 #include "hardware_test_service.hpp"
 #include "input_module_test_service.hpp"
+#include "speaker_test_service.hpp"
+#include "events.hpp"
 
 namespace lab_test_01 {
 namespace {
@@ -24,14 +26,16 @@ public:
                         context.greenLed, context.redLed, context.buzzer},
           inputModuleTest_{context.runtime, context.log, context.inputModule},
           activity_{context.runtime, context.n2kNode, context.inputModule, context.health, context.greenLed,
-                    context.redLed} {}
+                    context.redLed},
+          speakerTest_{context.runtime, context.events, buttonPressed, context.log, context.console} {}
 
     bool init() override {
         bool ok = context_.console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault (dev)",
                                         &trapCommand, this});
         ok = context_.console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  raw bus access (dev)",
                                    &i2cCommand, this}) && ok;
-        ok = hardwareTest_.init() && ok;
+        // TEMPORARY: the speaker test uses the buttons instead of the hardware test.
+        ok = speakerTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
         ok = activity_.init() && ok;
         context_.log.write(LogLevel::warning,
@@ -40,7 +44,7 @@ public:
     }
 
     void run() override {
-        hardwareTest_.run();
+        speakerTest_.run();
         inputModuleTest_.run();
         activity_.run();
     }
@@ -114,6 +118,7 @@ private:
     HardwareTestService hardwareTest_;
     InputModuleTestService inputModuleTest_;
     ActivityService activity_;
+    SpeakerTestService speakerTest_;
 };
 
 } // namespace

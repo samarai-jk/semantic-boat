@@ -18,8 +18,14 @@ channels, alarms, and settings storage are described in the
 | AS3935 (DFRobot SEN0290) | `As3935Driver` | I2C 0x03 + IRQ | Verified incl. IRQ and antenna tuning; no real lightning seen |
 | UV index (DFRobot SEN0636) | `DfrobotUvIndexDriver` | I2C 0x23 | Communication verified; UV only seen as 0 indoors; not suited behind ordinary windows |
 | BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
+| BNO055 + BMP280 (DFRobot SEN0253 10-DOF) | `Bno055Driver`, `Bmp280Driver` | I2C 0x28, 0x76 | Verified (orientation, pressure) |
 
 ## Common behaviour
+
+- I2C presence probes (bus scan, `I2cBus::probe()`) are one-byte reads. The
+  former empty write (address + stop, `HAL_I2C_IsDeviceReady`) made the
+  BNO055 misinterpret its next register access: its fusion stopped with
+  error 9 after every 5 s rescan.
 
 - Drivers never block the main loop for longer than a bus transfer (except
   the documented one-time initializations), never fail `init()` because a
@@ -164,6 +170,38 @@ channels, alarms, and settings storage are described in the
   `sensor baro trend <min>` shortens the window for tests. The trend is lost
   at a restart (3 h until fully valid again); keeping it in the RTC backup
   registers would be a later improvement.
+
+## BNO055 orientation (SEN0253, I2C 0x28)
+
+- Chip ID 0xA0, accelerometer 0xFB, magnetometer 0x32, gyroscope 0x0F,
+  software 3.17, self test 0xF. The chip answers its chip ID about 550 ms
+  after a reset, before it is fully started; the driver waits 700 ms.
+- Modes: NDOF (absolute heading, needs a calibrated magnetometer), IMU
+  (accelerometer + gyroscope, heading relative to the start, immune to
+  magnetic disturbances), AMG (raw). `setMode()`; NDOF by default.
+- One 46-byte burst per 100 ms: acceleration, magnetic field, angular rate,
+  Euler angles (1/16 degree), quaternion (2^14), linear acceleration,
+  gravity, temperature, calibration status. Heading, pitch, roll go into
+  angle channels; the fusion status is checked every second and a stopped
+  fusion is restarted.
+- Bench: pitch -2.00, roll -1.38 deg lying on the desk; with the board moved
+  the magnetometer calibration reached 2 and the system 3 within a minute.
+- The calibration is lost at every power-up. The 22 calibration offset
+  bytes (0x55..0x6A, readable in config mode) should be stored and written
+  back at startup, so the heading is valid immediately (open).
+- Heading is circular: the channel's minimum, maximum, rate, and smoothing
+  do not handle the 359 -> 0 wrap yet (open: a circular flag on the
+  channel).
+- Mounting: the Euler angles assume the chip's default axes; a boat
+  installation needs the axis remap (AXIS_MAP_CONFIG/SIGN) for its mounting
+  position, and a magnetic deviation table for an absolute heading.
+
+## BMP280 (SEN0253, I2C 0x76)
+
+- Chip ID 0x58 (0x60 would be a BME280; its humidity is not read). Forced
+  mode, pressure x16, temperature x2, Bosch's integer compensation.
+- Bench: 1010.07..1010.13 hPa, within 0.25 hPa of the BMP585 measured
+  earlier the same day.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

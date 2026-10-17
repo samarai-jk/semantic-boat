@@ -10,6 +10,7 @@ const char* quantityName(Quantity quantity) {
     case Quantity::illuminance: return "illuminance";
     case Quantity::uvIndex: return "UV index";
     case Quantity::pressure: return "pressure";
+    case Quantity::angle: return "angle";
     }
     return "?";
 }
@@ -22,6 +23,7 @@ const char* unitName(Quantity quantity) {
     case Quantity::illuminance: return "lx";
     case Quantity::uvIndex: return "UVI";
     case Quantity::pressure: return "hPa";
+    case Quantity::angle: return "deg";
     }
     return "";
 }

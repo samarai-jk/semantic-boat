@@ -8,7 +8,8 @@ extern I2C_HandleTypeDef hi2c1;
 namespace can_mcu {
 namespace {
 
-constexpr std::uint32_t probeTimeoutMs = 2u;
+// Long enough for a device that stretches the clock (BNO055).
+constexpr std::uint32_t probeTimeoutMs = 10u;
 constexpr std::uint32_t transferTimeoutMs = 25u;
 constexpr std::uint32_t recoveryHalfPeriodUs = 5u;
 constexpr std::uint16_t sclPin = GPIO_PIN_8;
@@ -47,11 +48,16 @@ bool HalI2cBus::finish(int status) {
 }
 
 bool HalI2cBus::probe(std::uint8_t address) {
-    const auto status = HAL_I2C_IsDeviceReady(&hi2c1, deviceAddress(address), 1u, probeTimeoutMs);
+    // A one-byte read, like i2cdetect's read probe. An empty write (address
+    // and stop only, HAL_I2C_IsDeviceReady) confuses some devices: the BNO055
+    // then took its next register access wrongly and stopped its fusion with
+    // a configuration error after every bus scan.
+    std::uint8_t byte = 0u;
+    const auto status = HAL_I2C_Master_Receive(&hi2c1, deviceAddress(address), &byte, 1u, probeTimeoutMs);
     if (status == HAL_OK) return true;
-    // Absent devices are expected during scans and write-cycle polling. The
-    // HAL reports them as HAL_ERROR with a TIMEOUT error code once the trials
-    // are used up, so only a busy bus or a bus/arbitration error is a fault.
+    // Absent devices are expected during scans and write-cycle polling: the
+    // HAL reports them as HAL_ERROR with an acknowledge failure, so only a
+    // busy bus or a bus/arbitration error is a fault.
     constexpr std::uint32_t busFaults = HAL_I2C_ERROR_BERR | HAL_I2C_ERROR_ARLO | HAL_I2C_ERROR_OVR;
     if (status != HAL_ERROR || (hi2c1.ErrorCode & busFaults) != 0u) {
         ++errors_;

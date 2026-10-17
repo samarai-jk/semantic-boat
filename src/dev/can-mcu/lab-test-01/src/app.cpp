@@ -30,7 +30,9 @@
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
+#include "slstm32/drivers/bmp280.hpp"
 #include "slstm32/drivers/bmp585.hpp"
+#include "slstm32/drivers/bno055.hpp"
 #include "slstm32/drivers/dht20.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
@@ -151,8 +153,9 @@ lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActi
 
 // Measurement channels: the board and MCU probes, a DFRobot DHT20 on the
 // I2C connectors as reference ("air"), and a DFRobot VEML7700 ambient light
-// sensor ("light"), and a Bosch BMP585 barometer ("baro", die temperature
-// "baro-t"). No alarm rules while sensors are being
+// sensor ("light"), a Bosch BMP585 barometer ("baro", die temperature
+// "baro-t"), and the DFRobot SEN0253 10-DOF module: BNO055 orientation
+// ("heading", "pitch", "roll") and BMP280 barometer ("baro2", "baro2-t"). No alarm rules while sensors are being
 // brought up; the annunciator stays silent without them. PA4 is prepared as a
 // 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
@@ -193,13 +196,29 @@ constexpr sensors::MeasurementConfig baroTemperatureChannelConfig{
     "baro-t", sensors::Quantity::temperature, 8u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement baroChannel{baroChannelConfig};
 sensors::Measurement baroTemperatureChannel{baroTemperatureChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,   &airChannel,
-                                       &airHumidityChannel, &lightChannel, &baroChannel,
-                                       &baroTemperatureChannel};
+constexpr sensors::MeasurementConfig headingChannelConfig{
+    "heading", sensors::Quantity::angle, 0u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig pitchChannelConfig{"pitch", sensors::Quantity::angle, 1u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig rollChannelConfig{"roll", sensors::Quantity::angle, 2u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig baro2ChannelConfig{
+    "baro2", sensors::Quantity::pressure, 1u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig baro2TemperatureChannelConfig{
+    "baro2-t", sensors::Quantity::temperature, 9u, 10000u, 0u, nullptr, 0u};
+sensors::Measurement headingChannel{headingChannelConfig};
+sensors::Measurement pitchChannel{pitchChannelConfig};
+sensors::Measurement rollChannel{rollChannelConfig};
+sensors::Measurement baro2Channel{baro2ChannelConfig};
+sensors::Measurement baro2TemperatureChannel{baro2TemperatureChannelConfig};
+sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,   &airChannel,    &airHumidityChannel,
+                                       &lightChannel,       &baroChannel,  &baroTemperatureChannel,
+                                       &headingChannel,     &pitchChannel, &rollChannel,   &baro2Channel,
+                                       &baro2TemperatureChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
 slstm32::drivers::Bmp585Driver bmp585{runtime, i2c, logger, &baroChannel, &baroTemperatureChannel};
+slstm32::drivers::Bno055Driver bno055{runtime, i2c, logger, &headingChannel, &pitchChannel, &rollChannel};
+slstm32::drivers::Bmp280Driver bmp280{runtime, i2c, logger, &baro2Channel, &baro2TemperatureChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -259,6 +278,8 @@ struct BoardTemperature;
 struct Dht20;
 struct Veml7700;
 struct Bmp585;
+struct Bno055;
+struct Bmp280;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -290,6 +311,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Dht20>(dht20),
         slstm32::bind<component::Veml7700>(veml7700),
         slstm32::bind<component::Bmp585>(bmp585),
+        slstm32::bind<component::Bno055>(bno055),
+        slstm32::bind<component::Bmp280>(bmp280),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),

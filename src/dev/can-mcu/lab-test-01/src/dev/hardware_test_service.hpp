@@ -1,5 +1,9 @@
 #pragma once
 
+// DEVELOPMENT AND TEST CODE: compiled only with SB_DEV_TOOLS (AGENTS.md,
+// "Firmware code categories and build profiles"). Never reference this from
+// product code.
+
 #include <cstdint>
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/pwm_led.hpp"

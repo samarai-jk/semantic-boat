@@ -33,6 +33,11 @@ target_sources(${REMOTE_A_TARGET} PRIVATE
     src/uart_transport.cpp
 )
 target_include_directories(${REMOTE_A_TARGET} PRIVATE include src)
+
+# Product firmware: a Release build must not contain development tools
+# (AGENTS.md). remote-a has no dev-only sources yet.
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/firmware-profile.cmake)
+sb_firmware_profile(${REMOTE_A_TARGET} PRODUCTION)
 target_compile_definitions(${REMOTE_A_TARGET} PRIVATE
     REMOTE_A_USE_STLINK_DATA_LINK=$<BOOL:${REMOTE_A_USE_STLINK_DATA_LINK}>)
 target_link_libraries(${REMOTE_A_TARGET} semantic_display semantic_link slstm32 stm32cubemx)

@@ -80,18 +80,31 @@ All buttons are active low with hardware debounce on the can-mcu.
 
 ## Firmware structure
 
+LT1 is a `LAB` device: it is built with its development and test tools by
+default. Product and service code lives in `src/`; development and test code
+lives in `src/dev/` and is compiled only with `SB_DEV_TOOLS` (see
+[AGENTS.md](../../../../AGENTS.md)). `src/dev_tools.hpp` is the seam:
+`src/dev/dev_tools.cpp` implements it with the tests and tools,
+`src/dev_tools_disabled.cpp` with a no-op. Check that LT1 also builds as a
+product:
+
+```sh
+cmake --preset lab-test-01-release -B build/lab-test-01/product-check -DSB_DEV_TOOLS=OFF
+cmake --build build/lab-test-01/product-check
+```
+
 | Path | Content |
 | --- | --- |
 | `cmx/` | CubeMX project; only `USER CODE` sections are edited by hand |
 | `../common/` | can-mcu board support shared by all can-mcu devices |
 | `src/app.cpp` | Composition root and the C hooks called from `main.c` |
+| `src/dev_tools.hpp`, `src/dev_tools_disabled.cpp` | Seam to the development tools and its no-op stand-in |
+| `src/dev/` | **Development and test code only**: tool aggregator with `trap` and `i2c`, hardware test, input module test, background load |
 | `src/board.cpp` | LT1 host bindings: buttons, TIM1 LEDs and buzzer |
-| `src/hardware_test_service.cpp` | User-interface bring-up: LEDs, buttons, clicks |
 | `src/diagnostics_service.cpp` | Supply dips and the heartbeat |
 | `src/can_monitor_service.cpp` | CAN state, activity LED, N2K message log and summary |
-| `src/input_module_test_service.cpp` | Bring-up of a 12v-ad-input-iso module |
 | `src/temperature_report_service.cpp` | Board and MCU temperature as PGN 130316 |
-| `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection |
+| `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection (read-only) |
 | `src/device_settings.cpp` | Settings record in EEPROM: boot counter and NMEA 2000 address |
 
 `main.c` calls `lab_test_01_app_init()` after the CubeMX peripheral
@@ -138,10 +151,10 @@ Console commands (type into the monitor or the serial logger):
 | --- | --- |
 | `help` | List all commands |
 | `supply [<mV>]` | Supply voltage now and since the last heartbeat; set the dip threshold (default 3150 mV) |
-| `i2c [read <addr> <reg> [n] \| write <addr> <reg> <value>]` | List the I2C devices, or read/write registers directly (for exploring sensors) |
+| `i2c [read <addr> <reg> [n] \| write <addr> <reg> <value>]` | Dev tools only: list the I2C devices, or read/write registers directly (for exploring sensors) |
 | `ain` | Terminal and ADC voltages of the input module |
 | `health [clear]` | Restarts per cause, supply drops, this and the previous run; `clear` resets the statistics |
-| `trap hang\|fault` | Provoke a watchdog restart or a HardFault to verify the traps |
+| `trap hang\|fault` | Dev tools only: provoke a watchdog restart or a HardFault to verify the traps |
 | `cal <addr> [<ch> <volts>\|zero\|reset]` | Show or calibrate an input module channel (see the module notes) |
 
 ## Unattended runs

@@ -66,6 +66,8 @@ slstm32/
 |-- README.md
 |-- include/slstm32/
 |   |-- application.hpp       component catalog and lifecycle
+|   |-- build_profile.hpp     devTools / production flags of the firmware build profile
+|   |-- console.hpp           line-based command console
 |   |-- driver.hpp            Driver base class
 |   |-- service.hpp           Service base class and legacy manager
 |   |-- runtime.hpp           time and critical-section hooks
@@ -451,6 +453,17 @@ if (timer == slstm32::invalidTimer) {
 - Tasks execute synchronously and must not block.
 
 As with the event bus, ISR use requires valid critical-section hooks.
+
+## Build profile
+
+`build_profile.hpp` exposes the firmware build profile declared with
+`sb_firmware_profile()` (repository `cmake/firmware-profile.cmake`) as
+`slstm32::devTools` and `slstm32::production`. It fails to compile when a
+firmware has not declared a profile. The flags are meant only for markers and
+compile-time guards; development code is kept out of product firmware by the
+build, not by `#if` blocks. The binding rules are in the repository's
+`AGENTS.md`. Library sources never include this header; only firmware code
+does.
 
 ## Logging and errors
 

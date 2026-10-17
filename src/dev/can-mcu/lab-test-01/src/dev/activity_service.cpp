@@ -1,3 +1,6 @@
+// DEVELOPMENT AND TEST CODE: compiled only with SB_DEV_TOOLS (AGENTS.md,
+// "Firmware code categories and build profiles"). Never reference this from
+// product code.
 #include "activity_service.hpp"
 #include "n2k/electrical.hpp"
 #include "n2k/pgn.hpp"

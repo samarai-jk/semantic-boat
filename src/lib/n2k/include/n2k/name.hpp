@@ -5,6 +5,11 @@
 
 namespace n2k {
 
+// Manufacturer code commonly used for development; it is not assigned to any
+// manufacturer. Product firmware must use the code assigned by NMEA (see
+// AGENTS.md, build profiles).
+inline constexpr std::uint16_t developmentManufacturerCode = 2046u;
+
 // ISO 11783 / NMEA 2000 NAME. A lower 64-bit value wins address contention.
 struct Name {
     std::uint32_t uniqueNumber{};       // 21 bits, unique per manufacturer

@@ -18,18 +18,30 @@ add_subdirectory(cmx/cmake/stm32cubemx ${CMAKE_CURRENT_BINARY_DIR}/stm32cubemx)
 include(../common/can-mcu.cmake)
 can_mcu_add_common(${LAB_TEST_01_TARGET})
 
+# Product and service code. Development and test code goes into src/dev/ and
+# is listed only under DEV_SOURCES below (AGENTS.md).
 target_sources(${LAB_TEST_01_TARGET} PRIVATE
-    src/activity_service.cpp
     src/app.cpp
     src/board.cpp
     src/can_monitor_service.cpp
     src/device_settings.cpp
     src/diagnostics_service.cpp
-    src/hardware_test_service.cpp
     src/health_service.cpp
     src/i2c_scan_service.cpp
-    src/input_module_test_service.cpp
     src/temperature_report_service.cpp
+)
+
+# LT1 is a lab device: development tools are on by default. Check that it also
+# builds as a product with -DSB_DEV_TOOLS=OFF.
+include(${CMAKE_CURRENT_LIST_DIR}/../../../../cmake/firmware-profile.cmake)
+sb_firmware_profile(${LAB_TEST_01_TARGET} LAB
+    DEV_SOURCES
+        src/dev/activity_service.cpp
+        src/dev/dev_tools.cpp
+        src/dev/hardware_test_service.cpp
+        src/dev/input_module_test_service.cpp
+    STUB_SOURCES
+        src/dev_tools_disabled.cpp
 )
 target_include_directories(${LAB_TEST_01_TARGET} PRIVATE include src)
 target_link_libraries(${LAB_TEST_01_TARGET} n2k semantic_modules slstm32 stm32cubemx)

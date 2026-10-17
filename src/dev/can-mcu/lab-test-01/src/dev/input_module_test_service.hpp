@@ -1,5 +1,9 @@
 #pragma once
 
+// DEVELOPMENT AND TEST CODE: compiled only with SB_DEV_TOOLS (AGENTS.md,
+// "Firmware code categories and build profiles"). Never reference this from
+// product code.
+
 #include <array>
 #include <cstdint>
 #include "semantic_modules/ad_input_iso_12v.hpp"

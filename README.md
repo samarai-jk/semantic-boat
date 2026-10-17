@@ -4,6 +4,10 @@ Semantic Boat is a C/C++ STM32 firmware and hardware monorepo. STM32CubeMX owns
 the MCU initialization in each device's `cmx/` directory; application code and
 reusable drivers live outside generated code.
 
+> **Agents and contributors:** the rules in [AGENTS.md](AGENTS.md) are
+> binding, in particular the firmware code categories and build profiles that
+> keep development and test code out of product firmware.
+
 ## Layout
 
 - `hardware/<board>/` — PCB design, mechanical data, and old hardware prototypes
@@ -17,6 +21,18 @@ reusable drivers live outside generated code.
 
 Only code inside CubeMX `USER CODE` sections should be hand-edited under
 `cmx/`. Device code consumes the generated `stm32cubemx` interface target.
+
+## Build profiles
+
+Every firmware declares a build profile with `sb_firmware_profile()`
+([cmake/firmware-profile.cmake](cmake/firmware-profile.cmake)): `LAB` devices
+(for example lab-test-01) are built with their development and test tools,
+`PRODUCTION` devices (for example remote-a) without them. Development and test
+code lives in `src/dev/.../src/dev/` and is compiled only with the CMake switch
+`SB_DEV_TOOLS`; a Release build of a product with development tools fails at
+configure time. Builds with development tools log `DEV BUILD` at startup and
+report a `-dev` software version over NMEA 2000. Details and rules:
+[AGENTS.md](AGENTS.md).
 
 ## Toolchain and build
 

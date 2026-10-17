@@ -8,6 +8,8 @@ add_library(slstm32 STATIC
     src/console.cpp
     src/event_bus.cpp
     src/log.cpp
+    src/audio/sound_player.cpp
+    src/audio/synthesizer.cpp
     src/drivers/ads1115.cpp
     src/drivers/analog_input.cpp
     src/drivers/analog_sensor.cpp

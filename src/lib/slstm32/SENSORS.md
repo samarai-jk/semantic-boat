@@ -20,6 +20,7 @@ channels, alarms, and settings storage are described in the
 | BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
 | BNO055 + BMP280 (DFRobot SEN0253 10-DOF) | `Bno055Driver`, `Bmp280Driver` | I2C 0x28, 0x76 | Verified (orientation, pressure) |
 | SCD41 CO2 (generic module, sold as "SD40/SD41") | `Scd4xDriver` | I2C 0x62 | Verified |
+| Speaker (DFRobot FIT0449, 8002 amplifier) | `audio::Synthesizer`, `audio::SoundPlayer`, `can_mcu::DacAudio` | DAC PA4/PA5 | Tested as dev code; library form not yet run on hardware |
 
 ## Common behaviour
 
@@ -229,6 +230,31 @@ in [motion-sensing.md](../../dev/can-mcu/motion-sensing.md).
   in a permanently closed boat it drifts. The SCD41 also has a single-shot
   mode for low power (not used).
 - No standard NMEA 2000 PGN for CO2: the project's own messages.
+
+## Speaker (FIT0449 on the DAC)
+
+- An 8002 class-AB amplifier with a 0.5 W / 8 ohm speaker and a volume
+  potentiometer; despite "digital" in the name the input is analog. Driven
+  from the STM32L431's 12-bit DAC (PA4 = channel 1, PA5 = channel 2) at a
+  16 kHz sample rate from a TIM6 interrupt (about 3 % CPU with three
+  oscillators).
+- Bench at 3.3 V supply (no 5 V on host-dev; 5 V would give about 2.5 times
+  the power): at 2.7 kHz about as loud as the passive buzzer at full power.
+  Both are loud enough to wake a sleeper next to them; whether either is
+  heard over a 50 hp diesel at 2200 rpm 2 m away (easily 90..100 dB) is to
+  be tested on board.
+- Sound repertoire tried: sine/square/triangle tones, frequency sweep,
+  wail and yelp sirens (600..1300 Hz), two-tone hi-lo 960/770 Hz, beep
+  groups, general alarm (7 short + 1 long), "have a look" chirps, bell
+  chimes (fundamental plus two decaying inharmonic partials). Now in
+  `audio::SoundPlayer`; the library form compiles but has not run on the
+  hardware yet (the bench test used the same algorithms as dev code).
+- Not tried yet: recorded sounds or speech (8 kHz PCM / 4-bit ADPCM from
+  flash, about 4..8 KiB per second; Talkie/LPC or SAM for synthetic
+  speech).
+- Usage: `audio::Synthesizer synth{16000}; audio::SoundPlayer player{runtime,
+  synth}; can_mcu::DacAudio out{synth, can_mcu::DacAudio::Pin::pa4};`, then
+  `out.start()` after init and e.g. `player.wail(10000)`.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

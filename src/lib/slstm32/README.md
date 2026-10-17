@@ -245,6 +245,8 @@ storage is normally simplest in embedded firmware.
 | `PwmLedDriver` | Dimmable LED on a PWM output with the same steady, pulse, and blink modes as `LedDriver`; brightness can change at any time. Output polarity belongs in the binding or timer setup. |
 | `PwmOutputDriver` | Controls one normalized PWM duty value in the range 0.0 to 1.0. |
 | `RgbLedDriver` | Controls red, green, and blue PWM bindings; supports common-anode inversion and non-blocking blinking. |
+| `audio::Synthesizer` | Three-oscillator additive synthesizer (sine, square, triangle) with master volume; `nextSample()` runs in the sample interrupt. The output binding (DAC, PWM) belongs to the board, e.g. `can_mcu::DacAudio`. |
+| `audio::SoundPlayer` | Service playing tones, wail/yelp sirens, two-tone, beep groups, general alarm (7 short + 1 long), chirps, and bell chimes on a `Synthesizer`. |
 | `TonePatternPlayer` | Service that plays `TonePattern` tables (tone and pause steps, optionally repeating) on a `ToneDriver`, for beep sequences and sirens. Keeps only a pointer to the pattern, which normally lives in flash. |
 | `ToneDriver` | Starts a hardware tone at a normalized output level and stops it after a non-blocking duration. Call `onTick()` from a periodic interrupt when tone deadlines must remain accurate during long foreground work; the board's stop callback must then be interrupt-safe. |
 | `AnalogInputDriver` | Samples an integer source, maintains a moving average of up to 128 samples, and applies `(average - offset) * scale`. |

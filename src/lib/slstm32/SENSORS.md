@@ -104,7 +104,8 @@ channels, alarms, and settings storage are described in the
 - Automatic ranging over nine gain/integration steps (3.6 mlx to 1.84 lx per
   count). Measured about 227 lx indoors, stable to +-0.4 lx. Darkness and
   sunlight ranges not yet checked on the bench.
-- No standard NMEA 2000 PGN for illuminance; the channel is not published.
+- No standard NMEA 2000 PGN for illuminance: it goes into the project's own
+  (proprietary) messages, taken into Signal K by configuration or plugin.
 
 ## UV index (SEN0636, I2C 0x23)
 
@@ -116,10 +117,18 @@ channels, alarms, and settings storage are described in the
 - Address 0x23 collides with the BH1750 light sensor (ADDR low); they cannot
   share a bus.
 - Indoors behind glass every value reads 0 (glass blocks UVB and most UVA).
-  To be checked in sunlight or with a 365 nm UV torch: whether the raw value
-  is usable for a finer index than the integer register, and how fast it
-  reacts.
-- Quantity `uvIndex` (thousandths of the index); no NMEA 2000 PGN.
+- A bright white LED head torch held close drove the index to 11 (raw 1120;
+  index 1 at raw 116, so roughly index = raw / 100, the index register
+  lagging the raw value by a reading or two). The module cannot tell the
+  spectrum: its photodiode (240..370 nm nominal) still responds to the violet
+  and blue tail of a white LED, and the index is the photocurrent scaled for
+  sunlight. Artificial light therefore proves only that the chain works; the
+  index is meaningful only in sunlight.
+- Still to check in sunlight against a reference (weather service UV
+  forecast or a calibrated meter): the index scale, and whether raw / 100
+  gives a usable index with decimals.
+- Quantity `uvIndex` (thousandths of the index); no standard NMEA 2000 PGN,
+  so it goes into the project's own messages.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 
@@ -186,5 +195,6 @@ On the boat (open items for the next agent):
    thresholds, and logging from the measurement framework. The chip's
    distance is a statistical estimate over the last 17 minutes; the channel
    should go stale (no storm) after about 30 minutes without lightning.
-5. Signal K: lightning events and the storm distance have no NMEA 2000 PGN;
-   decide how to report them (proprietary PGN or the Signal K plugin).
+5. Lightning events and the storm distance have no standard NMEA 2000 PGN;
+   they go into the project's own (proprietary) messages, taken into Signal K
+   by configuration or plugin.

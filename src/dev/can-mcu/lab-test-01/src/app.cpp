@@ -549,5 +549,6 @@ extern "C" void lab_test_01_app_tick(void) {
 }
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {
+    lab_test_01::devToolsInterrupt(pin);
     (void)buttons.onInterrupt(pin);
 }

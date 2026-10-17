@@ -40,6 +40,7 @@ sb_firmware_profile(${LAB_TEST_01_TARGET} LAB
         src/dev/dev_tools.cpp
         src/dev/hardware_test_service.cpp
         src/dev/input_module_test_service.cpp
+        src/dev/rpm_test_service.cpp
     STUB_SOURCES
         src/dev_tools_disabled.cpp
 )

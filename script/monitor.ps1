@@ -59,7 +59,6 @@ $serialRules = @(
     @{ Pattern = 'health:|supervision:'; Color = 'White'; Label = 'health' },
     @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
-    @{ Pattern = '\] I watch:'; Color = 'Green'; Label = 'watch' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },
     @{ Pattern = 'can state:'; Color = 'Magenta'; Label = 'can' },
     @{ Pattern = 'input module: (DI\d|ADC)'; Color = 'Green'; Label = 'module' },

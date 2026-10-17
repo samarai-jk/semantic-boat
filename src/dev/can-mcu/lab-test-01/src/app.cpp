@@ -171,10 +171,18 @@ sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &airChannel, 
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
-// DFRobot SEN0290 lightning sensor (AS3935 at I2C address 3, antenna tuned
-// with 96 pF), polled; its IRQ pin is not needed.
-const slstm32::drivers::As3935Driver::Config lightningConfig{};
-slstm32::drivers::As3935Driver lightning{runtime, i2c, logger, lightningConfig};
+// DFRobot SEN0290 lightning sensor (AS3935 at I2C address 3), IRQ on PA6:
+// events are read on the interrupt, and the antenna is tuned at startup by
+// counting its resonance on the IRQ pin with the cycle counter.
+slstm32::drivers::As3935Driver::Config lightningConfig() {
+    slstm32::drivers::As3935Driver::Config config{};
+    config.irqConnected = true;
+    config.ticks = &can_mcu::cycleCounter;
+    config.ticksPerSecond = can_mcu::coreClockHz;
+    return config;
+}
+const slstm32::drivers::As3935Driver::Config lightningSettings = lightningConfig();
+slstm32::drivers::As3935Driver lightning{runtime, i2c, logger, lightningSettings};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -394,6 +402,7 @@ extern "C" void lab_test_01_app_init(void) {
     configureN2kIdentity();
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
+    lab_test_01::board::configureLightningIrq();
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
@@ -432,5 +441,9 @@ extern "C" void lab_test_01_app_tick(void) {
 }
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {
+    if (pin == lab_test_01::board::lightningIrqPin) {
+        lightning.onInterrupt();
+        return;
+    }
     (void)buttons.onInterrupt(pin);
 }

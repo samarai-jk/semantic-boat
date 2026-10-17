@@ -32,7 +32,7 @@ public:
         ok = context_.console.add({"i2c", "i2c [read <addr> <reg> [n] | write <addr> <reg> <value>]  raw bus access (dev)",
                                    &i2cCommand, this}) && ok;
         ok = context_.console.add({"lightning",
-                                   "lightning [antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | disturbers on|off] (dev)",
+                                   "lightning [tune | antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | disturbers on|off | poll <ms>] (dev)",
                                    &lightningCommand, this}) && ok;
         ok = hardwareTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
@@ -88,12 +88,15 @@ private:
             ok = sensor.setLocation(Location::outdoor);
         } else if (argc == 3u && std::strcmp(argv[1], "disturbers") == 0) {
             ok = sensor.setDisturberReporting(std::strcmp(argv[2], "on") == 0);
+        } else if (argc == 2u && std::strcmp(argv[1], "tune") == 0) {
+            ok = sensor.startAntennaTuning();
+            if (ok) return; // the result is logged when done
         } else if (argc == 3u && std::strcmp(argv[1], "poll") == 0) {
             sensor.setPollPeriod(static_cast<std::uint32_t>(std::strtoul(argv[2], nullptr, 0)));
         } else if (argc != 1u) {
             log.write(LogLevel::warning,
-                      "usage: lightning [antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | disturbers on|off | "
-                      "poll <ms>]");
+                      "usage: lightning [tune | antenna on|off | cap <0-15> | nf <0-7> | indoor | outdoor | "
+                      "disturbers on|off | poll <ms>]");
             return;
         }
         if (!ok) log.write(LogLevel::warning, "lightning: failed (sensor absent or value out of range)");
@@ -102,8 +105,9 @@ private:
         const auto found = sensor.disturberCount() - self.lightningDisturbers_;
         self.lightningPolls_ = sensor.polls();
         self.lightningDisturbers_ = sensor.disturberCount();
-        log.writef(LogLevel::info, "lightning: poll every %lu ms; since last status %lu reads, %lu with a disturber (%lu %%)",
-                   static_cast<unsigned long>(sensor.pollPeriod()), static_cast<unsigned long>(polls),
+        log.writef(LogLevel::info,
+                   "lightning: %lu IRQ edges in total; since last status %lu reads, %lu with a disturber (%lu %%)",
+                   static_cast<unsigned long>(sensor.interrupts()), static_cast<unsigned long>(polls),
                    static_cast<unsigned long>(found), static_cast<unsigned long>(polls ? found * 100u / polls : 0u));
         log.writef(LogLevel::info,
                    "lightning: %s, %s, tuning %u pF, noise floor %u, disturbers %s; %lu lightning (last %u km, energy %lu), "

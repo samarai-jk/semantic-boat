@@ -171,6 +171,10 @@ slstm32::Runtime runtime() {
     return {&millis, &enterCritical, &exitCritical};
 }
 
+std::uint32_t cycleCounter() {
+    return DWT->CYCCNT;
+}
+
 void delayMicroseconds(std::uint32_t microseconds) {
     const auto startedAt = DWT->CYCCNT;
     const auto cycles = microseconds * (SystemCoreClock / 1000000u);

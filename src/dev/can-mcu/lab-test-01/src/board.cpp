@@ -134,10 +134,23 @@ std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
     }};
 }
 
+void configureLightningIrq() {
+    GPIO_InitTypeDef gpio{};
+    gpio.Pin = lightningIrqPin;
+    gpio.Mode = GPIO_MODE_IT_RISING;
+    gpio.Pull = GPIO_PULLDOWN;
+    HAL_GPIO_Init(GPIOA, &gpio);
+    // Above the buttons: tuning counts edges at 31 kHz.
+    HAL_NVIC_SetPriority(EXTI9_5_IRQn, 4u, 0u);
+    HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+}
+
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs() {
     std::array<slstm32::drivers::DigitalInputHardware, 4> result{};
-    // PA4 is the 1-Wire bus of the sensor tests: DI0 stays unconnected.
+    // PA4 is the 1-Wire bus and PA6 the lightning sensor IRQ of the sensor
+    // tests: DI0 and DI2 stay unconnected.
     for (std::size_t index = 1; index < result.size(); ++index) {
+        if (index == 2u) continue;
         result[index] = {&moduleInputPins[index], &configureModuleInput, &readModuleInput, true};
     }
     return result;

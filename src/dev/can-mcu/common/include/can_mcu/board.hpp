@@ -26,6 +26,11 @@ slstm32::Runtime runtime();
 // timing (microseconds), never for application delays.
 void delayMicroseconds(std::uint32_t microseconds);
 
+// The DWT cycle counter as a fine time base (wraps every 53 s at 80 MHz).
+// Every can-mcu device runs its core at coreClockHz.
+inline constexpr std::uint32_t coreClockHz = 80000000u;
+std::uint32_t cycleCounter();
+
 // Non-blocking transmitter on the ST-Link virtual COM port (USART1).
 slstm32::drivers::SerialOutputHardware vcpOutput();
 

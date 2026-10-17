@@ -19,9 +19,15 @@ slstm32::drivers::PwmOutputHardware greenLed();
 slstm32::drivers::PwmOutputHardware redLed();
 slstm32::drivers::ToneOutputHardware buzzer();
 
-// PA5..PA7 wired to OUT_D_1..3 of the 12v-ad-input-iso module (physical pin
-// level, pull-up so an unplugged module reads "no 12 V"). PA4 (OUT_D_0) is
-// the 1-Wire bus of the sensor tests, so DI0 is not connected.
+// PA5 and PA7 wired to OUT_D_1 and OUT_D_3 of the 12v-ad-input-iso module
+// (physical pin level, pull-up so an unplugged module reads "no 12 V").
+// PA4 (OUT_D_0) is the 1-Wire bus and PA6 (OUT_D_2) the lightning sensor IRQ
+// of the sensor tests, so DI0 and DI2 are not connected.
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs();
+
+// PA6: IRQ of the AS3935 lightning sensor (active high, push-pull): rising
+// edge interrupt (EXTI6), pull-down while the sensor is unplugged.
+inline constexpr std::uint16_t lightningIrqPin = 1u << 6u;
+void configureLightningIrq();
 
 } // namespace lab_test_01::board

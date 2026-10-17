@@ -1,4 +1,5 @@
 #include "slstm32/drivers/as3935.hpp"
+#include <cstdio>
 
 namespace slstm32::drivers {
 
@@ -15,6 +16,7 @@ constexpr std::uint8_t registerSrcoStatus = 0x3Bu;
 constexpr std::uint8_t commandPresetDefault = 0x3Cu;
 constexpr std::uint8_t commandCalibrateRco = 0x3Du;
 constexpr std::uint8_t directCommand = 0x96u;
+constexpr std::uint32_t antennaTargetHzLocal = 500000u;
 
 constexpr std::uint8_t afeIndoor = 0x24u;  // AFE_GB 10010
 constexpr std::uint8_t afeOutdoor = 0x1Cu; // AFE_GB 01110
@@ -27,6 +29,11 @@ constexpr std::uint8_t calibrationFailed = 0x40u;
 constexpr std::uint32_t retryMs = 1000u;
 constexpr std::uint32_t noiseFloorRecoveryMs = 10u * 60u * 1000u;
 constexpr std::uint32_t disturberLogMs = 10000u;
+constexpr std::uint32_t irqSettleMs = 2u;        // datasheet: wait 2 ms after IRQ before reading
+constexpr std::uint32_t safetyPollMs = 1000u;    // with IRQ, in case an edge was missed
+constexpr std::uint32_t tuneSettleMs = 20u;
+constexpr std::uint32_t tuneCountMs = 100u;      // about 3100 edges at 31.25 kHz
+constexpr std::uint32_t antennaToleranceHz = antennaTargetHzLocal * 35u / 1000u;
 
 } // namespace
 
@@ -69,12 +76,27 @@ bool As3935Driver::configure() {
     const bool ok = writeRegister(registerAfe, location_ == Location::outdoor ? afeOutdoor : afeIndoor) &&
                     modifyRegister(registerNoise, 0x70u, static_cast<std::uint8_t>(noiseFloor_ << 4u)) &&
                     modifyRegister(registerInterrupt, 0x20u, reportDisturbers_ ? 0x00u : 0x20u) &&
-                    writeRegister(registerTuning, tuningCapacitor_) &&
-                    writeRegister(commandCalibrateRco, directCommand);
-    if (!ok) return false;
+                    writeRegister(registerTuning, tuningCapacitor_);
+    return ok && calibrateOscillators();
+}
+
+// The RC oscillators are calibrated against the antenna resonance, so this
+// follows every change of the tuning capacitor.
+bool As3935Driver::calibrateOscillators() {
+    calibrating_ = true;
+    const bool ok = calibrateOscillatorsShown();
+    calibrating_ = false;
+    irqPending_ = false;
+    return ok;
+}
+
+bool As3935Driver::calibrateOscillatorsShown() {
+    if (!writeRegister(commandCalibrateRco, directCommand)) return false;
     wait(2u);
-    // The SRCO is calibrated while it is shown on the IRQ pin.
-    if (!writeRegister(registerTuning, static_cast<std::uint8_t>(0x40u | tuningCapacitor_))) return false;
+    // Datasheet procedure: show the TRCO (32.768 kHz, DISP_TRCO) on the IRQ
+    // pin for 2 ms. Not the SRCO (1.1 MHz): with the IRQ wired its edges
+    // would starve the CPU.
+    if (!writeRegister(registerTuning, static_cast<std::uint8_t>(0x20u | tuningCapacitor_))) return false;
     wait(2u);
     if (!writeRegister(registerTuning, tuningCapacitor_)) return false;
     std::uint8_t trco = 0u;
@@ -144,21 +166,112 @@ void As3935Driver::handle(std::uint8_t interrupt, std::uint32_t now) {
     if (listener_) listener_(listenerContext_, event);
 }
 
-void As3935Driver::run() {
-    const auto now = runtime_.millis();
-    if (static_cast<std::int32_t>(now - nextAt_) < 0) return;
-    nextAt_ = now + pollMs_;
-    if (!configured_) {
-        if (!configure()) {
+void As3935Driver::onInterrupt() {
+    edges_ = edges_ + 1u;
+    if (tuningAntenna() || calibrating_) return;
+    interrupts_ = interrupts_ + 1u;
+    irqAt_ = runtime_.millis();
+    irqPending_ = true;
+}
+
+std::uint32_t As3935Driver::ticks() const {
+    return config_.ticks && config_.ticksPerSecond ? config_.ticks() : runtime_.millis();
+}
+
+std::uint32_t As3935Driver::ticksPerSecond() const {
+    return config_.ticks && config_.ticksPerSecond ? config_.ticksPerSecond : 1000u;
+}
+
+bool As3935Driver::startAntennaTuning() {
+    if (!config_.irqConnected || !configured_ || tuningAntenna()) return false;
+    for (auto& frequency : frequencies_) frequency = 0u;
+    tuneStep_ = 0u;
+    tunePhase_ = TunePhase::settle;
+    tuneAt_ = runtime_.millis();
+    log_.write(LogLevel::info, "as3935: tuning the antenna (16 steps, about 2 s)");
+    return true;
+}
+
+void As3935Driver::tune(std::uint32_t now) {
+    if (static_cast<std::int32_t>(now - tuneAt_) < 0) return;
+    if (tunePhase_ == TunePhase::settle) {
+        // Show the resonance of this step on the IRQ pin and let it settle.
+        if (!writeRegister(registerTuning, static_cast<std::uint8_t>(0x80u | tuneStep_))) {
+            tuneStep_ = tuneSteps;
             lost();
-            nextAt_ = now + retryMs;
             return;
         }
-        configured_ = true;
-        quietSince_ = now;
-        disturberLogAt_ = now;
+        tunePhase_ = TunePhase::count;
+        tuneAt_ = now + tuneSettleMs;
+        countEdges_ = 0u;
         return;
     }
+    if (countEdges_ == 0u) {
+        // Settled: start counting.
+        countEdges_ = 1u; // counting
+        countTicks_ = ticks();
+        frequencies_[tuneStep_] = edges_;
+        tuneAt_ = now + tuneCountMs;
+        return;
+    }
+    const auto endTicks = ticks();
+    const std::uint32_t edges = edges_ - frequencies_[tuneStep_];
+    const std::uint32_t elapsed = endTicks - countTicks_;
+    // The pin shows the resonance divided by 16.
+    frequencies_[tuneStep_] =
+        elapsed ? static_cast<std::uint32_t>(static_cast<std::uint64_t>(edges) * 16u * ticksPerSecond() / elapsed) : 0u;
+    if (++tuneStep_ < tuneSteps) {
+        tunePhase_ = TunePhase::settle;
+        tuneAt_ = now;
+        return;
+    }
+    finishTuning();
+}
+
+void As3935Driver::finishTuning() {
+    std::uint8_t best = 0u;
+    std::uint32_t bestError = 0xFFFFFFFFu;
+    for (std::uint8_t step = 0u; step < tuneSteps; ++step) {
+        const auto frequency = frequencies_[step];
+        const auto error = frequency > antennaTargetHz ? frequency - antennaTargetHz : antennaTargetHz - frequency;
+        if (frequency != 0u && error < bestError) {
+            best = step;
+            bestError = error;
+        }
+    }
+    char line[2][100];
+    for (unsigned half = 0u; half < 2u; ++half) {
+        std::size_t length = 0u;
+        for (unsigned step = half * 8u; step < half * 8u + 8u; ++step) {
+            const auto tenths = (frequencies_[step] + 50u) / 100u;
+            length += static_cast<std::size_t>(std::snprintf(line[half] + length, sizeof line[half] - length,
+                                                             " %u:%lu.%lu", step,
+                                                             static_cast<unsigned long>(tenths / 10u),
+                                                             static_cast<unsigned long>(tenths % 10u)));
+            if (length >= sizeof line[half]) length = sizeof line[half] - 1u;
+        }
+    }
+    log_.writef(LogLevel::info, "as3935: antenna kHz per step%s", line[0]);
+    log_.writef(LogLevel::info, "as3935: antenna kHz per step%s", line[1]);
+    tuningCapacitor_ = best;
+    const bool ok = writeRegister(registerTuning, tuningCapacitor_) && calibrateOscillators();
+    if (!ok) {
+        lost();
+        return;
+    }
+    const auto frequency = frequencies_[best];
+    const long deviation = (static_cast<long>(frequency) - static_cast<long>(antennaTargetHz)) / 500; // 0.1 %
+    log_.writef(bestError <= antennaToleranceHz ? LogLevel::info : LogLevel::warning,
+                "as3935: antenna tuned to step %u (%u pF), %lu.%lu kHz, %s%ld.%ld %% from 500 kHz%s",
+                static_cast<unsigned>(best), static_cast<unsigned>(best) * 8u,
+                static_cast<unsigned long>(frequency / 1000u), static_cast<unsigned long>(frequency % 1000u / 100u),
+                deviation < 0 ? "-" : "+", (deviation < 0 ? -deviation : deviation) / 10,
+                (deviation < 0 ? -deviation : deviation) % 10,
+                bestError <= antennaToleranceHz ? "" : " - OUTSIDE the 3.5 % tolerance");
+    irqPending_ = false;
+}
+
+void As3935Driver::readEvent(std::uint32_t now) {
     std::uint8_t interrupt = 0u;
     if (!readRegister(registerInterrupt, interrupt)) {
         lost();
@@ -167,6 +280,41 @@ void As3935Driver::run() {
     }
     ++polls_;
     handle(static_cast<std::uint8_t>(interrupt & 0x0Fu), now);
+}
+
+void As3935Driver::run() {
+    const auto now = runtime_.millis();
+    if (tuningAntenna()) {
+        tune(now);
+        return;
+    }
+    if (!configured_) {
+        if (static_cast<std::int32_t>(now - nextAt_) < 0) return;
+        if (!configure()) {
+            lost();
+            nextAt_ = now + retryMs;
+            return;
+        }
+        configured_ = true;
+        quietSince_ = now;
+        disturberLogAt_ = now;
+        nextAt_ = now + (config_.irqConnected ? safetyPollMs : pollMs_);
+        if (config_.irqConnected && config_.tuneAntennaAtStart && !tunedOnce_) {
+            tunedOnce_ = true;
+            (void)startAntennaTuning();
+        }
+        return;
+    }
+    bool due = static_cast<std::int32_t>(now - nextAt_) >= 0;
+    if (config_.irqConnected && irqPending_ && static_cast<std::uint32_t>(now - irqAt_) >= irqSettleMs) {
+        irqPending_ = false;
+        due = true;
+    }
+    if (due) {
+        nextAt_ = now + (config_.irqConnected ? safetyPollMs : pollMs_);
+        readEvent(now);
+        if (!configured_) return;
+    }
     if (static_cast<std::uint32_t>(now - disturberLogAt_) >= disturberLogMs) {
         if (disturbers_ != disturbersLogged_) {
             log_.writef(LogLevel::info, "as3935: %lu disturber(s) (man-made noise pulses) in %lu s, %lu in total",

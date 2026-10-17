@@ -174,7 +174,9 @@ sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,        
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
-slstm32::drivers::Ct1780Driver ct1780{runtime, oneWire0, logger, &thermocoupleChannel, &coldJunctionChannel};
+constexpr std::uint32_t thermocouplePeriodMs = 333u; // 3 readings per second
+slstm32::drivers::Ct1780Driver ct1780{runtime,          oneWire0,           logger, &thermocoupleChannel,
+                                      &coldJunctionChannel, thermocouplePeriodMs};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};

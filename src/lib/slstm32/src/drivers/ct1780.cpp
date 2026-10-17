@@ -96,6 +96,7 @@ void Ct1780Driver::finish(std::uint32_t now) {
     }
     const auto coldRaw = static_cast<std::int16_t>(static_cast<std::uint16_t>(data[3] << 8u | data[2]));
     const std::int32_t coldMilliCelsius = static_cast<std::int32_t>(coldRaw >> 4) * 625 / 10; // 12 bit, 1/16 C
+    coldJunctionMilliCelsius_ = coldMilliCelsius;
     if (coldJunction_) coldJunction_->update(coldMilliCelsius, now);
 
     const auto faults = static_cast<std::uint8_t>((data[0] & 0x01u) ? (data[2] & 0x07u) | 0x80u : 0u);
@@ -118,6 +119,7 @@ void Ct1780Driver::finish(std::uint32_t now) {
         failed(sensors::Fault::outOfRange, now);
         return;
     }
+    milliCelsius_ = milliCelsius;
     ++samples_;
     if (thermocouple_) thermocouple_->update(milliCelsius, now);
 }

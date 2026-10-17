@@ -33,6 +33,8 @@ class Ct1780Driver final : public Driver {
 public:
     static constexpr std::uint8_t family = 0x3Bu;
 
+    // periodMs: interval between conversions; 0 converts back to back (about
+    // 10 readings per second, one conversion takes 85..105 ms).
     Ct1780Driver(Runtime runtime, OneWireBus& bus, Logger log, sensors::Measurement* thermocouple,
                  sensors::Measurement* coldJunction = nullptr, std::uint32_t periodMs = 2000u)
         : runtime_(runtime), bus_(bus), log_(log), thermocouple_(thermocouple), coldJunction_(coldJunction),
@@ -47,6 +49,9 @@ public:
     // AD0..AD3 from the configuration register (DIP switches).
     std::uint8_t address() const { return address_; }
     std::uint8_t faultBits() const { return faultBits_; }
+    // Latest valid readings in m°C; samples() counts them.
+    std::int32_t milliCelsius() const { return milliCelsius_; }
+    std::int32_t coldJunctionMilliCelsius() const { return coldJunctionMilliCelsius_; }
     std::uint32_t samples() const { return samples_; }
     std::uint32_t errors() const { return errors_; }
     // Conversion completion polling: unknown until the first conversion.
@@ -81,6 +86,8 @@ private:
     std::uint32_t lastConversionMs_{};
     std::uint32_t maxConversionMs_{};
     Polling polling_{Polling::unknown};
+    std::int32_t milliCelsius_{};
+    std::int32_t coldJunctionMilliCelsius_{};
     std::uint32_t samples_{};
     std::uint32_t errors_{};
     std::uint8_t address_{};

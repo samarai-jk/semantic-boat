@@ -24,4 +24,10 @@ slstm32::drivers::ToneOutputHardware buzzer();
 // the 1-Wire bus of the sensor tests, so DI0 is not connected.
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs();
 
+// PA5 (OUT_D_1, module input D1) as the engine speed input: interrupt on
+// the falling edge (12 V appears; the module inverts), pull-up.
+inline constexpr std::uint16_t engineSpeedPin = 1u << 5u;
+void configureEngineSpeedInput();
+bool engineSpeedEdge(); // the pin is low, i.e. the edge was a falling one
+
 } // namespace lab_test_01::board

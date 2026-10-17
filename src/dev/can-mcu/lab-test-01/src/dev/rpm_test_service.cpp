@@ -16,10 +16,11 @@ namespace {
 
 using slstm32::LogLevel;
 
-constexpr std::uint16_t inputPin = GPIO_PIN_5; // PA5 = OUT_D_1
+// PA5 = OUT_D_1, PA6 = OUT_D_2, PA7 = OUT_D_3 (host-dev wiring); "rpm pin".
+std::uint16_t inputPin = GPIO_PIN_5;
 constexpr std::uint32_t reportMs = 1000u;
 constexpr std::uint32_t sweepStepMs = 3000u;
-constexpr std::uint32_t sweepHz[]{5, 10, 20, 50, 75, 100, 150, 200, 300, 500, 750, 1000};
+constexpr std::uint32_t sweepHz[]{50, 100, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 4000, 5000, 7500};
 
 // Edge statistics of the current window (written by the interrupt).
 struct Edges {
@@ -63,6 +64,7 @@ void setupGenerator() {
 }
 
 void setupCounter() {
+    __HAL_GPIO_EXTI_CLEAR_IT(inputPin);
     GPIO_InitTypeDef gpio{};
     gpio.Pin = inputPin;
     gpio.Mode = GPIO_MODE_IT_RISING_FALLING;
@@ -108,7 +110,7 @@ bool RpmTestService::init() {
     setupCounter();
     reportAt_ = windowStart_ = runtime_.millis() + reportMs;
     log_.write(LogLevel::warning, "rpm test: generator TIM2 PWM on PA0, counter on PA5 (OUT_D_1)");
-    return console_.add({"rpm", "rpm [gen <Hz> [duty %] | off | sweep [duty %]]  12v-ad-input-iso frequency test (dev, temporary)",
+    return console_.add({"rpm", "rpm [gen <Hz> [duty %] | off | sweep [duty %] | pin 5|6|7]  12v-ad-input-iso frequency test (dev, temporary)",
                          &command, this});
 }
 
@@ -210,6 +212,21 @@ void RpmTestService::command(void* context, std::size_t argc, const char* const*
             self.generate(static_cast<std::uint32_t>(hz * 1000.0 + 0.5), static_cast<std::uint8_t>(duty));
             return;
         }
+    } else if (argc == 3u && std::strcmp(argv[1], "pin") == 0) {
+        const auto pin = std::strtoul(argv[2], nullptr, 10);
+        if (pin >= 5u && pin <= 7u) {
+            // Back to a plain input with pull-up (as the module driver set it).
+            GPIO_InitTypeDef gpio{};
+            gpio.Pin = inputPin;
+            gpio.Mode = GPIO_MODE_INPUT;
+            gpio.Pull = GPIO_PULLUP;
+            HAL_GPIO_Init(GPIOA, &gpio);
+            inputPin = static_cast<std::uint16_t>(1u << pin);
+            setupCounter();
+            resetEdges();
+            self.log_.writef(LogLevel::info, "rpm: counting on PA%lu (OUT_D_%lu)", pin, pin - 4u);
+            return;
+        }
     } else if (argc == 2u && std::strcmp(argv[1], "off") == 0) {
         self.sweeping_ = false;
         self.generate(0u, self.duty_);
@@ -222,12 +239,12 @@ void RpmTestService::command(void* context, std::size_t argc, const char* const*
             self.sweeping_ = true;
             self.sweepStep_ = 0u;
             self.sweepNextAt_ = self.runtime_.millis();
-            self.log_.writef(LogLevel::info, "rpm: sweep 5..1000 Hz at %u %% duty, 3 s per step",
+            self.log_.writef(LogLevel::info, "rpm: sweep 50..7500 Hz at %u %% duty, 3 s per step",
                              static_cast<unsigned>(duty));
             return;
         }
     }
-    self.log_.write(LogLevel::warning, "usage: rpm [gen <Hz> [duty %] | off | sweep [duty %]]");
+    self.log_.write(LogLevel::warning, "usage: rpm [gen <Hz> [duty %] | off | sweep [duty %] | pin 5|6|7]");
 }
 
 } // namespace lab_test_01

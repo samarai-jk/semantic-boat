@@ -12,6 +12,7 @@ const char* quantityName(Quantity quantity) {
     case Quantity::pressure: return "pressure";
     case Quantity::angle: return "angle";
     case Quantity::concentration: return "concentration";
+    case Quantity::rotationalSpeed: return "rotational speed";
     }
     return "?";
 }
@@ -26,6 +27,7 @@ const char* unitName(Quantity quantity) {
     case Quantity::pressure: return "hPa";
     case Quantity::angle: return "deg";
     case Quantity::concentration: return "ppm";
+    case Quantity::rotationalSpeed: return "rpm";
     }
     return "";
 }

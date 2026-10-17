@@ -17,7 +17,7 @@ namespace slstm32::sensors {
 
 // Values are integers in thousandths of the unit: m°C, 0.001 %RH, mV, mlx,
 // thousandths of the UV index, 0.001 hPa (= 0.1 Pa), thousandths of a degree,
-// thousandths of a ppm (gas concentration).
+// thousandths of a ppm (gas concentration), thousandths of an rpm.
 enum class Quantity : std::uint8_t {
     temperature,
     relativeHumidity,
@@ -27,6 +27,7 @@ enum class Quantity : std::uint8_t {
     pressure,
     angle,
     concentration,
+    rotationalSpeed,
 };
 
 const char* quantityName(Quantity quantity);

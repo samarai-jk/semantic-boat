@@ -10,6 +10,7 @@ namespace slstm32::sensors {
 
 // Writes the values of all channels of a registry to the log periodically,
 // as lines like "values: board 27.81 C | air 22.40 C | air-rh 45.31 %".
+// Channels with a slow trend add its change and span: "(-0.42/95m)".
 // Channels without a valid value show their status instead. Long lists are
 // split over several lines.
 class MeasurementLog final : public Service {

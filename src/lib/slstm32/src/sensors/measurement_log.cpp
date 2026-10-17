@@ -23,7 +23,14 @@ void MeasurementLog::run() {
         const auto& channel = registry_.at(index);
         char entry[48];
         char value[20];
-        if (channel.valid()) {
+        if (channel.valid() && channel.trendValid()) {
+            // Channels with a slow trend show its change and span, e.g.
+            // "baro 1009.07 hPa (-0.42/95m)".
+            char trend[20];
+            std::snprintf(entry, sizeof entry, "%s %s %s (%s%s/%lum)", channel.name(), formatMilli(value, channel.value()),
+                          unitName(channel.quantity()), channel.trend() > 0 ? "+" : "", formatMilli(trend, channel.trend()),
+                          static_cast<unsigned long>(channel.trendSpanMs() / 60000u));
+        } else if (channel.valid()) {
             std::snprintf(entry, sizeof entry, "%s %s %s", channel.name(), formatMilli(value, channel.value()),
                           unitName(channel.quantity()));
         } else {

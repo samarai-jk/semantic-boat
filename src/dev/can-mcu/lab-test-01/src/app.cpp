@@ -35,6 +35,7 @@
 #include "slstm32/drivers/bmp585.hpp"
 #include "slstm32/drivers/bno055.hpp"
 #include "slstm32/drivers/dht20.hpp"
+#include "slstm32/drivers/frequency_input.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
@@ -130,7 +131,8 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::vesselHeading, n2k::pgn::rateOfTurn, n2k::pgn::attitude,
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::engineRapidUpdate, n2k::pgn::vesselHeading, n2k::pgn::rateOfTurn,
+                                           n2k::pgn::attitude,
                                            n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity, n2k::pgn::actualPressure,
                                            n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
@@ -160,7 +162,8 @@ lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActi
 // sensor ("light"), a Bosch BMP585 barometer ("baro", die temperature
 // "baro-t"), and the DFRobot SEN0253 10-DOF module: BNO055 orientation
 // ("heading", "pitch", "roll") and BMP280 barometer ("baro2", "baro2-t"),
-// and a Sensirion SCD4x CO2 sensor ("co2", "co2-t", "co2-rh"). No alarm rules while sensors are being
+// a Sensirion SCD4x CO2 sensor ("co2", "co2-t", "co2-rh"), and engine
+// speed ("rpm") from pulses on input D1 of the 12v-ad-input-iso module. No alarm rules while sensors are being
 // brought up; the annunciator stays silent without them. PA4 is prepared as a
 // 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
@@ -205,8 +208,19 @@ constexpr sensors::MeasurementConfig headingChannelConfig{
     "heading", sensors::Quantity::angle, 0u, 10000u, 0u, nullptr, 0u};
 constexpr sensors::MeasurementConfig pitchChannelConfig{"pitch", sensors::Quantity::angle, 1u, 10000u, 0u, nullptr, 0u};
 constexpr sensors::MeasurementConfig rollChannelConfig{"roll", sensors::Quantity::angle, 2u, 10000u, 0u, nullptr, 0u};
-constexpr sensors::MeasurementConfig baro2ChannelConfig{
-    "baro2", sensors::Quantity::pressure, 1u, 10000u, 0u, nullptr, 0u};
+// The BMP280 keeps the same 3-hour trend as the BMP585, without alarms, to
+// compare the two barometers (drift, temperature dependence).
+constexpr sensors::MeasurementConfig baro2ChannelConfig{"baro2",
+                                                        sensors::Quantity::pressure,
+                                                        1u,
+                                                        10000u,
+                                                        0u,
+                                                        nullptr,
+                                                        0u,
+                                                        baroTrendWindowMs,
+                                                        100,
+                                                        3500};
+sensors::TrendPoint baro2Trend[19]{};
 constexpr sensors::MeasurementConfig baro2TemperatureChannelConfig{
     "baro2-t", sensors::Quantity::temperature, 9u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement headingChannel{headingChannelConfig};
@@ -223,11 +237,14 @@ constexpr sensors::MeasurementConfig co2HumidityChannelConfig{
 sensors::Measurement co2Channel{co2ChannelConfig};
 sensors::Measurement co2TemperatureChannel{co2TemperatureChannelConfig};
 sensors::Measurement co2HumidityChannel{co2HumidityChannelConfig};
+constexpr sensors::MeasurementConfig rpmChannelConfig{
+    "rpm", sensors::Quantity::rotationalSpeed, 0u, 2000u, 0u, nullptr, 0u};
+sensors::Measurement rpmChannel{rpmChannelConfig};
 sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,   &airChannel,    &airHumidityChannel,
                                        &lightChannel,       &baroChannel,  &baroTemperatureChannel,
                                        &headingChannel,     &pitchChannel, &rollChannel,   &baro2Channel,
                                        &baro2TemperatureChannel,           &co2Channel,    &co2TemperatureChannel,
-                                       &co2HumidityChannel};
+                                       &co2HumidityChannel, &rpmChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
@@ -235,6 +252,22 @@ slstm32::drivers::Bmp585Driver bmp585{runtime, i2c, logger, &baroChannel, &baroT
 slstm32::drivers::Bno055Driver bno055{runtime, i2c, logger, &headingChannel, &pitchChannel, &rollChannel};
 slstm32::drivers::Bmp280Driver bmp280{runtime, i2c, logger, &baro2Channel, &baro2TemperatureChannel};
 slstm32::drivers::Scd4xDriver scd4x{runtime, i2c, logger, &co2Channel, &co2TemperatureChannel, &co2HumidityChannel};
+// Engine speed: bench setting as for an alternator W terminal with 6 pole
+// pairs and a 2.5 pulley ratio (15 pulses per revolution: 750 Hz = 3000 rpm);
+// pulses shorter than 100 us apart are glitches (max 10 kHz).
+slstm32::drivers::FrequencyInputConfig engineSpeedConfig() {
+    slstm32::drivers::FrequencyInputConfig config{};
+    config.ticks = &can_mcu::cycleCounter;
+    config.ticksPerSecond = can_mcu::coreClockHz;
+    config.milliPulsesPerUnit = 15000u;
+    config.perMinute = true;
+    config.minimumPeriodUs = 100u;
+    config.periodMs = 250u;
+    config.timeoutMs = 2000u;
+    return config;
+}
+const slstm32::drivers::FrequencyInputConfig engineSpeedSettings = engineSpeedConfig();
+slstm32::drivers::FrequencyInput engineSpeed{runtime, engineSpeedSettings, &rpmChannel};
 // The BNO055 runs at 10 Hz; the bus gets a 1 s summary (heading, rate of
 // turn, attitude) and the log one every 10 s with the extremes and spread.
 sensors::AttitudeSummarizer attitudeSummarizer{runtime};
@@ -256,6 +289,7 @@ const n2k::MeasurementPublication publications[]{
     {&airChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
     {&baroChannel, static_cast<std::uint8_t>(n2k::PressureSource::atmospheric)},
+    {&rpmChannel, 0u},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -302,6 +336,7 @@ struct Bno055;
 struct Bmp280;
 struct AttitudeSummarizer;
 struct Scd4x;
+struct EngineSpeed;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -336,6 +371,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Bno055>(bno055),
         slstm32::bind<component::Bmp280>(bmp280),
         slstm32::bind<component::Scd4x>(scd4x),
+        slstm32::bind<component::EngineSpeed>(engineSpeed),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),
@@ -508,7 +544,9 @@ extern "C" void lab_test_01_app_init(void) {
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
     baroChannel.setTrendBuffer(baroTrend, sizeof baroTrend / sizeof baroTrend[0]);
+    baro2Channel.setTrendBuffer(baro2Trend, sizeof baro2Trend / sizeof baro2Trend[0]);
     bno055.setSampleListener(&onOrientationSample, nullptr);
+    rpmChannel.setIdentity(sensors::Identity::internal(2u)); // module input D1
     attitudeSummarizer.setListener(&onAttitudeSummary, nullptr);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
@@ -531,6 +569,8 @@ extern "C" void lab_test_01_app_init(void) {
     }
     serialLog.flush(startupLogFlushMs);
     // A hang from here on becomes a logged watchdog restart.
+    // After the input module driver set PA5 up as a polled input.
+    lab_test_01::board::configureEngineSpeedInput();
     can_mcu::startWatchdog(watchdogTimeoutMs);
     logger.writef(LogLevel::info, "supervision: watchdog %lu ms, power monitor below 2.9 V",
                   static_cast<unsigned long>(watchdogTimeoutMs));
@@ -550,5 +590,9 @@ extern "C" void lab_test_01_app_tick(void) {
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {
     lab_test_01::devToolsInterrupt(pin);
+    if (pin == lab_test_01::board::engineSpeedPin) {
+        if (lab_test_01::board::engineSpeedEdge()) engineSpeed.onEdge();
+        return;
+    }
     (void)buttons.onInterrupt(pin);
 }

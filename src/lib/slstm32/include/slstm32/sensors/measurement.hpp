@@ -50,6 +50,8 @@ enum class AlarmKind : std::uint8_t {
     low,         // value below threshold
     riseRate,    // rise per minute above threshold (thousandths of the unit per minute)
     sensorFault, // channel faulted or stale; threshold unused
+    trendFall,   // fall over the trend window by more than threshold (a positive amount)
+    trendRise,   // rise over the trend window by more than threshold
 };
 
 struct AlarmRule {
@@ -75,7 +77,23 @@ struct MeasurementConfig {
     std::uint32_t filterMs{};      // smoothing time constant; 0 = none
     const AlarmRule* alarms{};
     std::size_t alarmCount{};
+    // Slow trend, e.g. the 3-hour pressure tendency: the change over this
+    // window, sampled into a buffer given with Measurement::setTrendBuffer().
+    // 0 = no trend.
+    std::uint32_t trendWindowMs{};
+    // Tendency labels: a change below trendSteady is "steady", above
+    // trendRapid "rising/falling rapidly" (0 = no rapid label).
+    std::int32_t trendSteady{};
+    std::int32_t trendRapid{};
 };
+
+struct TrendPoint {
+    std::uint32_t at{};
+    std::int32_t value{};
+};
+
+enum class Tendency : std::uint8_t { unknown, steady, rising, falling, risingRapidly, fallingRapidly };
+const char* tendencyName(Tendency tendency);
 
 // Stable identity of the physical sensor behind a channel, used as the key
 // for its persisted settings. Set by the driver or the composition root.
@@ -149,6 +167,20 @@ public:
     bool rateValid() const { return rateValid_; }
     std::int32_t ratePerMinute() const { return ratePerMinute_; }
 
+    // --- Trend (see MeasurementConfig::trendWindowMs) ---
+    // The buffer holds the samples of one window: one every window / (count - 1).
+    void setTrendBuffer(TrendPoint* points, std::size_t count);
+    // Changes the window at run time (tests, service); restarts the trend.
+    void setTrendWindow(std::uint32_t windowMs);
+    std::uint32_t trendWindow() const { return trendWindowMs_; }
+    // Change of the smoothed value over the covered span; valid once two
+    // samples are stored. After a start or a gap the span is shorter than the
+    // window until the buffer has filled.
+    bool trendValid() const { return trendValid_; }
+    std::int32_t trend() const { return trendChange_; }
+    std::uint32_t trendSpanMs() const { return trendSpanMs_; }
+    Tendency tendency() const;
+
     std::size_t alarmCount() const { return alarmCount_; }
     const AlarmRule& alarmRule(std::size_t index) const { return rules_[index]; }
     bool alarmActive(std::size_t index) const { return alarms_[index].active; }
@@ -191,6 +223,8 @@ private:
     bool condition(const AlarmRule& rule, bool active) const;
     void notify(std::size_t rule, AlarmTransition transition);
     void trackRate(std::uint32_t now);
+    void trackTrend(std::uint32_t now);
+    void resetTrend();
 
     const MeasurementConfig& config_;
     std::array<AlarmRule, maxAlarms> rules_{};
@@ -215,6 +249,14 @@ private:
     std::size_t rateCount_{};
     std::int32_t ratePerMinute_{};
     bool rateValid_{};
+    TrendPoint* trendPoints_{};
+    std::size_t trendCapacity_{};
+    std::size_t trendHead_{};
+    std::size_t trendCount_{};
+    std::uint32_t trendWindowMs_{};
+    std::int32_t trendChange_{};
+    std::uint32_t trendSpanMs_{};
+    bool trendValid_{};
     AlarmListener listener_{};
     void* listenerContext_{};
 };

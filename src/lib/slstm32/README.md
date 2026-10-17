@@ -354,6 +354,13 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   (stays active until acknowledged), and the choice of filtered or latest
   value. Value rules keep their state while the channel has no valid value;
   the `sensorFault` rule covers that case.
+- A slow trend (`MeasurementConfig::trendWindowMs`, buffer from
+  `Measurement::setTrendBuffer()`): the change of the smoothed value over the
+  window, e.g. the 3-hour barometric tendency with 19 samples (152 bytes).
+  Alarm kinds `trendFall` and `trendRise` act on it, `tendency()` labels it
+  (steady, rising, falling, rising/falling rapidly) with the configured
+  thresholds. After a restart or a sensor gap the trend covers a shorter
+  span until the buffer has filled.
 - `Identity` names the physical sensor behind a channel (`internal`, `i2c`
   bus/mux/address, `oneWire` ROM code, `analog` input, plus a subchannel for
   multi-quantity sensors). It is the key of the persisted settings.
@@ -369,7 +376,8 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   callback (LEDs, display). Patterns and the acknowledge input are device
   decisions.
 - `MeasurementConsole` adds the service commands `sensors`, `sensor <name>
-  [cal|cal2 <ref> | alarm <rule> <value> | reset | stats]`, and `ack`.
+  [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]`, and
+  `ack`.
 
 Publishing on NMEA 2000 lives in the `n2k` library (`n2k::MeasurementPublisher`:
 PGN 130316 for temperatures, 130313 for humidity, "not available" for failed

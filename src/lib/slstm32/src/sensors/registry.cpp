@@ -40,6 +40,8 @@ const char* ruleText(AlarmKind kind) {
     case AlarmKind::low: return "below";
     case AlarmKind::riseRate: return "rising faster than";
     case AlarmKind::sensorFault: return "sensor fault";
+    case AlarmKind::trendFall: return "falling by more than";
+    case AlarmKind::trendRise: return "rising by more than";
     }
     return "?";
 }
@@ -248,6 +250,12 @@ void MeasurementRegistry::onAlarm(void* context, Measurement& channel, std::size
         self.log_.writef(level, "alarm: %s %s %s %s (%s)", channel.name(), ruleText(alarm.kind),
                          severityName(alarm.severity), transitionName(transition),
                          channel.status() == Status::fault ? faultName(channel.fault()) : statusName(channel.status()));
+    } else if (alarm.kind == AlarmKind::trendFall || alarm.kind == AlarmKind::trendRise) {
+        self.log_.writef(level, "alarm: %s %s %s %s in %lu min %s %s, now %s %s in %lu min (%s)", channel.name(),
+                         ruleText(alarm.kind), formatMilli(threshold, alarm.threshold), unit,
+                         static_cast<unsigned long>(channel.trendWindow() / 60000u), severityName(alarm.severity),
+                         transitionName(transition), formatMilli(value, channel.trend()), unit,
+                         static_cast<unsigned long>(channel.trendSpanMs() / 60000u), tendencyName(channel.tendency()));
     } else {
         const bool rate = alarm.kind == AlarmKind::riseRate;
         self.log_.writef(level, "alarm: %s %s %s %s%s %s %s, now %s %s%s", channel.name(), ruleText(alarm.kind),

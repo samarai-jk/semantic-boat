@@ -58,6 +58,7 @@ namespace {
 
 using slstm32::LogLevel;
 namespace sensors = slstm32::sensors;
+using sensors::AlarmKind;
 using sensors::Severity;
 using slstm32::drivers::ToneStep;
 
@@ -169,8 +170,25 @@ sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
 constexpr sensors::MeasurementConfig lightChannelConfig{
     "light", sensors::Quantity::illuminance, 0u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement lightChannel{lightChannelConfig};
-constexpr sensors::MeasurementConfig baroChannelConfig{
-    "baro", sensors::Quantity::pressure, 0u, 10000u, 0u, nullptr, 0u};
+// Barometric tendency over 3 hours (marine rule of thumb): a fall of more
+// than 3 hPa is a warning, more than 6 hPa an alarm (strong wind coming).
+// Labels: below 0.1 hPa steady, above 3.5 hPa rapid.
+constexpr std::uint32_t baroTrendWindowMs = 3u * 60u * 60u * 1000u;
+constexpr sensors::AlarmRule baroAlarms[]{
+    {AlarmKind::trendFall, Severity::warning, 3000, 500, 0u, false, false},
+    {AlarmKind::trendFall, Severity::alarm, 6000, 500, 0u, false, false},
+};
+constexpr sensors::MeasurementConfig baroChannelConfig{"baro",
+                                                       sensors::Quantity::pressure,
+                                                       0u,
+                                                       10000u,
+                                                       0u,
+                                                       baroAlarms,
+                                                       sizeof baroAlarms / sizeof baroAlarms[0],
+                                                       baroTrendWindowMs,
+                                                       100,
+                                                       3500};
+sensors::TrendPoint baroTrend[19]{}; // one sample every 10 min
 constexpr sensors::MeasurementConfig baroTemperatureChannelConfig{
     "baro-t", sensors::Quantity::temperature, 8u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement baroChannel{baroChannelConfig};
@@ -402,6 +420,7 @@ extern "C" void lab_test_01_app_init(void) {
     configureN2kIdentity();
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
+    baroChannel.setTrendBuffer(baroTrend, sizeof baroTrend / sizeof baroTrend[0]);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);

@@ -158,8 +158,12 @@ channels, alarms, and settings storage are described in the
   pressure x16 / temperature x2 and polls the data-ready flag.
 - Bench: 1009.84 hPa, 28.2 C die temperature (the die runs about 1 C above
   the room). Published as PGN 130314 (Actual Pressure, atmospheric).
-- Open: a pressure tendency (hPa per 3 h) for weather; the channel's rate is
-  per minute only.
+- Pressure tendency: the channel keeps a 3-hour trend (19 samples, one per
+  10 min). LT1 warns at a fall of more than 3 hPa in 3 h and alarms at more
+  than 6 hPa; tendency labels steady below 0.1 hPa, rapid above 3.5 hPa.
+  `sensor baro trend <min>` shortens the window for tests. The trend is lost
+  at a restart (3 h until fully valid again); keeping it in the RTC backup
+  registers would be a later improvement.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

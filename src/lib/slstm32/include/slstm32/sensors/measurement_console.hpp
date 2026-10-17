@@ -15,6 +15,7 @@ namespace slstm32::sensors {
 //   sensor <name> cal2 <reference>   second point: offset and gain from the
 //                                    last "cal" point and this one
 //   sensor <name> alarm <rule> <threshold>
+//   sensor <name> trend <minutes>    trend window for tests (not stored)
 //   sensor <name> reset              calibration and thresholds to defaults
 //   sensor <name> stats              restart minimum and maximum
 //   ack                              acknowledge all alarms

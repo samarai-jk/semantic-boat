@@ -12,6 +12,8 @@ const char* kindName(AlarmKind kind) {
     case AlarmKind::low: return "low";
     case AlarmKind::riseRate: return "rise";
     case AlarmKind::sensorFault: return "fault";
+    case AlarmKind::trendFall: return "fall";
+    case AlarmKind::trendRise: return "rise";
     }
     return "?";
 }
@@ -31,7 +33,7 @@ const char* identityName(Identity::Kind kind) {
 
 bool MeasurementConsole::registerCommands(CommandConsole& console) {
     return console.add({"sensors", "sensors  list measurement channels", &sensorsCommand, this}) &&
-           console.add({"sensor", "sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | reset | stats]",
+           console.add({"sensor", "sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]",
                         &sensorCommand, this}) &&
            console.add({"ack", "ack  acknowledge all alarms", &ackCommand, this});
 }
@@ -81,6 +83,13 @@ void MeasurementConsole::detail(std::size_t index) const {
                 channel.rateValid() ? formatMilli(c, channel.ratePerMinute()) : "-", unit);
     log_.writef(LogLevel::info, "  calibration offset %s %s, gain %ld ppm", formatMilli(a, channel.calibration().offset, 3u),
                 unit, static_cast<long>(channel.calibration().gainPpm));
+    if (channel.trendWindow() != 0u) {
+        const auto span = channel.trendSpanMs() / 1000u;
+        log_.writef(LogLevel::info, "  trend %s %s over %lu:%02lu of %lu min (%s)",
+                    channel.trendValid() ? formatMilli(a, channel.trend()) : "-", unit,
+                    static_cast<unsigned long>(span / 60u), static_cast<unsigned long>(span % 60u),
+                    static_cast<unsigned long>(channel.trendWindow() / 60000u), tendencyName(channel.tendency()));
+    }
     for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) {
         const auto& alarm = channel.alarmRule(rule);
         const char* state = !channel.alarmActive(rule) ? "ok" : channel.alarmAcknowledged(rule) ? "active, acknowledged" : "ACTIVE";
@@ -88,9 +97,11 @@ void MeasurementConsole::detail(std::size_t index) const {
             log_.writef(LogLevel::info, "  alarm %u: fault %s, delay %lu ms: %s", static_cast<unsigned>(rule),
                         severityName(alarm.severity), static_cast<unsigned long>(alarm.delayMs), state);
         } else {
+            const bool trend = alarm.kind == AlarmKind::trendFall || alarm.kind == AlarmKind::trendRise;
             log_.writef(LogLevel::info, "  alarm %u: %s %s %s%s %s (hyst %s), delay %lu ms%s%s: %s",
                         static_cast<unsigned>(rule), kindName(alarm.kind), formatMilli(a, alarm.threshold), unit,
-                        alarm.kind == AlarmKind::riseRate ? "/min" : "", severityName(alarm.severity),
+                        alarm.kind == AlarmKind::riseRate ? "/min" : trend ? " per window" : "",
+                        severityName(alarm.severity),
                         formatMilli(b, alarm.hysteresis), static_cast<unsigned long>(alarm.delayMs),
                         alarm.latching ? ", latching" : "", channel.thresholdOverridden(rule) ? ", changed" : "", state);
         }
@@ -181,12 +192,22 @@ void MeasurementConsole::sensorCommand(void* context, std::size_t argc, const ch
         const bool erased = self.registry_.resetSettings(index);
         self.log_.writef(LogLevel::info, "%s: defaults%s", self.registry_.at(index).name(),
                          erased ? ", stored settings erased" : "");
+    } else if (std::strcmp(action, "trend") == 0 && argc == 4u) {
+        char* end = nullptr;
+        const auto minutes = std::strtoul(argv[3], &end, 10);
+        if (*end != '\0' || minutes == 0u || minutes > 24u * 60u) {
+            self.log_.write(LogLevel::error, "sensor: trend window 1..1440 min");
+            return;
+        }
+        self.registry_.at(index).setTrendWindow(static_cast<std::uint32_t>(minutes) * 60000u);
+        self.log_.writef(LogLevel::info, "%s: trend window %lu min, restarted (not stored)",
+                         self.registry_.at(index).name(), minutes);
     } else if (std::strcmp(action, "stats") == 0 && argc == 3u) {
         self.registry_.at(index).resetStatistics();
         self.log_.writef(LogLevel::info, "%s: statistics restarted", self.registry_.at(index).name());
     } else {
         self.log_.write(LogLevel::error,
-                        "usage: sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | reset | stats]");
+                        "usage: sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]");
     }
 }
 

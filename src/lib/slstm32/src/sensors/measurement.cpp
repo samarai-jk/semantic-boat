@@ -57,7 +57,19 @@ const char* severityName(Severity severity) {
     return "?";
 }
 
-Measurement::Measurement(const MeasurementConfig& config) : config_(config) {
+const char* tendencyName(Tendency tendency) {
+    switch (tendency) {
+    case Tendency::unknown: return "unknown";
+    case Tendency::steady: return "steady";
+    case Tendency::rising: return "rising";
+    case Tendency::falling: return "falling";
+    case Tendency::risingRapidly: return "rising rapidly";
+    case Tendency::fallingRapidly: return "falling rapidly";
+    }
+    return "?";
+}
+
+Measurement::Measurement(const MeasurementConfig& config) : config_(config), trendWindowMs_(config.trendWindowMs) {
     alarmCount_ = config.alarms ? (config.alarmCount < maxAlarms ? config.alarmCount : maxAlarms) : 0u;
     for (std::size_t index = 0u; index < alarmCount_; ++index) rules_[index] = config.alarms[index];
 }
@@ -75,6 +87,7 @@ void Measurement::setIdentity(const Identity& identity) {
     samples_ = 0u;
     rateCount_ = 0u;
     rateValid_ = false;
+    resetTrend();
 }
 
 void Measurement::update(std::int32_t raw, std::uint32_t now) {
@@ -95,7 +108,57 @@ void Measurement::update(std::int32_t raw, std::uint32_t now) {
     fault_ = Fault::none;
     lastUpdateAt_ = now;
     trackRate(now);
+    trackTrend(now);
     evaluate(now);
+}
+
+void Measurement::setTrendBuffer(TrendPoint* points, std::size_t count) {
+    trendPoints_ = count >= 2u ? points : nullptr;
+    trendCapacity_ = trendPoints_ ? count : 0u;
+    resetTrend();
+}
+
+void Measurement::setTrendWindow(std::uint32_t windowMs) {
+    trendWindowMs_ = windowMs;
+    resetTrend();
+}
+
+void Measurement::resetTrend() {
+    trendHead_ = 0u;
+    trendCount_ = 0u;
+    trendChange_ = 0;
+    trendSpanMs_ = 0u;
+    trendValid_ = false;
+}
+
+void Measurement::trackTrend(std::uint32_t now) {
+    if (!trendPoints_ || trendWindowMs_ == 0u) return;
+    const std::uint32_t interval = trendWindowMs_ / static_cast<std::uint32_t>(trendCapacity_ - 1u);
+    const auto newest = (trendHead_ + trendCapacity_ - 1u) % trendCapacity_;
+    if (trendCount_ == 0u || static_cast<std::uint32_t>(now - trendPoints_[newest].at) >= interval) {
+        trendPoints_[trendHead_] = {now, filtered_};
+        trendHead_ = (trendHead_ + 1u) % trendCapacity_;
+        if (trendCount_ < trendCapacity_) ++trendCount_;
+    }
+    // Forget samples from before a gap (sensor missing for longer than the window).
+    while (trendCount_ > 1u) {
+        const auto oldest = (trendHead_ + trendCapacity_ - trendCount_) % trendCapacity_;
+        if (static_cast<std::uint32_t>(now - trendPoints_[oldest].at) <= trendWindowMs_ + interval) break;
+        --trendCount_;
+    }
+    const auto oldest = (trendHead_ + trendCapacity_ - trendCount_) % trendCapacity_;
+    trendSpanMs_ = static_cast<std::uint32_t>(now - trendPoints_[oldest].at);
+    trendChange_ = filtered_ - trendPoints_[oldest].value;
+    trendValid_ = trendCount_ >= 2u;
+}
+
+Tendency Measurement::tendency() const {
+    if (!trendValid_) return Tendency::unknown;
+    const auto magnitude = trendChange_ < 0 ? -trendChange_ : trendChange_;
+    if (magnitude < config_.trendSteady || magnitude == 0) return Tendency::steady;
+    const bool rapid = config_.trendRapid != 0 && magnitude > config_.trendRapid;
+    if (trendChange_ > 0) return rapid ? Tendency::risingRapidly : Tendency::rising;
+    return rapid ? Tendency::fallingRapidly : Tendency::falling;
 }
 
 void Measurement::fail(Fault fault, std::uint32_t now) {
@@ -150,6 +213,12 @@ bool Measurement::condition(const AlarmRule& rule, bool active) const {
                (active ? ratePerMinute_ > rule.threshold - rule.hysteresis : ratePerMinute_ > rule.threshold);
     case AlarmKind::sensorFault:
         return status_ == Status::fault || status_ == Status::stale;
+    case AlarmKind::trendFall:
+        return trendValid_ &&
+               (active ? -trendChange_ > rule.threshold - rule.hysteresis : -trendChange_ > rule.threshold);
+    case AlarmKind::trendRise:
+        return trendValid_ &&
+               (active ? trendChange_ > rule.threshold - rule.hysteresis : trendChange_ > rule.threshold);
     }
     return false;
 }
@@ -214,6 +283,7 @@ void Measurement::setCalibration(const Calibration& calibration) {
         filtered_ = value_;
         rateCount_ = 0u;
         rateValid_ = false;
+        resetTrend();
     }
 }
 

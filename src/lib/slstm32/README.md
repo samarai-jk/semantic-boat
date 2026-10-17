@@ -263,6 +263,7 @@ storage is normally simplest in embedded firmware.
 | `AnalogSensor` | Converts an `AnalogInputHardware` reading (usually mV) through an `AnalogConversion` (linear, or `sensors::rtdBridgeConversion` for amplified PT100/PT1000) into a channel, with a fault range and an optional input voltage channel. |
 | `Veml7700Driver` | Vishay VEML7700 ambient light (I2C 0x10): automatic ranging from darkness to 120 klx, non-linearity correction, illuminance channel. |
 | `DfrobotUvIndexDriver` | DFRobot SEN0636 UV index module (I2C 0x23): product ID check, UV index, risk level, and raw value from the module's registers into a UV index channel. |
+| `Bmp585Driver` | Bosch BMP585/BMP581 barometer (I2C 0x47/0x46): forced measurements with x16 pressure oversampling, or read-only on modules that manage the chip themselves (DFRobot Gravity). Pressure channel in 0.1 Pa. |
 | `As3935Driver` | ams/ScioSense AS3935 lightning sensor (I2C 1..3): lightning distance/energy, disturber and noise events to a listener, adaptive noise floor, optional IRQ input with automatic antenna tuning. |
 | `Tmp75Driver` | TMP75/TMP175/TMP275 (LM75-style) temperature sensor on an `I2cBus` in 12-bit continuous mode, sampled periodically. A missing sensor is reported through `valid()` and reconfigured when it answers again; it never fails `init()`. |
 

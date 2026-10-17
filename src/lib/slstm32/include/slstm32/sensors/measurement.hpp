@@ -16,8 +16,8 @@
 namespace slstm32::sensors {
 
 // Values are integers in thousandths of the unit: m°C, 0.001 %RH, mV, mlx,
-// thousandths of the UV index.
-enum class Quantity : std::uint8_t { temperature, relativeHumidity, voltage, illuminance, uvIndex };
+// thousandths of the UV index, 0.001 hPa (= 0.1 Pa).
+enum class Quantity : std::uint8_t { temperature, relativeHumidity, voltage, illuminance, uvIndex, pressure };
 
 const char* quantityName(Quantity quantity);
 const char* unitName(Quantity quantity);

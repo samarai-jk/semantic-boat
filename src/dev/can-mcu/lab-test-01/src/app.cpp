@@ -20,6 +20,7 @@
 #include "n2k/name.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
+#include "n2k/pressure.hpp"
 #include "n2k/temperature.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "semantic_modules/ad_input_iso_12v_calibration.hpp"
@@ -29,7 +30,7 @@
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
-#include "slstm32/drivers/dfrobot_uv_index.hpp"
+#include "slstm32/drivers/bmp585.hpp"
 #include "slstm32/drivers/dht20.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/led.hpp"
@@ -123,7 +124,7 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity, n2k::pgn::actualPressure,
                                            n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
@@ -149,7 +150,8 @@ lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActi
 
 // Measurement channels: the board and MCU probes, a DFRobot DHT20 on the
 // I2C connectors as reference ("air"), and a DFRobot VEML7700 ambient light
-// sensor ("light"), and a DFRobot SEN0636 UV index sensor ("uv"). No alarm rules while sensors are being
+// sensor ("light"), and a Bosch BMP585 barometer ("baro", die temperature
+// "baro-t"). No alarm rules while sensors are being
 // brought up; the annunciator stays silent without them. PA4 is prepared as a
 // 1-Wire bus for the next sensor ("onewire" command).
 constexpr sensors::MeasurementConfig boardChannelConfig{
@@ -167,14 +169,19 @@ sensors::Measurement airHumidityChannel{airHumidityChannelConfig};
 constexpr sensors::MeasurementConfig lightChannelConfig{
     "light", sensors::Quantity::illuminance, 0u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement lightChannel{lightChannelConfig};
-constexpr sensors::MeasurementConfig uvChannelConfig{"uv", sensors::Quantity::uvIndex, 0u, 10000u, 0u, nullptr, 0u};
-sensors::Measurement uvChannel{uvChannelConfig};
+constexpr sensors::MeasurementConfig baroChannelConfig{
+    "baro", sensors::Quantity::pressure, 0u, 10000u, 0u, nullptr, 0u};
+constexpr sensors::MeasurementConfig baroTemperatureChannelConfig{
+    "baro-t", sensors::Quantity::temperature, 8u, 10000u, 0u, nullptr, 0u};
+sensors::Measurement baroChannel{baroChannelConfig};
+sensors::Measurement baroTemperatureChannel{baroTemperatureChannelConfig};
 sensors::Measurement* const channels[]{&boardChannel,       &mcuChannel,   &airChannel,
-                                       &airHumidityChannel, &lightChannel, &uvChannel};
+                                       &airHumidityChannel, &lightChannel, &baroChannel,
+                                       &baroTemperatureChannel};
 
 slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumidityChannel};
 slstm32::drivers::Veml7700Driver veml7700{runtime, i2c, logger, &lightChannel};
-slstm32::drivers::DfrobotUvIndexDriver uvIndex{runtime, i2c, logger, &uvChannel};
+slstm32::drivers::Bmp585Driver bmp585{runtime, i2c, logger, &baroChannel, &baroTemperatureChannel};
 can_mcu::OneWirePin oneWirePin0{can_mcu::GpioPort::a, 4u};
 slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
 const lab_test_01::OneWirePort oneWirePorts[]{{"PA4", &oneWire0}};
@@ -191,6 +198,7 @@ const n2k::MeasurementPublication publications[]{
     {&mcuChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
     {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
+    {&baroChannel, static_cast<std::uint8_t>(n2k::PressureSource::atmospheric)},
 };
 n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
                                                sizeof publications / sizeof publications[0]};
@@ -232,7 +240,7 @@ struct Mcu;
 struct BoardTemperature;
 struct Dht20;
 struct Veml7700;
-struct UvIndex;
+struct Bmp585;
 struct MeasurementLog;
 struct Can;
 struct CanActivityLed;
@@ -263,7 +271,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Dht20>(dht20),
         slstm32::bind<component::Veml7700>(veml7700),
-        slstm32::bind<component::UvIndex>(uvIndex),
+        slstm32::bind<component::Bmp585>(bmp585),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::InputModule>(inputModule)),

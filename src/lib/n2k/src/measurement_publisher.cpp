@@ -1,6 +1,7 @@
 #include "n2k/measurement_publisher.hpp"
 #include "n2k/humidity.hpp"
 #include "n2k/pgn.hpp"
+#include "n2k/pressure.hpp"
 #include "n2k/temperature.hpp"
 
 namespace n2k {
@@ -59,6 +60,12 @@ bool MeasurementPublisher::send(const MeasurementPublication& publication) {
         encodeHumidity(data, sequenceId_, instance, static_cast<HumiditySource>(publication.source),
                        available ? channel->value() : humidityNotAvailable);
         pgn = pgn::humidity;
+        break;
+    case Quantity::pressure:
+        // Channel values are 0.001 hPa = 0.1 Pa, the PGN's resolution.
+        encodeActualPressure(data, sequenceId_, instance, static_cast<PressureSource>(publication.source),
+                             available ? channel->value() : pressureNotAvailable);
+        pgn = pgn::actualPressure;
         break;
     default:
         return true;

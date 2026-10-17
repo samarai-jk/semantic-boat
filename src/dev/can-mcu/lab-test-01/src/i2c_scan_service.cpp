@@ -26,6 +26,8 @@ constexpr KnownAddress knownAddresses[]{
     {0x40u, "SHT20 / HTU21D / HDC1080 / INA219"},
     {0x44u, "SHT3x / SHT4x temp/humidity"},
     {0x45u, "SHT3x temp/humidity"},
+    {0x46u, "BMP585/BMP581 pressure (SDO low)"},
+    {0x47u, "BMP585/BMP581 pressure"},
     {0x48u, "ADS1115 ADC / TMP102 / LM75"},
     {0x49u, "ADS1115 ADC (ADDR to VDD) / TMP102"},
     {0x4Fu, "can-mcu TMP75 (board temperature)"},

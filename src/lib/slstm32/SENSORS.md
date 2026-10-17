@@ -16,7 +16,8 @@ channels, alarms, and settings storage are described in the
 | PT100 amplifier (DFRobot SEN0198) | `AnalogSensor` + `sensors::rtdBridgeConversion` | ADC | Verified, not calibrated |
 | VEML7700 (DFRobot SEN0228) | `Veml7700Driver` | I2C 0x10 | Verified at indoor light |
 | AS3935 (DFRobot SEN0290) | `As3935Driver` | I2C 0x03 + IRQ | Verified incl. IRQ and antenna tuning; no real lightning seen |
-| UV index (DFRobot SEN0636) | `DfrobotUvIndexDriver` | I2C 0x23 | Communication verified; UV only seen as 0 indoors |
+| UV index (DFRobot SEN0636) | `DfrobotUvIndexDriver` | I2C 0x23 | Communication verified; UV only seen as 0 indoors; not suited behind ordinary windows |
+| BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
 
 ## Common behaviour
 
@@ -129,6 +130,36 @@ channels, alarms, and settings storage are described in the
   gives a usable index with decimals.
 - Quantity `uvIndex` (thousandths of the index); no standard NMEA 2000 PGN,
   so it goes into the project's own messages.
+
+- Behind ordinary acrylic, polycarbonate, or glass the index reads far too
+  low (UVB is blocked). A window needs fused quartz (JGS1/JGS2), UV
+  transmitting acrylic, or a PTFE diffuser; the sensor also needs a cosine
+  diffuser for a low sun. Not used for now; a UV index can instead be
+  inferred in Signal K: clear-sky UVI from the sun elevation
+  (`12.5 * cos(zenith)^2.42 * (ozone / 300 DU)^-1.23`, Madronich) times a
+  cloud factor from a pyranometer (measured / clear-sky irradiance, about
+  ^0.6 for UV), or a UV forecast (e.g. Open-Meteo `uv_index`) scaled by that
+  cloud factor. Expect +-1..2 UVI.
+
+## BMP585 barometer (SEN0664, I2C 0x47)
+
+- The Gravity module (I2C/UART, DIP switches for mode and address) has a
+  controller in front of the BMP585 for its UART/Modbus mode. In I2C mode the
+  chip registers read normally (chip ID 0x51, rev 0x32, data at 0x1D..0x22),
+  but every write is ignored, including the soft reset: the module keeps the
+  chip in normal mode at 1 Hz with oversampling x1 (OSR_CONFIG 0x40,
+  ODR_CONFIG 0x71, INT_CONFIG 0x35). DFRobot's library writes the same way
+  and never checks whether a setting took effect.
+- The status register never shows "NVM ready" (Bosch's API waits for it),
+  although the chip measures correctly; the driver only rejects an NVM error.
+- `Bmp585Driver` reads its configuration back and switches to read-only
+  ("managed") mode: it reads the latest result every period. With a bare
+  BMP585/BMP581 (Fermion module or own board) it uses forced mode with
+  pressure x16 / temperature x2 and polls the data-ready flag.
+- Bench: 1009.84 hPa, 28.2 C die temperature (the die runs about 1 C above
+  the room). Published as PGN 130314 (Actual Pressure, atmospheric).
+- Open: a pressure tendency (hPa per 3 h) for weather; the channel's rate is
+  per minute only.
 
 ## AS3935 lightning sensor (SEN0290, I2C 0x03, IRQ)
 

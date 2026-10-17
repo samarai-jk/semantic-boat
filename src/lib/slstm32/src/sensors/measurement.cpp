@@ -9,6 +9,7 @@ const char* quantityName(Quantity quantity) {
     case Quantity::voltage: return "voltage";
     case Quantity::illuminance: return "illuminance";
     case Quantity::uvIndex: return "UV index";
+    case Quantity::pressure: return "pressure";
     }
     return "?";
 }
@@ -20,6 +21,7 @@ const char* unitName(Quantity quantity) {
     case Quantity::voltage: return "V";
     case Quantity::illuminance: return "lx";
     case Quantity::uvIndex: return "UVI";
+    case Quantity::pressure: return "hPa";
     }
     return "";
 }

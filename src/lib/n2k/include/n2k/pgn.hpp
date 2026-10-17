@@ -18,6 +18,7 @@ inline constexpr std::uint32_t batteryStatus = 127508u;
 
 // Environment
 inline constexpr std::uint32_t humidity = 130313u;
+inline constexpr std::uint32_t actualPressure = 130314u;
 inline constexpr std::uint32_t temperatureExtendedRange = 130316u;
 
 } // namespace n2k::pgn

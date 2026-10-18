@@ -41,6 +41,10 @@ struct NodeConfig {
 using MessageHandler = void (*)(void* context, const CanId& id, const std::uint8_t* data,
                                 std::uint8_t length);
 using AddressHandler = void (*)(void* context, std::uint8_t address);
+// ISO request for a PGN the stack does not answer itself. Returns true if the
+// application answers it; otherwise a request addressed to this node is
+// NACKed. requester is the source address of the request.
+using RequestHandler = bool (*)(void* context, std::uint32_t pgn, std::uint8_t requester);
 
 // Minimal NMEA 2000 node on a CanBusDriver.
 //
@@ -51,7 +55,8 @@ using AddressHandler = void (*)(void* context, std::uint8_t address);
 //   so it can be persisted.
 // - ISO requests (PGN 59904) for the address claim, product information
 //   (126996), the PGN list (126464), and the heartbeat are answered; other
-//   requests addressed to the node get an ISO acknowledgement NACK (59392).
+//   requests go to the request handler, and those addressed to the node that
+//   it does not answer get an ISO acknowledgement NACK (59392).
 // - Heartbeat (126993) at the configured interval with the CAN controller
 //   state.
 // - Fast-packet transmission from a single 223-byte buffer, paced by the free
@@ -84,6 +89,10 @@ public:
     void onAddressChange(AddressHandler handler, void* context) {
         addressHandler_ = handler;
         addressContext_ = context;
+    }
+    void onRequest(RequestHandler handler, void* context) {
+        requestHandler_ = handler;
+        requestContext_ = context;
     }
 
     bool init() override;
@@ -141,6 +150,8 @@ private:
     void* messageContext_{};
     AddressHandler addressHandler_{};
     void* addressContext_{};
+    RequestHandler requestHandler_{};
+    void* requestContext_{};
 
     State state_{State::idle};
     std::uint8_t address_{nullAddress};

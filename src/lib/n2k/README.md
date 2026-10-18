@@ -19,7 +19,8 @@ RAM, of which 223 bytes are the fast-packet transmit buffer.
 | `n2k/bytes.hpp` | Little-endian field and fixed-length string helpers |
 | `n2k/pgn.hpp` | PGN constants |
 | `n2k/node.hpp` | The node: address claim, requests, heartbeat, product information, PGN list, fast-packet transmission |
-| `n2k/temperature.hpp` | PGN 130316 encoder |
+| `n2k/temperature.hpp`, `humidity.hpp`, `pressure.hpp`, `engine.hpp`, `electrical.hpp`, `navigation.hpp` | Encoders of standard PGNs |
+| `n2k/measurement_publisher.hpp` | `standardPgn()` and `encodeStandardMeasurement()` for slstm32 measurement channels, and a plain NMEA 2000 publisher (B1S devices use `b1s::MeasurementPublisher`) |
 
 ## Node behavior
 
@@ -32,8 +33,10 @@ RAM, of which 223 bytes are the fast-packet transmit buffer.
   that the application can persist it and start there next time.
 - **ISO request (59904).** Requests for the address claim, product information
   (126996), PGN list (126464), and heartbeat (126993) are answered. Any other
-  request addressed to the node gets a NACK (ISO acknowledgement 59392);
-  unsupported global requests are ignored.
+  request goes to the request handler (`Node::onRequest`), for example B1S
+  Channel Descriptions; one it does not answer gets a NACK (ISO
+  acknowledgement 59392) if it was addressed to the node, global ones are
+  ignored.
 - **Heartbeat (126993)** at the configured interval (default 60 s), with the
   CAN controller state. The interval field uses 0.01 s units.
 - **Product information (126996)** from `NodeConfig::product`. Strings are

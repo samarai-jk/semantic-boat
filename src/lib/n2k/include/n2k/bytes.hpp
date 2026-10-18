@@ -17,6 +17,12 @@ inline void put24(std::uint8_t* out, std::uint32_t value) {
     out[2] = static_cast<std::uint8_t>(value >> 16u);
 }
 
+inline void put32(std::uint8_t* out, std::uint32_t value) {
+    for (std::size_t index = 0u; index < 4u; ++index) {
+        out[index] = static_cast<std::uint8_t>(value >> (8u * index));
+    }
+}
+
 inline void put64(std::uint8_t* out, std::uint64_t value) {
     for (std::size_t index = 0u; index < 8u; ++index) {
         out[index] = static_cast<std::uint8_t>(value >> (8u * index));

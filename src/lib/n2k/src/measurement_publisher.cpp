@@ -38,45 +38,57 @@ void MeasurementPublisher::run() {
 }
 
 bool MeasurementPublisher::send(const MeasurementPublication& publication) {
-    using slstm32::sensors::Quantity;
-    using slstm32::sensors::Status;
     const auto* channel = publication.channel;
-    if (!channel || channel->status() == Status::unknown) return true;
-    const bool available = channel->valid();
-    const auto instance = channel->config().instance;
+    if (!channel || channel->status() == slstm32::sensors::Status::unknown) return true;
     std::uint8_t data[8];
-    std::uint32_t pgn = 0u;
-    switch (channel->quantity()) {
+    const auto pgn = encodeStandardMeasurement(*channel, publication.source, sequenceId_, data);
+    if (pgn == 0u) return true;
+    return node_.sendSingle(environmentPriority, pgn, broadcastAddress, data, sizeof data);
+}
+
+std::uint32_t standardPgn(slstm32::sensors::Quantity quantity) {
+    using slstm32::sensors::Quantity;
+    switch (quantity) {
+    case Quantity::temperature: return pgn::temperatureExtendedRange;
+    case Quantity::relativeHumidity: return pgn::humidity;
+    case Quantity::pressure: return pgn::actualPressure;
+    case Quantity::rotationalSpeed: return pgn::engineRapidUpdate;
+    default: return 0u;
+    }
+}
+
+std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t source,
+                                        std::uint8_t sequenceId, std::uint8_t (&out)[8]) {
+    using slstm32::sensors::Quantity;
+    const bool available = channel.valid();
+    const auto instance = channel.config().instance;
+    switch (channel.quantity()) {
     case Quantity::temperature: {
-        const auto source = static_cast<TemperatureSource>(publication.source);
+        const auto temperatureSource = static_cast<TemperatureSource>(source);
         if (available) {
-            encodeTemperatureExtendedRange(data, sequenceId_, instance, source, channel->value());
+            encodeTemperatureExtendedRange(out, sequenceId, instance, temperatureSource, channel.value());
         } else {
-            encodeTemperatureNotAvailable(data, sequenceId_, instance, source);
+            encodeTemperatureNotAvailable(out, sequenceId, instance, temperatureSource);
         }
-        pgn = pgn::temperatureExtendedRange;
         break;
     }
     case Quantity::relativeHumidity:
-        encodeHumidity(data, sequenceId_, instance, static_cast<HumiditySource>(publication.source),
-                       available ? channel->value() : humidityNotAvailable);
-        pgn = pgn::humidity;
+        encodeHumidity(out, sequenceId, instance, static_cast<HumiditySource>(source),
+                       available ? channel.value() : humidityNotAvailable);
         break;
     case Quantity::pressure:
         // Channel values are 0.001 hPa = 0.1 Pa, the PGN's resolution.
-        encodeActualPressure(data, sequenceId_, instance, static_cast<PressureSource>(publication.source),
-                             available ? channel->value() : pressureNotAvailable);
-        pgn = pgn::actualPressure;
+        encodeActualPressure(out, sequenceId, instance, static_cast<PressureSource>(source),
+                             available ? channel.value() : pressureNotAvailable);
         break;
     case Quantity::rotationalSpeed:
         // The channel instance is the engine instance (0 = single or port engine).
-        encodeEngineRapidUpdate(data, instance, available ? channel->value() : engineSpeedNotAvailable);
-        pgn = pgn::engineRapidUpdate;
+        encodeEngineRapidUpdate(out, instance, available ? channel.value() : engineSpeedNotAvailable);
         break;
     default:
-        return true;
+        return 0u;
     }
-    return node_.sendSingle(environmentPriority, pgn, broadcastAddress, data, sizeof data);
+    return standardPgn(channel.quantity());
 }
 
 } // namespace n2k

@@ -140,6 +140,7 @@ void Node::handleRequest(const CanId& id, const std::uint8_t* data, std::uint8_t
         pending_ |= pendingHeartbeat;
         break;
     default:
+        if (requestHandler_ && requestHandler_(requestContext_, requested, id.source)) break;
         // Only a request addressed to this node expects an answer.
         if (id.destination == address_ && id.source <= maximumAddress) {
             nackDestination_ = id.source;

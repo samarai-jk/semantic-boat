@@ -43,8 +43,11 @@ plugins have their own.
     configurations, if its transport can install.
   - A **B1S device** shows product and software, its channels (live value,
     label, location, encoding, Signal K path; Save, Calibrate, Reset), all
-    parameters, Identify, Read parameters, Restore, Restart, and a console
-    with the device's live log.
+    parameters, Identify, Read parameters, Restore, Restart, and the **Log**:
+    the device streams its log (debug lines included) only when switched on
+    there, for 5, 15, or 60 minutes, at most 512 B/s, and stops by itself
+    when the time is up; Stop ends it at once. Level filter, console line
+    (its output streams for 30 s).
 - **Display designer**: the configuration catalog on the left, the editor on
   the right. Saving never installs; install from the display's details or
   with **Apps** on the display.
@@ -171,8 +174,8 @@ brings its devices into Signal K and configures them over CAN
   hardware; its channels with live value, label, location, encoding, and
   Signal K path (edit and Save; Calibrate against a reference in °C or %;
   Reset calibration and thresholds); all parameters (thresholds and
-  calibration in °C / K / %); Identify, Restart, Restore; and a console that
-  runs commands on the device and shows its live log.
+  calibration in °C / K / %); Identify, Restart, Restore; and the device log
+  (see Page).
 - **Backups.** Every complete parameter read and every change is stored as
   `b1s-backups/<device ID>.json` in the plugin data directory. Restore writes
   a backup onto a device: its own, or another device's (a replacement; then
@@ -185,7 +188,9 @@ API (admin login): `GET /b1s/devices`, `GET /b1s/devices/:id/parameters`
 `{channel, value}` (raw, text, or enum name) or `{channel, si}`,
 `POST /b1s/devices/:id/commands/:name` with `{channel, argument | si}`,
 `POST /b1s/devices/:id/console` with `{line}`,
-`GET /b1s/devices/:id/console?since=<position>`, `GET /b1s/backups[/:id]`,
+`POST /b1s/devices/:id/log` with `{minutes}` (1..60; 0 stops),
+`GET /b1s/devices/:id/console?since=<position>` (log text, next position,
+seconds the stream still runs), `GET /b1s/backups[/:id]`,
 `POST /b1s/devices/:id/restore` with `{from, calibration}`.
 
 ### B1S setup

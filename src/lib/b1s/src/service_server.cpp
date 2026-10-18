@@ -15,9 +15,15 @@ constexpr std::uint8_t typeText = 1u;
 constexpr std::uint8_t servicePriority = 6u;
 constexpr std::uint8_t commandPriority = 3u;
 constexpr std::size_t maxListed = 32u;
-constexpr std::size_t consoleChunk = 200u;
+constexpr std::size_t streamChunk = 200u;
 constexpr std::uint32_t consoleSessionMs = 30000u;
-constexpr std::uint32_t consoleIntervalMs = 50u;
+constexpr std::uint32_t maxStreamMinutes = 60u;
+constexpr std::uint32_t streamIntervalMs = 50u;
+// 512 bytes per second: about 75 frames per second of a bus that carries
+// about 1,700 (README, bus load). Bursts up to one chunk.
+constexpr std::uint32_t streamBytesPerInterval = 512u * streamIntervalMs / 1000u;
+constexpr std::uint32_t streamBurstBytes = streamChunk;
+constexpr char droppedMarker[] = "[log stream: lines dropped]\r\n";
 
 constexpr Parameter deviceTextParameters[]{Parameter::deviceRole};
 constexpr Parameter channelParameters[]{Parameter::channelLocation, Parameter::channelLabel,
@@ -95,12 +101,30 @@ void ServiceServer::handleService(const n2k::CanId& id, const std::uint8_t* data
         for (std::size_t index = 4u; index < length && count < slstm32::CommandConsole::lineCapacity; ++index) {
             if (data[index] >= 0x20u && data[index] < 0x7Fu) line[count++] = static_cast<char>(data[index]);
         }
-        if (!config_.log->mirroring() || consoleRequester_ != id.source) config_.log->startMirror();
-        consoleRequester_ = id.source;
-        consoleSequence_ = data[3];
-        consoleActiveAt_ = runtime_.millis();
-        // An empty line keeps the session (and the log mirror) alive.
+        // A console line shows its output: the stream runs for at least 30 s
+        // more (an empty line only keeps it alive).
+        startStream(id.source, data[3], consoleSessionMs);
         if (count != 0u) config_.console->execute(line);
+        return;
+    }
+    case b1s::Service::logStream: {
+        if (!config_.log) return;
+        // Minutes: 1..60 start or extend, 0 stop, 255 only ask.
+        const auto minutes = length > 4u ? data[4] : 0xFFu;
+        if (minutes == 0u) {
+            if (streamRequester_ == id.source) stopStream();
+        } else if (minutes != 0xFFu) {
+            startStream(id.source, data[3], (minutes < maxStreamMinutes ? minutes : maxStreamMinutes) * 60000u);
+        }
+        // The reply: status, remaining seconds (uint16; 0 = off).
+        std::uint8_t reply[7]{};
+        putHeader(reply);
+        reply[2] = static_cast<std::uint8_t>(data[2] | replyBit);
+        reply[3] = data[3];
+        reply[4] = static_cast<std::uint8_t>(ParameterStatus::done);
+        const auto remaining = streamRequester_ == id.source ? streamRemainingMs(runtime_.millis()) / 1000u : 0u;
+        n2k::bytes::put16(reply + 5, static_cast<std::uint16_t>(remaining));
+        node_.sendFast(servicePriority, pgn::service, id.source, reply, sizeof reply);
         return;
     }
     default:
@@ -413,23 +437,59 @@ ParameterStatus ServiceServer::write(Parameter parameter, std::uint8_t channel, 
     }
 }
 
-void ServiceServer::streamConsole(std::uint32_t now) {
-    if (consoleRequester_ == n2k::nullAddress || !config_.log) return;
-    if (reached(now, consoleActiveAt_ + consoleSessionMs)) {
-        config_.log->stopMirror();
-        consoleRequester_ = n2k::nullAddress;
+void ServiceServer::startStream(std::uint8_t requester, std::uint8_t sequence, std::uint32_t durationMs) {
+    const auto now = runtime_.millis();
+    if (streamRequester_ != requester || !config_.log->mirroring()) {
+        config_.log->startMirror(); // from now on; earlier output is not sent
+        streamLost_ = config_.log->mirrorLost();
+        streamBudget_ = streamBurstBytes;
+        streamUntil_ = now;
+    }
+    streamRequester_ = requester;
+    streamSequence_ = sequence;
+    // Extend, never shorten: a console line does not cut a longer stream.
+    if (streamRemainingMs(now) < durationMs) streamUntil_ = now + durationMs;
+}
+
+void ServiceServer::stopStream() {
+    config_.log->stopMirror();
+    streamRequester_ = n2k::nullAddress;
+}
+
+std::uint32_t ServiceServer::streamRemainingMs(std::uint32_t now) const {
+    if (streamRequester_ == n2k::nullAddress || reached(now, streamUntil_)) return 0u;
+    return streamUntil_ - now;
+}
+
+void ServiceServer::streamLog(std::uint32_t now) {
+    if (streamRequester_ == n2k::nullAddress || !config_.log) return;
+    if (reached(now, streamUntil_)) {
+        stopStream(); // the time is up: the device stops by itself
         return;
     }
-    if (!reached(now, consoleSentAt_ + consoleIntervalMs) || node_.fastPacketBusy() || !node_.claimed()) return;
-    std::uint8_t reply[5u + consoleChunk];
-    const auto count = config_.log->readMirror(reply + 5, consoleChunk);
+    if (!reached(now, streamSentAt_ + streamIntervalMs) || node_.fastPacketBusy() || !node_.claimed()) return;
+    // Token bucket: the budget refills at 512 B/s up to one chunk and goes
+    // negative when a drop marker overdraws it, so the average holds.
+    streamBudget_ += static_cast<std::int32_t>(streamBytesPerInterval * ((now - streamSentAt_) / streamIntervalMs));
+    if (streamBudget_ > static_cast<std::int32_t>(streamBurstBytes)) streamBudget_ = streamBurstBytes;
+    streamSentAt_ = now;
+    if (streamBudget_ <= 0) return;
+    std::uint8_t reply[5u + streamChunk];
+    std::size_t count = 0u;
+    if (config_.log->mirrorLost() != streamLost_) {
+        streamLost_ = config_.log->mirrorLost();
+        for (; droppedMarker[count] != '\0'; ++count) reply[5u + count] = static_cast<std::uint8_t>(droppedMarker[count]);
+    }
+    const auto budget = static_cast<std::size_t>(streamBudget_);
+    const auto room = count < budget ? (budget - count < streamChunk - count ? budget - count : streamChunk - count) : 0u;
+    count += config_.log->readMirror(reply + 5u + count, room);
     if (count == 0u) return;
+    streamBudget_ -= static_cast<std::int32_t>(count);
     putHeader(reply);
     reply[2] = static_cast<std::uint8_t>(static_cast<std::uint8_t>(b1s::Service::console) | replyBit);
-    reply[3] = consoleSequence_;
+    reply[3] = streamSequence_;
     reply[4] = static_cast<std::uint8_t>(ParameterStatus::done);
-    node_.sendFast(servicePriority, pgn::service, consoleRequester_, reply, 5u + count);
-    consoleSentAt_ = now;
+    node_.sendFast(servicePriority, pgn::service, streamRequester_, reply, 5u + count);
 }
 
 void ServiceServer::run() {
@@ -441,7 +501,7 @@ void ServiceServer::run() {
         sendReply();
         return;
     }
-    streamConsole(runtime_.millis());
+    streamLog(runtime_.millis());
 }
 
 } // namespace b1s

@@ -56,9 +56,13 @@ struct ServiceServerConfig {
 // ones it consumed. One request at a time: a request that arrives while a
 // reply is still waiting replaces it (the requester retries).
 //
-// Console: a console request runs the line on the device console and mirrors
-// the device log to the requester for 30 s after the last console request,
-// in fast packets of up to 200 characters at most every 50 ms.
+// Log stream (CONFIGURATION.md): the device log goes to one requester as
+// console replies of up to 200 characters, at most 512 bytes per second. A
+// logStream request starts or extends it for up to 60 minutes (0 stops it);
+// a console request runs its line and keeps the stream for at least 30 s.
+// The device stops the stream itself when the time is up, so a forgotten or
+// crashed client never floods the bus; lines it cannot send in time are
+// dropped and marked.
 class ServiceServer final : public slstm32::Service {
 public:
     ServiceServer(slstm32::Runtime runtime, n2k::Node& node, const ServiceServerConfig& config)
@@ -94,7 +98,10 @@ private:
     const DeviceParameter* deviceParameter(Parameter parameter) const;
     std::size_t measurementIndex(const ChannelConfig& channel) const;
     bool sendReply();
-    void streamConsole(std::uint32_t now);
+    void startStream(std::uint8_t requester, std::uint8_t sequence, std::uint32_t durationMs);
+    void stopStream();
+    std::uint32_t streamRemainingMs(std::uint32_t now) const;
+    void streamLog(std::uint32_t now);
 
     slstm32::Runtime runtime_;
     n2k::Node& node_;
@@ -103,11 +110,13 @@ private:
     // Command reply that did not fit into the transmit queue yet.
     std::uint8_t commandReply_[8]{};
     std::uint8_t commandReplyTo_{n2k::nullAddress};
-    // Console session.
-    std::uint8_t consoleRequester_{n2k::nullAddress};
-    std::uint8_t consoleSequence_{};
-    std::uint32_t consoleActiveAt_{};
-    std::uint32_t consoleSentAt_{};
+    // Log stream (console session).
+    std::uint8_t streamRequester_{n2k::nullAddress};
+    std::uint8_t streamSequence_{};
+    std::uint32_t streamUntil_{};
+    std::uint32_t streamSentAt_{};
+    std::int32_t streamBudget_{};    // bytes that may be sent now (negative: overdrawn)
+    std::uint32_t streamLost_{};     // log mirror losses already reported
 };
 
 } // namespace b1s

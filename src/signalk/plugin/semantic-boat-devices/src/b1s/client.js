@@ -156,8 +156,17 @@ class B1sClient {
     return { status: 'done', value: decodeValue(bytes).value };
   }
 
-  // Runs a console line (empty: keep the session alive). The device log
-  // follows through onConsole; there is no reply to wait for.
+  // Starts (1..60 minutes), stops (0), or asks about (255) the device's log
+  // stream; returns the remaining seconds (0 = off). The device stops the
+  // stream by itself when the time is up and limits it to 512 B/s.
+  async logStream(address, minutes) {
+    const { status, bytes } = await this.service(address, 'logStream', [minutes]);
+    if (status !== 0) throw new Error(`log stream: ${parameterStatus[status] ?? status}`);
+    return bytes[0] | bytes[1] << 8;
+  }
+
+  // Runs a console line; the device streams its log for at least 30 s more,
+  // so the output arrives through onConsole. There is no reply to wait for.
   console(address, line) {
     this.sequence = (this.sequence + 1) & 0xff;
     const text = [...line].map(character => character.charCodeAt(0) & 0x7f).slice(0, 80);

@@ -121,6 +121,7 @@ enum class Service : std::uint8_t {
     firmwareBegin = 5u,
     firmwareData = 6u,
     firmwareEnd = 7u,
+    logStream = 8u,
 };
 
 // Boards of firmware images (FIRMWARE.md).

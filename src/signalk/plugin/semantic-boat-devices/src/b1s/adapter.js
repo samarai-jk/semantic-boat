@@ -36,7 +36,8 @@ class B1sAdapter {
     this.directory = path.join(directory, 'b1s-backups');
     this.onDelta = onDelta;
     this.onError = onError;
-    this.consoles = new Map(); // device ID -> { text, start }
+    this.consoles = new Map(); // device ID -> { text, start }: the device log as streamed
+    this.streams = new Map();  // device ID -> time the device stops its log stream
     this.timers = [];
   }
 
@@ -68,6 +69,12 @@ class B1sAdapter {
   }
 
   stop() {
+    // Devices stop their streams by themselves; stopping them now saves the bus the rest.
+    for (const [id, until] of this.streams) {
+      const device = this.state?.deviceById(id);
+      if (device && until > Date.now()) this.client.logStream(device.address, 0).catch(() => {});
+    }
+    this.streams.clear();
     if (this.listener) this.app.removeListener(this.options.analyzerEvent, this.listener);
     this.timers.forEach(clearTimeout);
     this.listener = null;
@@ -198,18 +205,33 @@ class B1sAdapter {
     this.consoles.set(device.id, log);
   }
 
-  // Runs a console line on the device (empty: keep its log coming).
+  // Runs a console line on the device; its output arrives with the log,
+  // which the device streams for at least 30 s after a console line.
   sendConsole(id, line = '') {
     const device = this.device(id);
     this.client.console(device.address, String(line));
+    const until = Date.now() + 30000;
+    if ((this.streams.get(device.id) ?? 0) < until) this.streams.set(device.id, until);
     return { sent: line };
   }
 
-  // Console output since position `since`; next is the position to ask for next.
+  // Starts (1..60 minutes) or stops (0) the device's log stream.
+  async setLogStream(id, minutes) {
+    const device = this.device(id);
+    const wanted = Math.max(0, Math.min(60, Math.round(Number(minutes) || 0)));
+    const remaining = await this.client.logStream(device.address, wanted);
+    this.streams.set(device.id, Date.now() + remaining * 1000);
+    return { remaining };
+  }
+
+  // Log text since position `since`; next is the position to ask for next;
+  // remaining: seconds until the device stops its stream (as last known).
   consoleOutput(id, since = 0) {
-    const log = this.consoles.get(this.device(id).id) ?? { text: '', start: 0 };
+    const device = this.device(id);
+    const log = this.consoles.get(device.id) ?? { text: '', start: 0 };
     const from = Math.max(Number(since) || 0, log.start);
-    return { text: log.text.slice(from - log.start), next: log.start + log.text.length };
+    const remaining = Math.max(0, Math.round(((this.streams.get(device.id) ?? 0) - Date.now()) / 1000));
+    return { text: log.text.slice(from - log.start), next: log.start + log.text.length, remaining };
   }
 
   backupPath(id) {

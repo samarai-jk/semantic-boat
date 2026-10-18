@@ -12,6 +12,8 @@ bench address (153). Values are raw B1S values (SI unit x quantity scale);
     python b1s_tool.py console 38 "sensor air"
     python b1s_tool.py console 38 --follow 20             # live device log for 20 s
     python b1s_tool.py firmware 38 lab-test-01.bin         # update over CAN (FIRMWARE.md)
+    python b1s_tool.py log 38 5                            # stream the device log for 5 minutes
+    python b1s_tool.py log 38 0                            # stop it
 """
 
 import argparse
@@ -229,6 +231,12 @@ class Client:
         print(f"update complete in {time.monotonic() - started:.1f} s; the application runs ({uptime} s) "
               "and has confirmed the image")
 
+    def log_stream(self, address, minutes):
+        """Starts (minutes 1..60), stops (0), or asks (255) for the log
+        stream; returns the remaining seconds."""
+        reply = self.service(address, "logStream", bytes([minutes]))
+        return struct.unpack_from("<H", reply, 1)[0] if reply[0] == 0 else None
+
     def channels(self, address):
         """Channel numbers and quantities from the device's Channel Descriptions."""
         self.send_single(6, 59904, address, PGN["channelDescription"].to_bytes(3, "little"))
@@ -306,6 +314,11 @@ def main():
     console.add_argument("address", type=int)
     console.add_argument("line", nargs="?", default="")
     console.add_argument("--follow", type=float, default=2.0, metavar="SECONDS", help="how long to show the log")
+    log = sub.add_parser("log", help="stream the device log (rate limited, stops by itself)")
+    log.add_argument("address", type=int)
+    log.add_argument("minutes", type=int, help="1..60 start or extend, 0 stop, 255 only ask")
+    log.add_argument("--follow", type=float, default=None, metavar="SECONDS",
+                     help="how long to show the log (default: while it streams)")
     firmware = sub.add_parser("firmware", help="update the firmware over CAN")
     firmware.add_argument("address", type=int, help="the device's address (application or bootloader)")
     firmware.add_argument("image", type=argparse.FileType("rb"), help="stamped image (.bin)")
@@ -356,6 +369,18 @@ def main():
         elif args.action == "command":
             argument = args.argument if args.argument != -1 else -1
             print(client.command(args.address, args.command, args.channel, argument))
+        elif args.action == "log":
+            remaining = client.log_stream(args.address, args.minutes)
+            print(f"[log stream: {remaining} s remaining]", flush=True)
+            follow = args.follow if args.follow is not None else (remaining or 0)
+
+            def accept(pgn, source, destination, data):
+                if (pgn == PGN["service"] and source == args.address and destination == BENCH_ADDRESS and
+                        data[:2] == HEADER and data[2] == SERVICES["console"] | REPLY):
+                    sys.stdout.write(data[5:].rstrip(b"\xff\x00").decode("ascii", "replace").replace("\r", ""))
+                    sys.stdout.flush()
+                return None
+            client.receive(time.monotonic() + follow, accept)
         elif args.action == "firmware":
             client.update(args.address, args.image.read())
         elif args.action == "console":

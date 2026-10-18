@@ -3,7 +3,7 @@
 // Devices view: every device of every transport in one list (left), the
 // selected device in detail (right). Displays (any transport) show their
 // live bindings and install configurations from the designer's catalog; B1S
-// devices show channels, parameters, calibration, console, and backups
+// devices show channels, parameters, calibration, their log, and backups
 // (src/lib/b1s/CONFIGURATION.md). Uses api(), notice() and text() of app.js.
 (() => {
   const list = document.getElementById('device-list');
@@ -15,7 +15,7 @@
   let catalogNames = [];
   let selected = decodeURIComponent(window.location.hash.slice(1)) || null; // "transport/id"
   let rendered = { key: null, version: 0 };
-  const b1sCards = new Map(); // device ID -> { parameters, version, console }
+  const b1sCards = new Map(); // device ID -> { parameters, version, log state }
 
   const keyOf = device => `${device.transport}/${device.id}`;
 
@@ -144,7 +144,10 @@
   // --- B1S devices ------------------------------------------------------------
 
   function b1sCard(id) {
-    if (!b1sCards.has(id)) b1sCards.set(id, { parameters: null, version: 0, consoleOpen: false, consoleSince: 0, consoleText: '' });
+    if (!b1sCards.has(id)) {
+      b1sCards.set(id, { parameters: null, version: 0, logOpen: false, logSince: 0, logText: '', logRemaining: 0,
+        levels: new Set(Object.keys(levels)) });
+    }
     return b1sCards.get(id);
   }
 
@@ -229,25 +232,62 @@
     });
   }
 
-  function consolePanel(device, card) {
+  // Log panel: the device streams its log only when asked, for a fixed time,
+  // rate limited, and stops by itself (src/lib/b1s/CONFIGURATION.md).
+  const levels = { D: 'debug', I: 'info', W: 'warning', E: 'error' };
+
+  function filteredLog(card) {
+    return card.logText.split('\n').filter(line => {
+      const level = /^\[\s*[\d.]+\] ([DIWE]) /.exec(line)?.[1];
+      return !level || card.levels.has(level);
+    }).join('\n');
+  }
+
+  function showLog(card) {
+    if (!card.logOutput) return;
+    const atBottom = card.logOutput.scrollTop + card.logOutput.clientHeight >= card.logOutput.scrollHeight - 4;
+    card.logOutput.textContent = filteredLog(card);
+    if (atBottom) card.logOutput.scrollTop = card.logOutput.scrollHeight;
+    const remaining = card.logRemaining ?? 0;
+    card.logState.textContent = remaining > 0
+      ? `streaming, ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')} left (at most 512 B/s; the device stops by itself)`
+      : 'off';
+    card.logState.className = remaining > 0 ? 'log-state streaming' : 'log-state';
+  }
+
+  function logPanel(device, card) {
     const panel = document.createElement('details');
-    panel.className = 'console';
-    panel.open = card.consoleOpen;
-    panel.append(text('summary', 'Console'));
-    const output = text('pre', card.consoleText);
-    const input = Object.assign(document.createElement('input'), { placeholder: 'help, sensors, health, supply … (Enter)' });
+    panel.className = 'log';
+    panel.open = card.logOpen;
+    panel.append(text('summary', 'Log'));
+    const controls = text('div', '', 'log-controls');
+    card.logState = text('span', '', 'log-state');
+    const stream = minutes => button(minutes ? `${minutes} min` : 'Stop', async () => {
+      const result = await api(`b1s/devices/${device.id}/log`, 'POST', { minutes });
+      card.logRemaining = result.remaining;
+      showLog(card);
+    }, minutes ? `Stream the device log for ${minutes} minutes` : 'Stop the log stream now');
+    controls.append(text('span', 'Stream:', 'log-label'), stream(5), stream(15), stream(60), stream(0), card.logState);
+    const filter = text('div', '', 'log-filter');
+    for (const [letter, name] of Object.entries(levels)) {
+      const label = text('label', '');
+      const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: card.levels.has(letter) });
+      box.onchange = () => { if (box.checked) card.levels.add(letter); else card.levels.delete(letter); showLog(card); };
+      label.append(box, ` ${name}`);
+      filter.append(label);
+    }
+    filter.append(button('Clear', async () => { card.logText = ''; showLog(card); }, 'Clear the shown log'));
+    card.logOutput = text('pre', '');
+    const input = Object.assign(document.createElement('input'), { placeholder: 'Console: help, sensors, health, supply … (Enter; streams its output for 30 s)' });
     input.setAttribute('aria-label', 'Console command');
     input.onkeydown = event => {
-      if (event.key !== 'Enter') return;
+      if (event.key !== 'Enter' || !input.value.trim()) return;
       void api(`b1s/devices/${device.id}/console`, 'POST', { line: input.value }).catch(error => notice(error.message, true));
       input.value = '';
     };
-    panel.ontoggle = () => {
-      card.consoleOpen = panel.open;
-      if (panel.open) void api(`b1s/devices/${device.id}/console`, 'POST', { line: '' }).catch(() => {});
-    };
-    card.consoleOutput = output;
-    panel.append(output, input);
+    panel.ontoggle = () => { card.logOpen = panel.open; };
+    panel.append(controls, filter, card.logOutput, input);
+    showLog(card);
     return panel;
   }
 
@@ -286,7 +326,7 @@
     const parameters = document.createElement('details');
     parameters.append(text('summary', card.parameters ? 'Parameters' : 'Parameters (reading …)'));
     if (card.parameters) parameters.append(table(['Parameter', 'Channel', 'Value', ''], parameterRows(device, card)));
-    detail.replaceChildren(header, meta, text('h3', 'Channels'), channels, parameters, consolePanel(device, card));
+    detail.replaceChildren(header, meta, text('h3', 'Channels'), channels, parameters, logPanel(device, card));
   }
 
   function updateB1s(device) {
@@ -297,21 +337,15 @@
     });
   }
 
-  async function pollConsole(device) {
+  // The log keeps coming in while the panel is closed; it is polled for the
+  // selected device.
+  async function pollLog(device) {
     const card = b1sCard(device.id);
-    if (!card.consoleOpen) return;
-    const output = await api(`b1s/devices/${device.id}/console?since=${card.consoleSince}`);
-    card.consoleSince = output.next;
-    if (output.text) {
-      card.consoleText = (card.consoleText + output.text).slice(-20000);
-      card.consoleOutput.textContent = card.consoleText;
-      card.consoleOutput.scrollTop = card.consoleOutput.scrollHeight;
-    }
-    // Keep the device's log mirror alive while the console is open.
-    if (!card.keepAliveAt || Date.now() - card.keepAliveAt > 20000) {
-      card.keepAliveAt = Date.now();
-      await api(`b1s/devices/${device.id}/console`, 'POST', { line: '' });
-    }
+    const output = await api(`b1s/devices/${device.id}/console?since=${card.logSince}`);
+    card.logSince = output.next;
+    card.logRemaining = output.remaining;
+    if (output.text) card.logText = (card.logText + output.text).slice(-60000);
+    showLog(card);
   }
 
   // --- detail -----------------------------------------------------------------
@@ -347,7 +381,7 @@
       if (!selected && devices.length) selected = keyOf(devices[0]);
       render();
       const device = devices.find(entry => keyOf(entry) === selected);
-      if (device?.kind === 'b1s') await pollConsole(device);
+      if (device?.kind === 'b1s') await pollLog(device);
     } catch (error) {
       document.getElementById('connection').textContent = 'Unavailable';
       notice(error.message, true);

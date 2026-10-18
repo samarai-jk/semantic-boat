@@ -119,6 +119,7 @@ services:
   - {code: 5, id: firmwareBegin,  description: "Bootloader: start an update with the image header (FIRMWARE.md)"}
   - {code: 6, id: firmwareData,   description: "Bootloader: a chunk of the image at an offset"}
   - {code: 7, id: firmwareEnd,    description: "Bootloader: check the image and start it"}
+  - {code: 8, id: logStream,      description: "Stream the device log to the requester for some minutes (rate limited; stops by itself)"}
 
 # Parameters for configuration over CAN (CONFIGURATION.md). scope: device or
 # channel. type: wire value int32 for uint8/uint16/uint32/int32/bool/enum,

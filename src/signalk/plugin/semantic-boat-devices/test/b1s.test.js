@@ -171,3 +171,13 @@ test('command replies carry their result as a number; console text loses padding
   assert.ok(b1sClient.handle({ pgn: 126720, src: 38, fields: { manufacturerCode: 2046, payload: text } }));
   assert.deepStrictEqual(consoles, [[38, '> help\r\n']]);
 });
+
+test('a log stream request carries the minutes and returns the remaining seconds', async () => {
+  const { b1sClient, sent } = client();
+  const request = b1sClient.logStream(38, 5);
+  await new Promise(resolve => setImmediate(resolve));
+  const [, , service, sequence, minutes] = sent[0].bytes;
+  assert.deepStrictEqual([service, minutes], [8, 5]);
+  b1sClient.handle({ pgn: 126720, src: 38, fields: { manufacturerCode: 2046, payload: hex([0x88, sequence, 0, 0x2c, 0x01, 0xff]) } });
+  assert.strictEqual(await request, 300);
+});

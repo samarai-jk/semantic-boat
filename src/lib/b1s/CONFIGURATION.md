@@ -122,6 +122,7 @@ number, status (4), fields (5..).
 | 2 | `parameterRead` | id (uint16), channel (uint8, 0xFF for device parameters) | id, channel, type, value |
 | 3 | `parameterWrite` | id, channel, type, value | as read: the value as stored |
 | 4 | `console` | command line (ASCII, rest of the message; empty = keep alive) | log text (rest of the message), several replies |
+| 8 | `logStream` | minutes (uint8): 1..60 start or extend, 0 stop, 255 only ask | remaining seconds (uint16; 0 = off) |
 
 Values: type 0 = int32 (4 bytes), type 1 = text (NMEA 2000 STRING_LAU,
 ASCII, at most 32 characters). Status: 0 done, 1 unknown parameter,
@@ -135,16 +136,32 @@ tries). Writes are stored at once: a reply means the value is in EEPROM.
 Location, label, encoding, and instance changes re-send the channel's
 Channel Description, so Signal K paths follow at once.
 
-**Console:** a console request runs its line on the device console (as if
-typed on the serial port) and mirrors the device log to the requester from
-then on, for 30 s after the last console request, as replies of up to 200
-characters, at most every 50 ms. The mirror reads the serial log's ring
-buffer with its own position (no extra buffer); if it falls behind, it
-skips ahead. Output of all commands, `help` included, and every other log
-line during the session arrive this way.
+**Log stream and console:** a device sends its log (every level, debug
+included) to one requester only when asked, as `console` replies of up to
+200 characters:
+
+- `logStream` starts the stream for 1..60 minutes or extends it; 0 stops it.
+  A `console` request runs its line on the device console (as if typed on
+  the serial port) and keeps the stream for at least 30 s, so the command's
+  output arrives; it never shortens a longer stream.
+- **The device stops the stream by itself** when the time is up, so a
+  forgotten page or a crashed Pi never leaves it running; a restart ends it
+  too. The client stops it when it shuts down.
+- **Rate limit:** at most 512 bytes per second (a token bucket with
+  one-chunk bursts; about 75 of the bus's ~1,700 frames per second). When
+  the log grows faster, lines are dropped and the stream carries
+  `[log stream: lines dropped]` instead; the bus never gets more.
+- The stream reads the serial log's ring buffer with its own position (no
+  extra buffer), from the moment the stream starts.
+
+Measured on LT1 (2026-10-18): stop and automatic stop leave no further
+frames; flooding the log with 20 `help` commands gave 500 bytes per second
+after one initial chunk, with drop markers.
 
 ## Pi side
 
+- **Log** of a device on its page (Semantic Boat Devices): stream for 5, 15,
+  or 60 minutes, Stop, the time left, a level filter, and a console line.
 - **API** of the Semantic Boat Devices plugin: see its
   [README](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices).
 - **Backups:** every complete parameter read and every change stores the

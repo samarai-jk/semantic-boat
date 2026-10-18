@@ -36,8 +36,32 @@ Quantity quantityOf(SlQuantity quantity) {
 }
 
 std::int32_t toRaw(SlQuantity quantity, std::int32_t value) {
+    return quantity == SlQuantity::temperature ? value + 273150 : toRawDelta(quantity, value); // m°C -> mK
+}
+
+std::int32_t fromRaw(SlQuantity quantity, std::int32_t raw) {
+    return quantity == SlQuantity::temperature ? raw - 273150 : fromRawDelta(quantity, raw);
+}
+
+std::int32_t fromRawDelta(SlQuantity quantity, std::int32_t raw) {
     switch (quantity) {
-    case SlQuantity::temperature: return value + 273150;                 // m°C -> mK
+    case SlQuantity::relativeHumidity: return raw / 10;
+    case SlQuantity::angle: return static_cast<std::int32_t>(static_cast<std::int64_t>(raw) * 10000 / 174533);
+    case SlQuantity::rotationalSpeed: return raw * 60;
+    case SlQuantity::temperature:
+    case SlQuantity::voltage:
+    case SlQuantity::illuminance:
+    case SlQuantity::uvIndex:
+    case SlQuantity::pressure:
+    case SlQuantity::concentration:
+        return raw;
+    }
+    return raw;
+}
+
+std::int32_t toRawDelta(SlQuantity quantity, std::int32_t value) {
+    switch (quantity) {
+    case SlQuantity::temperature: return value;                          // m°C = mK difference
     case SlQuantity::relativeHumidity: return value * 10;                // 0.001 %RH -> 1e-6
     case SlQuantity::angle:                                              // 0.001° -> 1e-6 rad
         return static_cast<std::int32_t>(static_cast<std::int64_t>(value) * 174533 / 10000);

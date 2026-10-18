@@ -118,41 +118,29 @@ void MeasurementConsole::reportSaved(std::size_t index, bool saved) const {
 }
 
 void MeasurementConsole::calibrate(std::size_t index, std::int32_t reference, bool secondPoint) {
+    using Result = MeasurementRegistry::CalibrationResult;
     auto& channel = registry_.at(index);
-    if (!channel.valid()) {
+    const auto result = registry_.calibrate(index, reference, secondPoint);
+    switch (result) {
+    case Result::noReading:
         log_.writef(LogLevel::error, "%s: no valid reading to calibrate", channel.name());
         return;
+    case Result::noFirstPoint:
+        log_.writef(LogLevel::error, "%s: cal2 needs a first point (cal) at least 1 unit away", channel.name());
+        return;
+    case Result::implausibleGain:
+        log_.writef(LogLevel::error, "%s: implausible gain, not applied", channel.name());
+        return;
+    case Result::stored:
+    case Result::notStored:
+        break;
     }
     char a[20];
     char b[20];
-    const auto raw = channel.raw();
-    Calibration calibration = channel.calibration();
-    if (secondPoint) {
-        const auto rawSpan = static_cast<std::int64_t>(raw) - pointRaw_;
-        if (pointChannel_ != index || std::llabs(rawSpan) < 1000) {
-            log_.writef(LogLevel::error, "%s: cal2 needs a first point (cal) at least 1 unit away", channel.name());
-            return;
-        }
-        const auto gain = (static_cast<std::int64_t>(reference) - pointReference_) * 1000000 / rawSpan;
-        if (gain < 500000 || gain > 2000000) {
-            log_.writef(LogLevel::error, "%s: gain %ld ppm implausible, not applied", channel.name(),
-                        static_cast<long>(gain));
-            return;
-        }
-        calibration.gainPpm = static_cast<std::int32_t>(gain);
-        calibration.offset = static_cast<std::int32_t>(pointReference_ - static_cast<std::int64_t>(pointRaw_) * gain / 1000000);
-        pointChannel_ = ~std::size_t{};
-    } else {
-        calibration.offset = static_cast<std::int32_t>(reference - static_cast<std::int64_t>(raw) * calibration.gainPpm / 1000000);
-        pointChannel_ = index;
-        pointRaw_ = raw;
-        pointReference_ = reference;
-    }
-    const bool saved = registry_.setCalibration(index, calibration);
     log_.writef(LogLevel::info, "%s: offset %s, gain %ld ppm, now %s %s", channel.name(),
-                formatMilli(a, calibration.offset, 3u), static_cast<long>(calibration.gainPpm),
+                formatMilli(a, channel.calibration().offset, 3u), static_cast<long>(channel.calibration().gainPpm),
                 formatMilli(b, channel.value(), 3u), unitName(channel.quantity()));
-    reportSaved(index, saved);
+    reportSaved(index, result == Result::stored);
 }
 
 void MeasurementConsole::sensorsCommand(void* context, std::size_t, const char* const*) {

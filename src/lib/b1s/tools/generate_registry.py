@@ -34,9 +34,9 @@ def check_codes(section, entries, key="code"):
         sys.exit(f"registry: {section} must be in ascending {key} order")
 
 
-def enum(lines, name, comment, entries):
+def enum(lines, name, comment, entries, base="std::uint8_t"):
     lines.append(f"// {comment}")
-    lines.append(f"enum class {name} : std::uint8_t {{")
+    lines.append(f"enum class {name} : {base} {{")
     for entry in entries:
         lines.append(f"    {entry['id']} = {entry['code']}u,")
     lines.append("};")
@@ -44,7 +44,7 @@ def enum(lines, name, comment, entries):
 
 
 def generate(registry):
-    for section in ("quantities", "events", "output_kinds", "commands", "services"):
+    for section in ("quantities", "events", "output_kinds", "commands", "services", "parameters"):
         check_codes(section, registry[section])
     check_codes("products", registry["products"], "product_code")
     manufacturer = registry["manufacturer_code"]
@@ -100,6 +100,15 @@ def generate(registry):
     enum(lines, "OutputKind", "Output kinds of Output Status and Channel Description.", registry["output_kinds"])
     enum(lines, "Command", "Commands of the Command message; bit 7 marks a reply.", registry["commands"])
     enum(lines, "Service", "Service codes of the Service message.", registry["services"])
+    enum(lines, "Parameter", "Parameters for configuration over CAN (scope, type, unit: registry).",
+         registry["parameters"], "std::uint16_t")
+    lines.append("// True for parameters of a channel (addressed with a channel number).")
+    lines.append("constexpr bool isChannelParameter(Parameter parameter) {")
+    lines.append("    switch (parameter) {")
+    for entry in registry["parameters"]:
+        if entry["scope"] == "channel":
+            lines.append(f"    case Parameter::{entry['id']}:")
+    lines += ["        return true;", "    default:", "        return false;", "    }", "}", ""]
 
     lines += [
         "// Category of a standard NMEA 2000 PGN (registry: standard_pgns).",

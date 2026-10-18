@@ -14,15 +14,17 @@ quantity, location), so it can become part of an information graph.
 **Status:** draft 0.1 (2026-10-18). Implemented: NMEA 2000 network
 management (`src/lib/n2k`), the standard PGNs listed in
 [Standard PGNs](#standard-pgns) with the per-channel encoding switch
-(compile-time), Measurement (65280), and Channel Description (130819),
-verified on LT1 with can-bench, and the Signal K plugin
+(compile-time, or over CAN), Measurement (65280), Channel Description
+(130819), configuration over CAN (Service 126720, Command 61184,
+[CONFIGURATION.md](CONFIGURATION.md)), verified on LT1 with can-bench, and the
+Signal K plugin
 ([`src/signalk/plugin/b1s`](../../signalk/plugin/b1s/README.md)). Everything
 marked *planned* is specified here but not implemented yet.
 
 | File | Content |
 | --- | --- |
 | `README.md` (this file) | The rules and message layouts |
-| [`CONFIGURATION.md`](CONFIGURATION.md) | Configuration, calibration, and diagnosis over CAN (design draft) |
+| [`CONFIGURATION.md`](CONFIGURATION.md) | Configuration, calibration, and diagnosis over CAN |
 | [`registry.yaml`](registry.yaml) | **Every number B1S assigns**: PGNs, quantities, events, output kinds, commands, products, standard PGN categories |
 | `include/b1s/registry.hpp` | Generated from the registry by `tools/generate_registry.py`; never edited by hand |
 | `include/b1s/messages.hpp` | Encoders: proprietary header, Measurement, Channel Description |
@@ -221,8 +223,8 @@ header and ignore proprietary messages of other manufacturers.
 | 130818 | fast packet, broadcast | [Event](#event-130818) | planned |
 | 130819 | fast packet, broadcast | [Channel Description](#channel-description-130819) | implemented |
 | 130820..131071 | fast packet, broadcast | Reserved for B1S | |
-| 61184 | single frame, addressed | [Command](#command-61184) (multiplexed by command code) | planned |
-| 126720 | fast packet, addressed | [Service](#service-126720) (multiplexed by service code) | planned |
+| 61184 | single frame, addressed | [Command](#command-61184) (multiplexed by command code) | implemented |
+| 126720 | fast packet, addressed | [Service](#service-126720) (multiplexed by service code) | implemented |
 
 NMEA 2000 has only one addressed single-frame and one addressed fast-packet
 proprietary PGN, so the addressed messages carry a code byte after the
@@ -367,8 +369,8 @@ Every command is answered with a reply to the sender: command code with bit
 Addressed fast-packet messages for configuration, calibration, and data
 transfer: byte 2 is the service code (registry, `services`), the rest is
 defined by the service. Configuration, calibration, and diagnosis over CAN
-are designed in [CONFIGURATION.md](CONFIGURATION.md) (draft); firmware
-updates will add their own services.
+are specified in [CONFIGURATION.md](CONFIGURATION.md); firmware updates will
+add their own services.
 
 ## Alerts
 

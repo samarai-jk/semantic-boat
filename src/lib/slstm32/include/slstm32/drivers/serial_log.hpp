@@ -38,6 +38,16 @@ public:
     std::size_t pending() const;
     std::uint32_t droppedLines() const { return dropped_; }
 
+    // A second reader of the same output, for example a remote console over
+    // CAN: from startMirror() on, readMirror() returns the log text written
+    // since. The mirror never holds the serial output back: if it falls
+    // behind by more than the buffer, it skips ahead and counts the loss.
+    void startMirror();
+    void stopMirror() { mirroring_ = false; }
+    bool mirroring() const { return mirroring_; }
+    std::size_t readMirror(std::uint8_t* output, std::size_t capacity);
+    std::uint32_t mirrorLost() const { return mirrorLost_; }
+
 private:
     static void sink(LogLevel level, const char* message, void* context);
     void push(const char* data, std::size_t size);
@@ -50,6 +60,9 @@ private:
     volatile std::size_t head_{};
     volatile std::size_t tail_{};
     volatile std::uint32_t dropped_{};
+    volatile std::size_t mirrorTail_{};
+    volatile bool mirroring_{};
+    volatile std::uint32_t mirrorLost_{};
 };
 
 } // namespace slstm32::drivers

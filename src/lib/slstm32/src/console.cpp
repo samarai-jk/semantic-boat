@@ -25,7 +25,8 @@ void CommandConsole::run() {
                 if (overflow_) {
                     log_.write(LogLevel::warning, "console: line too long, ignored");
                 } else if (length_ != 0u) {
-                    execute();
+                    line_[length_] = '\0';
+                    dispatch(line_.data());
                 }
                 length_ = 0u;
                 overflow_ = false;
@@ -38,12 +39,22 @@ void CommandConsole::run() {
     }
 }
 
-void CommandConsole::execute() {
-    line_[length_] = '\0';
-    log_.writef(LogLevel::info, "> %s", line_.data());
+void CommandConsole::execute(const char* line) {
+    // Own buffer: the serial input may be in the middle of a line.
+    std::array<char, lineCapacity + 1u> copy{};
+    std::size_t length = 0u;
+    while (line && line[length] != '\0' && length < lineCapacity) {
+        copy[length] = line[length];
+        ++length;
+    }
+    if (length != 0u) dispatch(copy.data());
+}
+
+void CommandConsole::dispatch(char* line) {
+    log_.writef(LogLevel::info, "> %s", line);
     std::array<const char*, maxArguments> argv{};
     std::size_t argc = 0u;
-    char* cursor = line_.data();
+    char* cursor = line;
     while (*cursor != '\0' && argc < maxArguments) {
         while (*cursor == ' ') *cursor++ = '\0';
         if (*cursor == '\0') break;

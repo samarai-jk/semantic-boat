@@ -36,10 +36,6 @@ private:
 
     MeasurementRegistry& registry_;
     Logger log_;
-    // First point of a two-point calibration.
-    std::size_t pointChannel_{~std::size_t{}};
-    std::int32_t pointRaw_{};
-    std::int32_t pointReference_{};
 };
 
 } // namespace slstm32::sensors

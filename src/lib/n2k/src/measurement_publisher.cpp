@@ -41,7 +41,7 @@ bool MeasurementPublisher::send(const MeasurementPublication& publication) {
     const auto* channel = publication.channel;
     if (!channel || channel->status() == slstm32::sensors::Status::unknown) return true;
     std::uint8_t data[8];
-    const auto pgn = encodeStandardMeasurement(*channel, publication.source, sequenceId_, data);
+    const auto pgn = encodeStandardMeasurement(*channel, channel->config().instance, publication.source, sequenceId_, data);
     if (pgn == 0u) return true;
     return node_.sendSingle(environmentPriority, pgn, broadcastAddress, data, sizeof data);
 }
@@ -57,11 +57,10 @@ std::uint32_t standardPgn(slstm32::sensors::Quantity quantity) {
     }
 }
 
-std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t source,
-                                        std::uint8_t sequenceId, std::uint8_t (&out)[8]) {
+std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t instance,
+                                        std::uint8_t source, std::uint8_t sequenceId, std::uint8_t (&out)[8]) {
     using slstm32::sensors::Quantity;
     const bool available = channel.valid();
-    const auto instance = channel.config().instance;
     switch (channel.quantity()) {
     case Quantity::temperature: {
         const auto temperatureSource = static_cast<TemperatureSource>(source);

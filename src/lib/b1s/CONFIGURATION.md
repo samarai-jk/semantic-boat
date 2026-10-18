@@ -1,7 +1,14 @@
 # B1S configuration over CAN (design draft)
 
-**Status:** draft for review, 2026-10-18. Part of [B1S](README.md); nothing
-here is implemented yet except fast-packet reception in `src/lib/n2k`.
+**Status:** 2026-10-18. Part of [B1S](README.md). Implemented: the device
+side (`b1s::ServiceServer`, `b1s::ChannelSettings`, on LT1) and the
+command-line client [`src/tools/can-bench/b1s_tool.py`](../../tools/can-bench/b1s_tool.py).
+Planned: the Signal K side (backups, replacement, the devices page).
+
+Decisions (2026-10-18): the console is reachable over CAN in all builds
+(development commands stay out of product builds anyway); no write
+protection for now (anyone on B1S may configure); the B1S protocol and the
+user interface live in one Signal K plugin, Semantic Boat Devices.
 
 Goal: configure, calibrate, and diagnose B1S devices from the Raspberry Pi,
 so that a device in the field never needs the ST-Link. The same mechanism
@@ -28,13 +35,10 @@ replacement device.
   parameter reads and writes and runs actions. What a device offers is a
   table in its composition root, built from generic pieces (channel
   configuration, measurement calibration and thresholds, device role).
-- **B1S plugin** (`src/signalk/plugin/b1s`): speaks the protocol, keeps a
-  backup of every device's parameters, and offers an HTTP API.
-- **Semantic Boat Devices plugin**: the user interface. Its page gets a
-  B1S view next to the display devices: devices, channels with live values,
-  editable parameters, calibration actions, backup and restore, and (if
-  decided) a console. It calls the B1S plugin's API; protocol code stays in
-  one place.
+- **Semantic Boat Devices plugin** (decided: one plugin): it takes over the
+  B1S plugin as its CAN adapter and gets a B1S view next to the display
+  devices: devices, channels with live values, editable parameters,
+  calibration actions, backup and restore, and a console.
 
 ## Parameters
 
@@ -54,22 +58,26 @@ tool reads everything else from the registry.
 | access | `rw` (stored, part of backups), `ro` (state, diagnostics) |
 | restart | the new value takes effect after a restart |
 
-First set (ids are proposals):
+The parameters are in the registry; the first set:
 
 | Id | Name | Scope | Type | Access | Content |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `deviceRole` | device | string | rw | Device role, e.g. `fridgeSensor`; also installation description 1 (126998) |
-| 2 | `deviceInstance` | device | uint8 | rw, restart | NAME device instance |
-| 3 | `preferredAddress` | device | uint8 | rw | Start address of the claim |
-| 16 | `channelLocation` | channel | string | rw | Signal K path fragment; empty = unassigned |
+| 1 | `deviceRole` | device | string | rw | Device role, e.g. `fridgeSensor` |
+| 3 | `preferredAddress` | device | uint8 | rw | Start address of the claim (device-provided) |
+| 16 | `channelLocation` | channel | string | rw | Signal K path fragment (letters, digits, dots); empty = unassigned |
 | 17 | `channelLabel` | channel | string | rw | Label for people |
 | 18 | `channelEncoding` | channel | enum `automatic`, `standard`, `b1s`, `off` | rw | Encoding switch |
-| 19 | `channelStandardInstance` | channel | uint8 | rw | Instance of the standard PGN |
-| 32 | `calibrationOffset` | channel | int32, quantity | rw | value = raw x gain + offset |
-| 33 | `calibrationGain` | channel | int32, ppm | rw | |
-| 40..43 | `alarmThreshold0..3` | channel | int32, quantity | rw | Threshold of alarm rule n (rate rules: quantity per minute) |
-| 64 | `uptime` | device | int32, s | ro | |
-| 65 | `restarts` | device | ... | ro | Health record counters, supply minimum, ... |
+| 19 | `channelStandardInstance` | channel | uint8 | rw | Instance of the standard PGN; 255 = firmware default |
+| 32 | `calibrationOffset` | channel | int32, quantityDelta | rw | value = raw x gain + offset |
+| 33 | `calibrationGain` | channel | int32, ppm | rw | 500000..2000000 |
+| 40..43 | `alarmThreshold0..3` | channel | int32 | rw | Threshold of alarm rule n: absolute for high/low, a difference (per minute for rise rate) otherwise; sensor-fault rules have none |
+| 44..47 | `alarmRule0..3` | channel | uint32 | ro | Kind, severity, latching, active, acknowledged of rule n |
+| 64 | `uptime` | device | uint32, s | ro | |
+
+`quantityDelta` values have the quantity's scale but no zero offset: a
+calibration offset of 504 is 0.504 K, not -272.6 °C. A channel parameter
+the channel does not have (a fourth alarm rule) reads as "unknown
+parameter".
 
 Values on the wire use B1S units (SI x quantity scale); the device converts
 to its internal units (inverse of `b1s::toRaw`).
@@ -87,35 +95,51 @@ to its internal units (inverse of `b1s::toRaw`).
 
 One-shot operations, as Command messages (61184, registry `commands`):
 
-| Command | Argument | Effect |
-| --- | --- | --- |
-| `identify` | seconds | Blink and beep (exists) |
-| `calibrate` | channel, reference (int32, quantity) | Offset calibration against a reference, like `sensor <name> cal` |
-| `calibrateSecondPoint` | channel, reference | Gain and offset from two points (`cal2`) |
-| `resetChannel` | channel | Calibration and thresholds back to defaults |
-| `acknowledgeAlarms` | — | Like any button or `ack` |
-| `restart` | — | Software restart |
-| `factoryReset` | — | All stored configuration back to defaults (asks for confirmation in the tool) |
+| Command | Channel | Argument | Effect |
+| --- | --- | --- | --- |
+| `identify` | 0xFF | seconds (bytes 4..5) | Fast green blink and a beep; 0 stops |
+| `calibrate` | channel | reference (int32, quantity) | Offset calibration against a reference at the current reading, like `sensor <name> cal` |
+| `calibrateSecondPoint` | channel | reference | Gain and offset from both points (`cal2`) |
+| `resetChannel` | channel | — | Calibration and thresholds back to defaults |
+| `acknowledgeAlarms` | 0xFF | — | Like any button or `ack` |
+| `restart` | 0xFF | — | Software restart after the reply |
+
+Results: 0 done, 1 unknown command, 2 unknown channel, 3 invalid argument
+(implausible gain), 4 refused (no valid reading, no first point), 5 busy.
 
 ## Service message (126720)
 
-Addressed fast packet: proprietary header, service code, sequence number
-(pairs a reply with its request), then the service's fields. Requests and
-replies share the service code; bit 7 marks a reply.
+Addressed fast packet. Request: proprietary header (bytes 0..1), service
+code (2), sequence number (3, pairs the reply with its request), fields
+(4..). Reply: header, service code with bit 7 set, the request's sequence
+number, status (4), fields (5..).
 
-| Code | Service | Request | Reply |
+| Code | Service | Request fields | Reply fields |
 | --- | --- | --- | --- |
-| 1 | `parameterList` | first index | up to 30 parameter ids the device has, with scope, plus "more" |
-| 2 | `parameterRead` | id, channel | status, type, value |
-| 3 | `parameterWrite` | id, channel, type, value | status, value as stored |
-| 4 | `console` | command line | *(if decided)* the lines the command logged, in several replies |
+| 1 | `parameterList` | first index (uint8) | first index, count, more (0/1), count x parameter id (uint16); at most 32 per reply |
+| 2 | `parameterRead` | id (uint16), channel (uint8, 0xFF for device parameters) | id, channel, type, value |
+| 3 | `parameterWrite` | id, channel, type, value | as read: the value as stored |
+| 4 | `console` | command line (ASCII, rest of the message; empty = keep alive) | log text (rest of the message), several replies |
 
-Status codes: 0 done, 1 unknown parameter, 2 unknown channel, 3 invalid
-value, 4 read-only, 5 busy, 6 not permitted.
+Values: type 0 = int32 (4 bytes), type 1 = text (NMEA 2000 STRING_LAU,
+ASCII, at most 32 characters). Status: 0 done, 1 unknown parameter,
+2 unknown channel, 3 invalid value, 4 read-only, 5 busy, 6 not permitted.
+A reply without status 0 ends after the channel byte (read/write) or the
+status (others).
 
-A device answers one request at a time; the tool waits for each reply
-(timeout 1 s, three tries). Writes are stored at once; a reply means the
-value is in EEPROM.
+A device handles one request at a time; a new request replaces one whose
+reply has not been sent. The client waits for each reply (1 s, three
+tries). Writes are stored at once: a reply means the value is in EEPROM.
+Location, label, encoding, and instance changes re-send the channel's
+Channel Description, so Signal K paths follow at once.
+
+**Console:** a console request runs its line on the device console (as if
+typed on the serial port) and mirrors the device log to the requester from
+then on, for 30 s after the last console request, as replies of up to 200
+characters, at most every 50 ms. The mirror reads the serial log's ring
+buffer with its own position (no extra buffer); if it falls behind, it
+skips ahead. Output of all commands, `help` included, and every other log
+line during the session arrive this way.
 
 ## Pi side
 
@@ -137,33 +161,39 @@ value is in EEPROM.
 
 ## Memory
 
-Estimate for LT1 (product build): parameter service and actions 2..3 KiB of
-flash, about 100 bytes of RAM besides the 96-byte receive buffer (already
-in place); the console tunnel about 0.5 KiB more. The parameter table is
-`const` (flash).
+Measured on LT1 (product build, 4 channels, 8 settings slots): service
+server, channel settings, and console mirror +5.2 KiB of flash, +136 bytes
+of RAM; fast-packet reception before that +464 bytes of flash and +144
+bytes of RAM (96 of them the receive buffer). Release builds are
+effectively -O3 (LT1 README, known issues); -Os should shrink this. EEPROM:
+`ChannelSettings::requiredBytes(slots)`, 128 bytes for the role and 384
+bytes per channel slot.
 
-## Decisions needed
+## Firmware
 
-1. **Console over CAN.** Tunnel the existing text console (all its commands
-   and their answers) through the service message. Cheap and powerful for
-   diagnosis, and the devices page gets a terminal. AGENTS.md treats every
-   exposure of the console as a product decision; development commands
-   (`trap`, `i2c write`) stay excluded from product builds anyway.
-2. **Write protection.** Anyone who can send on B1S can configure devices.
-   Proposal for now: none (B1S is wired inside the boat); later possibly a
-   per-device lock parameter that only a button press on the device opens.
-3. **User interface in the devices plugin**, with the protocol in the B1S
-   plugin (as above), or one plugin for both.
+- `b1s::ChannelSettings`: EEPROM store of the device role and, per B1S
+  channel number below its slot count, location, label, encoding, and
+  standard instance. The `MeasurementPublisher` applies them on top of the
+  compiled-in `ChannelConfig`.
+- `b1s::ServiceServer`: answers Service and Command messages. The device
+  passes it every application message (`handleMessage()`), registers it as a
+  service, and provides device parameters (`DeviceParameter`) and device
+  commands (`CommandHandler`: identify, restart). Measurement parameters and
+  the calibration commands use the slstm32 `MeasurementRegistry`
+  (`calibrate()`), the console the slstm32 `CommandConsole::execute()` and the
+  log mirror of `SerialLogDriver`.
+- The device must receive PGN 126720 as a fast packet
+  (`NodeConfig::fastReceivePgns`, buffer of at least 64 bytes; LT1: 96).
 
 ## Implementation steps
 
-1. Registry: `parameters` section, new commands, service codes; generator
-   and can-bench support.
-2. Firmware: `b1s::ParameterService` (list, read, write), channel
-   configuration record, measurement parameters and actions; LT1 wiring;
-   host tests; size report.
-3. B1S plugin: service client, API, backups.
-4. Devices plugin: B1S view.
-5. Bench test end to end: set LT1's air channel location to `inside`, watch
-   the Signal K path change; calibrate the air temperature from the page;
-   restore a backup.
+1. Done: registry (parameters, commands, services), firmware, LT1,
+   `b1s_tool.py`. Verified on the bench: every parameter read, location,
+   label, encoding, instance and threshold writes (stored, survive a restart,
+   invalid values refused), calibrate / reset / acknowledge / identify /
+   restart commands, the console with its log mirror; a location change moves
+   the Signal K path at once.
+2. Merge the B1S plugin into Semantic Boat Devices as its CAN adapter;
+   service client, API, backups.
+3. Devices page: B1S view.
+4. Replacement flow.

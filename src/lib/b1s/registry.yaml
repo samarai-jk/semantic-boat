@@ -103,10 +103,43 @@ commands:
   - {code: 1, id: identify,  argument: "uint16 seconds (bytes 4..5), bytes 6..7 0xFF", description: "Make the device visible (blink an LED, beep); 0 stops"}
   - {code: 2, id: setState,  argument: "uint8 0 off, 1 on (byte 4), bytes 5..7 0xFF", description: "Switch an output channel"}
   - {code: 3, id: setLevel,  argument: "uint16 level 0.01 % (bytes 4..5), uint16 fade time 0.01 s (bytes 6..7)", description: "Set an output channel's level"}
+  - {code: 4, id: calibrate, argument: "int32 reference, channel quantity units", description: "Offset calibration of a measurement channel against a reference at its current reading"}
+  - {code: 5, id: calibrateSecondPoint, argument: "int32 reference, channel quantity units", description: "Second point after calibrate: gain and offset from both points (at least one unit apart)"}
+  - {code: 6, id: resetChannel, argument: "none (0xFF)", description: "Calibration and alarm thresholds of a measurement channel back to defaults"}
+  - {code: 7, id: acknowledgeAlarms, argument: "none (0xFF), channel 0xFF", description: "Acknowledge all alarms of the device, like a button"}
+  - {code: 8, id: restart, argument: "none (0xFF), channel 0xFF", description: "Restart the device after the reply"}
 
-# Service codes of the Service message (126720). Defined by the
-# configuration-over-CAN and firmware-update work.
-services: []
+# Service codes of the Service message (126720); layouts in CONFIGURATION.md.
+services:
+  - {code: 1, id: parameterList,  description: "Ids of the parameters the device has"}
+  - {code: 2, id: parameterRead,  description: "Value of a parameter"}
+  - {code: 3, id: parameterWrite, description: "Store a parameter; the reply carries the stored value"}
+  - {code: 4, id: console,        description: "Run a console command line; the device log follows as replies for 30 s"}
+
+# Parameters for configuration over CAN (CONFIGURATION.md). scope: device or
+# channel. type: wire value int32 for uint8/uint16/uint32/int32/bool/enum,
+# string (ASCII, at most 32 characters) for string. unit: quantity = the
+# channel quantity's raw unit (absolute value), quantityDelta = the same
+# scale for differences (no offset, e.g. kelvin not degrees Celsius),
+# otherwise an SI unit. access: rw = stored and backed up, ro = state.
+parameters:
+  - {code: 1,  id: deviceRole,              scope: device,  type: string, access: rw, description: "Device role, e.g. fridgeSensor; empty = unassigned"}
+  - {code: 3,  id: preferredAddress,        scope: device,  type: uint8,  access: rw, restart: true, description: "Address the device claims first"}
+  - {code: 16, id: channelLocation,         scope: channel, type: string, access: rw, description: "Signal K path fragment of the channel; empty = unassigned"}
+  - {code: 17, id: channelLabel,            scope: channel, type: string, access: rw, description: "Channel name for people"}
+  - {code: 18, id: channelEncoding,         scope: channel, type: enum,   access: rw, values: [automatic, standard, b1s, "off"], description: "Encoding switch (README, Standard PGNs)"}
+  - {code: 19, id: channelStandardInstance, scope: channel, type: uint8,  access: rw, description: "Instance of the standard PGN; 255 = the firmware default"}
+  - {code: 32, id: calibrationOffset,       scope: channel, type: int32,  access: rw, unit: quantityDelta, description: "value = raw x gain + offset"}
+  - {code: 33, id: calibrationGain,         scope: channel, type: int32,  access: rw, unit: ppm, description: "Gain in millionths (1000000 = 1)"}
+  - {code: 40, id: alarmThreshold0,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 0; absolute (quantity) for high/low, quantityDelta per minute for rise rate, quantityDelta for trends"}
+  - {code: 41, id: alarmThreshold1,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 1"}
+  - {code: 42, id: alarmThreshold2,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 2"}
+  - {code: 43, id: alarmThreshold3,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 3"}
+  - {code: 44, id: alarmRule0,              scope: channel, type: uint32, access: ro, description: "Kind (bits 0..7: 0 high, 1 low, 2 rise rate, 3 sensor fault, 4 trend fall, 5 trend rise), severity (bits 8..15: 0 warning, 1 alarm, 2 emergency), bit 16 latching, bit 17 active, bit 18 acknowledged"}
+  - {code: 45, id: alarmRule1,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 1"}
+  - {code: 46, id: alarmRule2,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 2"}
+  - {code: 47, id: alarmRule3,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 3"}
+  - {code: 64, id: uptime,                  scope: device,  type: uint32, access: ro, unit: s, description: "Time since the last start"}
 
 # Device types. product_code: 126996; preferred_address: start address of
 # the claim; device_class/device_function: NMEA 2000 NAME table;

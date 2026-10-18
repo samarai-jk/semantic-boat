@@ -197,6 +197,29 @@ bool MeasurementRegistry::setCalibration(std::size_t index, const Calibration& c
     return saveSettings(index);
 }
 
+MeasurementRegistry::CalibrationResult MeasurementRegistry::calibrate(std::size_t index, std::int32_t reference,
+                                                                     bool secondPoint) {
+    if (index >= count_ || !channels_[index]->valid()) return CalibrationResult::noReading;
+    auto& channel = *channels_[index];
+    const auto raw = channel.raw();
+    Calibration calibration = channel.calibration();
+    if (secondPoint) {
+        const auto rawSpan = static_cast<std::int64_t>(raw) - pointRaw_;
+        if (pointChannel_ != index || (rawSpan < 1000 && rawSpan > -1000)) return CalibrationResult::noFirstPoint;
+        const auto gain = (static_cast<std::int64_t>(reference) - pointReference_) * 1000000 / rawSpan;
+        if (gain < 500000 || gain > 2000000) return CalibrationResult::implausibleGain;
+        calibration.gainPpm = static_cast<std::int32_t>(gain);
+        calibration.offset = static_cast<std::int32_t>(pointReference_ - static_cast<std::int64_t>(pointRaw_) * gain / 1000000);
+        pointChannel_ = ~std::size_t{};
+    } else {
+        calibration.offset = static_cast<std::int32_t>(reference - static_cast<std::int64_t>(raw) * calibration.gainPpm / 1000000);
+        pointChannel_ = index;
+        pointRaw_ = raw;
+        pointReference_ = reference;
+    }
+    return setCalibration(index, calibration) ? CalibrationResult::stored : CalibrationResult::notStored;
+}
+
 bool MeasurementRegistry::setThreshold(std::size_t index, std::size_t rule, std::int32_t threshold) {
     if (index >= count_ || !channels_[index]->setThreshold(rule, threshold)) return false;
     return saveSettings(index);

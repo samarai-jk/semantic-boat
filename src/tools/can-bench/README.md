@@ -39,6 +39,17 @@ used. Its 160 MHz clock allows no exact 87.5 % sample point at 250 kbit/s in
 python-can's timing search, so the tool uses 85 % (`--sample-point`), which
 is well within tolerance on a short bench bus.
 
+## B1S configuration tool
+
+`b1s_tool.py` configures, calibrates, and diagnoses B1S devices over CAN
+([CONFIGURATION.md](../../lib/b1s/CONFIGURATION.md)) from the bench
+address: `devices`, `params <address>` (all parameters with SI values),
+`get` / `set <address> <parameter> [channel] <value>`,
+`command <address> <command> [channel] [argument]`, and
+`console <address> [line] [--follow <s>]` (runs a console command and shows
+the device log). SocketCAN only (`--can`, default `can1`). Values are raw
+B1S values; `set` takes enum names (`set 38 channelEncoding 2 b1s`).
+
 ## Bench wiring
 
 A two-node bus needs termination and a common ground. A short bench cable

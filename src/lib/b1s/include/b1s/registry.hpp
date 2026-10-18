@@ -104,11 +104,64 @@ enum class Command : std::uint8_t {
     identify = 1u,
     setState = 2u,
     setLevel = 3u,
+    calibrate = 4u,
+    calibrateSecondPoint = 5u,
+    resetChannel = 6u,
+    acknowledgeAlarms = 7u,
+    restart = 8u,
 };
 
 // Service codes of the Service message.
 enum class Service : std::uint8_t {
+    parameterList = 1u,
+    parameterRead = 2u,
+    parameterWrite = 3u,
+    console = 4u,
 };
+
+// Parameters for configuration over CAN (scope, type, unit: registry).
+enum class Parameter : std::uint16_t {
+    deviceRole = 1u,
+    preferredAddress = 3u,
+    channelLocation = 16u,
+    channelLabel = 17u,
+    channelEncoding = 18u,
+    channelStandardInstance = 19u,
+    calibrationOffset = 32u,
+    calibrationGain = 33u,
+    alarmThreshold0 = 40u,
+    alarmThreshold1 = 41u,
+    alarmThreshold2 = 42u,
+    alarmThreshold3 = 43u,
+    alarmRule0 = 44u,
+    alarmRule1 = 45u,
+    alarmRule2 = 46u,
+    alarmRule3 = 47u,
+    uptime = 64u,
+};
+
+// True for parameters of a channel (addressed with a channel number).
+constexpr bool isChannelParameter(Parameter parameter) {
+    switch (parameter) {
+    case Parameter::channelLocation:
+    case Parameter::channelLabel:
+    case Parameter::channelEncoding:
+    case Parameter::channelStandardInstance:
+    case Parameter::calibrationOffset:
+    case Parameter::calibrationGain:
+    case Parameter::alarmThreshold0:
+    case Parameter::alarmThreshold1:
+    case Parameter::alarmThreshold2:
+    case Parameter::alarmThreshold3:
+    case Parameter::alarmRule0:
+    case Parameter::alarmRule1:
+    case Parameter::alarmRule2:
+    case Parameter::alarmRule3:
+        return true;
+    default:
+        return false;
+    }
+}
 
 // Category of a standard NMEA 2000 PGN (registry: standard_pgns).
 enum class StandardCategory : std::uint8_t { unlisted, display, navigation };

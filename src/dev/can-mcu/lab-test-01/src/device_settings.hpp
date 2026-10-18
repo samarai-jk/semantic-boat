@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "b1s/channel_settings.hpp"
 #include "b1s/registry.hpp"
 #include "slstm32/storage/byte_storage.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
@@ -25,6 +26,10 @@ inline constexpr std::uint32_t healthRecordOffset = moduleCalibrationOffset - 12
 inline constexpr std::size_t sensorSettingsSlots = 32u;
 inline constexpr std::uint32_t sensorSettingsOffset =
     healthRecordOffset - slstm32::storage::KeyedRecordStore::requiredBytes(sensorSettingsSlots);
+// B1S configuration set over CAN (device role; location, label, encoding,
+// instance of B1S channels 0..7) below the sensor settings.
+inline constexpr std::size_t b1sChannelSlots = 8u;
+inline constexpr std::uint32_t b1sSettingsOffset = sensorSettingsOffset - b1s::ChannelSettings::requiredBytes(b1sChannelSlots);
 
 struct DeviceSettings {
     std::uint32_t bootCount{};

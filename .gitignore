@@ -104,3 +104,7 @@ stm32-cube/stm32-cube.txt
 node_modules/
 
 scratch.txt
+
+# Python bytecode
+__pycache__/
+*.pyc

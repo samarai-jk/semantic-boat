@@ -2,8 +2,10 @@
 # builds use the committed include/b1s/registry.hpp; regenerate it with
 # tools/generate_registry.py after changing registry.yaml.
 add_library(b1s STATIC
+    src/channel_settings.cpp
     src/measurement_publisher.cpp
     src/quantity.cpp
+    src/service_server.cpp
 )
 
 target_include_directories(b1s PUBLIC include)

@@ -24,10 +24,11 @@ struct MeasurementPublication {
 std::uint32_t standardPgn(slstm32::sensors::Quantity quantity);
 
 // Encodes the channel's latest value (or "not available" if the channel is
-// not valid) as its standard PGN. instance and source as in
-// MeasurementPublication. Returns the PGN, or 0 if the quantity has none.
-std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t source,
-                                        std::uint8_t sequenceId, std::uint8_t (&out)[8]);
+// not valid) as its standard PGN with the given instance (usually the
+// channel's MeasurementConfig::instance) and source lookup (see
+// MeasurementPublication). Returns the PGN, or 0 if the quantity has none.
+std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t instance,
+                                        std::uint8_t source, std::uint8_t sequenceId, std::uint8_t (&out)[8]);
 
 // Sends measurement channels periodically once the node has an address:
 // temperatures as PGN 130316, relative humidity as PGN 130313, pressure as

@@ -77,9 +77,39 @@ void SerialLogDriver::write(LogLevel level, const char* message) {
         dropped_ = dropped_ + 1u;
         return;
     }
+    if (mirroring_) {
+        const std::size_t head = head_;
+        const std::size_t tail = mirrorTail_;
+        const std::size_t mirrored = head >= tail ? head - tail : capacity_ - tail + head;
+        if (capacity_ - 1u - mirrored < lineLength) {
+            // The line would overwrite unread mirror text: skip what the mirror missed.
+            mirrorTail_ = head;
+            mirrorLost_ = mirrorLost_ + 1u;
+        }
+    }
     push(prefix, prefixLength);
     push(message, messageLength);
     push("\r\n", 2u);
+}
+
+void SerialLogDriver::startMirror() {
+    CriticalSection lock(runtime_);
+    mirrorTail_ = head_;
+    mirroring_ = true;
+}
+
+std::size_t SerialLogDriver::readMirror(std::uint8_t* output, std::size_t capacity) {
+    if (!mirroring_ || !buffer_) return 0u;
+    CriticalSection lock(runtime_);
+    std::size_t tail = mirrorTail_;
+    const std::size_t head = head_;
+    std::size_t count = 0u;
+    while (tail != head && count < capacity) {
+        output[count++] = buffer_[tail];
+        tail = tail + 1u == capacity_ ? 0u : tail + 1u;
+    }
+    mirrorTail_ = tail;
+    return count;
 }
 
 void SerialLogDriver::run() {

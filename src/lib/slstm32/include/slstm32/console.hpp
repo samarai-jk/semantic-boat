@@ -38,9 +38,12 @@ public:
     bool init() override;
     void run() override;
     const Logger& log() const { return log_; }
+    // Runs a command line from another source (for example a remote console
+    // over CAN), as if it had been typed. Longer lines are truncated.
+    void execute(const char* line);
 
 private:
-    void execute();
+    void dispatch(char* line);
     void help() const;
 
     drivers::SerialInputHardware input_;

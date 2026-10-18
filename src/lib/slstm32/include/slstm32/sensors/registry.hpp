@@ -67,6 +67,13 @@ public:
     bool resetSettings(std::size_t index);
     bool settingsPersisted(std::size_t index) const;
 
+    // Calibration against a reference value (thousandths of the unit) at the
+    // channel's current reading. The first point sets the offset at the
+    // current gain; a second point on the same channel, at least one unit
+    // away, sets gain (0.5..2) and offset from both points.
+    enum class CalibrationResult : std::uint8_t { stored, notStored, noReading, noFirstPoint, implausibleGain };
+    CalibrationResult calibrate(std::size_t index, std::int32_t reference, bool secondPoint);
+
 private:
     static constexpr std::size_t maxChannels = 32u;
     static void onAlarm(void* context, Measurement& channel, std::size_t rule, AlarmTransition transition);
@@ -83,6 +90,10 @@ private:
     EventId alarmEvent_{};
     bool storeReady_{};
     std::uint8_t loadedRevision_[maxChannels]{}; // identity revision whose settings are applied
+    // First point of a two-point calibration.
+    std::size_t pointChannel_{~std::size_t{}};
+    std::int32_t pointRaw_{};
+    std::int32_t pointReference_{};
 };
 
 // Formats thousandths as "12.345" (decimals 0..3), without floating point.

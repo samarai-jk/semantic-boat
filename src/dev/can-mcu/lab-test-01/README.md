@@ -121,7 +121,8 @@ The AT24C256 (32 KiB) is used from the top down (`src/device_settings.hpp`):
 | 0x7D00-0x7EFF | Calibration of up to four 12v-ad-input-iso modules, one slot per ADS1115 address |
 | 0x7C80-0x7CFF | Health record (restart and supply statistics) |
 | 0x6C80-0x7C7F | Measurement settings: 32 slots of 128 bytes, one per sensor identity |
-| 0x0000-0x6C7F | Free |
+| 0x6000-0x6C7F | B1S configuration set over CAN: device role; location, label, encoding, instance of B1S channels 0..7 |
+| 0x0000-0x5FFF | Free |
 
 Measurement settings (calibration, changed alarm thresholds) are keyed by the
 identity of the sensor (internal probe, I2C address, 1-Wire ROM code, analog
@@ -226,6 +227,12 @@ remove the 12 V supply once. A reset alone is not enough.
 
 Only one serial logger can run at a time. The monitor only reads the logs,
 so any number of monitors can run next to it.
+
+The console, all parameters, calibration, and restart are also available
+over CAN ([B1S configuration](../../../lib/b1s/CONFIGURATION.md)), for
+example from the Pi with
+[`b1s_tool.py`](../../../tools/can-bench/b1s_tool.py):
+`b1s_tool.py params 38`, `b1s_tool.py console 38 "sensor air"`.
 
 Console commands (type into the monitor or the serial logger):
 

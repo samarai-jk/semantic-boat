@@ -15,6 +15,7 @@
 #include "i2c_scan_service.hpp"
 #include "b1s/measurement_publisher.hpp"
 #include "b1s/registry.hpp"
+#include "b1s/service_server.hpp"
 #include "n2k/humidity.hpp"
 #include "n2k/name.hpp"
 #include "n2k/node.hpp"
@@ -116,9 +117,15 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
-constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
-                                           b1s::pgn::measurement,           b1s::pgn::channelDescription,
-                                           n2k::pgn::batteryStatus,         n2k::pgn::binarySwitchBankStatus};
+constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange,
+                                           n2k::pgn::humidity,
+                                           b1s::pgn::measurement,
+                                           b1s::pgn::channelDescription,
+                                           b1s::pgn::service,
+                                           b1s::pgn::command,
+                                           n2k::pgn::batteryStatus,
+                                           n2k::pgn::binarySwitchBankStatus};
+constexpr std::uint32_t n2kReceivePgns[]{b1s::pgn::service, b1s::pgn::command};
 // Fast packets LT1 receives: B1S service requests (configuration over CAN).
 constexpr std::uint32_t n2kFastReceivePgns[]{b1s::pgn::service};
 std::uint8_t n2kFastReceiveBuffer[96]{};
@@ -132,8 +139,8 @@ n2k::NodeConfig n2kConfig{
                      "can-mcu V1.0 + host-dev", serialCode, 0u, 1u},
     n2kTransmitPgns,
     sizeof n2kTransmitPgns / sizeof n2kTransmitPgns[0],
-    nullptr,
-    0u,
+    n2kReceivePgns,
+    sizeof n2kReceivePgns / sizeof n2kReceivePgns[0],
     60000u,
     n2kFastReceivePgns,
     sizeof n2kFastReceivePgns / sizeof n2kFastReceivePgns[0],
@@ -202,8 +209,11 @@ const b1s::ChannelConfig b1sChannels[]{
     {&airHumidityChannel, 3u, b1s::Publish::automatic, static_cast<std::uint8_t>(n2k::HumiditySource::inside), "",
      "LT1 air humidity"},
 };
+b1s::ChannelSettings::Override b1sOverrides[lab_test_01::b1sChannelSlots]{};
+b1s::ChannelSettings b1sSettings{eeprom, lab_test_01::b1sSettingsOffset, b1sOverrides};
 b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels,
-                                               sizeof b1sChannels / sizeof b1sChannels[0], 2000u, logger};
+                                               sizeof b1sChannels / sizeof b1sChannels[0], 2000u, logger,
+                                               &b1sSettings};
 
 // Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
 // severity: a quiet "have a look" (the fridge is warm), firm beeps that ask
@@ -225,6 +235,21 @@ semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
     runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
 lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRecordOffset, mcu};
+
+// Configuration, calibration, and the console over CAN (src/lib/b1s/CONFIGURATION.md).
+bool readPreferredAddress(void*, std::int32_t& value);
+b1s::ParameterStatus writePreferredAddress(void*, std::int32_t value);
+b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t channel, std::int32_t argument);
+const b1s::DeviceParameter deviceParameters[]{
+    {b1s::Parameter::preferredAddress, &readPreferredAddress, &writePreferredAddress, nullptr},
+};
+const b1s::ServiceServerConfig serviceServerConfig{
+    &measurementPublisher, &measurements, &console, &serialLog,
+    deviceParameters, sizeof deviceParameters / sizeof deviceParameters[0], &runDeviceCommand, nullptr};
+b1s::ServiceServer serviceServer{runtime, n2kNode, serviceServerConfig};
+std::uint32_t restartAt{};
+bool restartRequested{};
+std::uint32_t identifyUntil{};
 
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const lab_test_01::DevToolsContext devToolsContext{
@@ -251,6 +276,7 @@ struct CanMonitor;
 struct BoardTemperatures;
 struct Measurements;
 struct MeasurementPublisher;
+struct ServiceServer;
 struct Annunciator;
 struct TonePlayer;
 struct InputModuleCalibrator;
@@ -282,6 +308,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Measurements>(measurements),
         slstm32::bind<component::MeasurementLog>(measurementLog),
         slstm32::bind<component::MeasurementPublisher>(measurementPublisher),
+        slstm32::bind<component::ServiceServer>(serviceServer),
         slstm32::bind<component::Annunciator>(annunciator),
         slstm32::bind<component::TonePlayer>(tonePlayer),
         slstm32::bind<component::InputModuleCalibrator>(inputModuleCalibrator),
@@ -374,6 +401,50 @@ void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
 }
 
+// B1S service and command messages go to the service server; everything else
+// to the CAN monitor's message log.
+void onN2kMessage(void*, const n2k::CanId& id, const std::uint8_t* data, std::uint8_t length) {
+    if (serviceServer.handleMessage(id, data, length)) return;
+    lab_test_01::CanMonitorService::onMessage(&canMonitor, id, data, length);
+}
+
+bool readPreferredAddress(void*, std::int32_t& value) {
+    value = settings.n2kAddress;
+    return true;
+}
+
+b1s::ParameterStatus writePreferredAddress(void*, std::int32_t value) {
+    if (value < 0 || value > n2k::maximumAddress) return b1s::ParameterStatus::invalidValue;
+    if (!settingsAvailable) return b1s::ParameterStatus::busy;
+    settings.n2kAddress = static_cast<std::uint8_t>(value);
+    return saveSettings() ? b1s::ParameterStatus::done : b1s::ParameterStatus::busy;
+}
+
+// Device commands over CAN: identify (green LED blinks fast, one quiet beep)
+// and restart (after the reply has gone out).
+b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, std::int32_t argument) {
+    switch (command) {
+    case b1s::Command::identify: {
+        const auto seconds = static_cast<std::uint32_t>(argument & 0xFFFF);
+        if (seconds == 0u) {
+            greenLed.blink(2000u, 60u);
+        } else {
+            greenLed.blink(200u, 100u);
+            buzzer.play(2700u, 80u, 0.05f);
+            identifyUntil = runtime.millis() + seconds * 1000u;
+        }
+        return b1s::CommandResult::done;
+    }
+    case b1s::Command::restart:
+        logger.write(LogLevel::warning, "b1s: restart requested over CAN");
+        restartRequested = true;
+        restartAt = runtime.millis() + 300u;
+        return b1s::CommandResult::done;
+    default:
+        return b1s::CommandResult::unknownCommand;
+    }
+}
+
 void onN2kAddressChange(void*, std::uint8_t address) {
     if (!settingsAvailable || settings.n2kAddress == address) return;
     settings.n2kAddress = address;
@@ -399,7 +470,7 @@ extern "C" void lab_test_01_app_init(void) {
     configureN2kIdentity();
     serialLog.flush(startupLogFlushMs);
     can_mcu::attachCanDriver(can);
-    n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
+    n2kNode.onMessage(&onN2kMessage, nullptr);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
     n2kNode.onRequest(&b1s::MeasurementPublisher::handleRequest, &measurementPublisher);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
@@ -428,6 +499,15 @@ extern "C" void lab_test_01_app_run(void) {
     can_mcu::refreshWatchdog();
     events.process();
     application.run();
+    const auto now = runtime.millis();
+    if (identifyUntil != 0u && static_cast<std::int32_t>(now - identifyUntil) >= 0) {
+        identifyUntil = 0u;
+        greenLed.blink(2000u, 60u);
+    }
+    if (restartRequested && static_cast<std::int32_t>(now - restartAt) >= 0) {
+        serialLog.flush(startupLogFlushMs);
+        NVIC_SystemReset();
+    }
 }
 
 extern "C" void lab_test_01_app_tick(void) {

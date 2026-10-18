@@ -45,8 +45,9 @@ void setBackupRegister(unsigned index, std::uint32_t value);
 
 void uniqueId(std::uint8_t (&out)[12]);
 
-// Puts clock and the peripherals used back into their reset state, sets the
-// vector table, and starts the application. Does not return.
+// Puts clock and the peripherals used back into their reset state (clock
+// enables exactly as at reset, saved by startClock()), sets the vector table,
+// and starts the application. Does not return.
 [[noreturn]] void startApplication(std::uint32_t base);
 [[noreturn]] void reset();
 

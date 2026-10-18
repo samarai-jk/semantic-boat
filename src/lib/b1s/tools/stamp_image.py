@@ -4,8 +4,12 @@
 Reads the ELF file, builds the flash image (objcopy -O binary), pads it to a
 multiple of 8 bytes, fills in the header's image size and CRC-32 (zlib, with
 the four CRC bytes counted as 0xFF), and writes the header back into the ELF
-file (objcopy --update-section) and the binary. Images flashed with the
-ST-Link and images sent over CAN are therefore the same.
+file and the binary. Images flashed with the ST-Link and images sent over CAN
+are therefore the same.
+
+The ELF file is patched in place: the 64 bytes of section .image_header are
+overwritten at their file offset. (objcopy --update-section rewrites the
+whole file and produced broken program headers for these images.)
 
     stamp_image.py --objcopy arm-none-eabi-objcopy firmware.elf firmware.bin
 """
@@ -42,6 +46,30 @@ def stamp(image):
     return bytes(image)
 
 
+def patch_elf_section(path, name, content):
+    """Overwrites the contents of an ELF32 section of the same size in place."""
+    data = bytearray(path.read_bytes())
+    if data[:4] != b"\x7fELF" or data[4] != 1 or data[5] != 1:
+        sys.exit(f"{path}: not a little-endian ELF32 file")
+    shoff, = struct.unpack_from("<I", data, 0x20)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+
+    def section(index):
+        return struct.unpack_from("<IIIIIIIIII", data, shoff + index * shentsize)
+    names_offset = section(shstrndx)[4]
+    for index in range(shnum):
+        fields = section(index)
+        start = names_offset + fields[0]
+        if data[start:data.index(b"\0", start)].decode() == name:
+            offset, size = fields[4], fields[5]
+            if size != len(content):
+                sys.exit(f"{path}: section {name} has {size} bytes, expected {len(content)}")
+            data[offset:offset + size] = content
+            path.write_bytes(data)
+            return
+    sys.exit(f"{path}: no section {name}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--objcopy", default="arm-none-eabi-objcopy")
@@ -52,9 +80,7 @@ def main():
         raw = pathlib.Path(directory) / "raw.bin"
         subprocess.run([args.objcopy, "-O", "binary", str(args.elf), str(raw)], check=True)
         image = stamp(raw.read_bytes())
-        header = pathlib.Path(directory) / "header.bin"
-        header.write_bytes(image[HEADER_OFFSET:HEADER_OFFSET + HEADER_SIZE])
-        subprocess.run([args.objcopy, "--update-section", f".image_header={header}", str(args.elf)], check=True)
+    patch_elf_section(args.elf, ".image_header", image[HEADER_OFFSET:HEADER_OFFSET + HEADER_SIZE])
     args.bin.write_bytes(image)
     size, crc = struct.unpack_from("<II", image, HEADER_OFFSET + 12)
     text = image[HEADER_OFFSET + 24:HEADER_OFFSET + 64].split(b"\0")[0].decode("ascii", "replace")

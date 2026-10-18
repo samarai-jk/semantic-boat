@@ -199,6 +199,12 @@ sensor board alarm 0 30      change a threshold (stored); "sensor board reset" u
 
 ## Build and flash
 
+LT1 starts from the [can-mcu bootloader](../can-mcu-bootloader/README.md)
+(application at 0x08004000, [FIRMWARE.md](../../../lib/b1s/FIRMWARE.md)).
+`flash` writes the application only; a new board, or one after a chip erase,
+needs `flash-all` (bootloader + application) once. Over CAN, without the
+ST-Link: `src/tools/can-bench/b1s_tool.py firmware 38 build/lab-test-01/<type>/src/dev/can-mcu/lab-test-01/lab-test-01.bin`.
+
 ```bat
 script\build.bat lab-test-01 debug
 script\build.bat lab-test-01 debug refresh flash

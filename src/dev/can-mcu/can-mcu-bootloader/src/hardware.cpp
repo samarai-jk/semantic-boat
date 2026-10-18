@@ -7,6 +7,11 @@ namespace {
 
 volatile std::uint32_t ticks;
 bool usingHse;
+// Clock enables as after reset (some are on then, e.g. the RTC's bus
+// clock), restored before the application starts.
+std::uint32_t resetAhb2Enr;
+std::uint32_t resetApb1Enr1;
+std::uint32_t resetApb2Enr;
 
 constexpr std::uint32_t flashErrors = FLASH_SR_OPERR | FLASH_SR_PROGERR | FLASH_SR_WRPERR | FLASH_SR_PGAERR |
                                       FLASH_SR_SIZERR | FLASH_SR_PGSERR | FLASH_SR_MISERR | FLASH_SR_FASTERR |
@@ -49,6 +54,9 @@ void flashUnlock() {
 } // namespace
 
 std::uint32_t startClock() {
+    resetAhb2Enr = RCC->AHB2ENR;
+    resetApb1Enr1 = RCC->APB1ENR1;
+    resetApb2Enr = RCC->APB2ENR;
     RCC->CR |= RCC_CR_HSEON;
     usingHse = waitFor(RCC->CR, RCC_CR_HSERDY, RCC_CR_HSERDY, 200000u);
     if (usingHse) {
@@ -123,7 +131,9 @@ bool startCan(std::uint32_t systemClockHz) {
     CAN1->MCR &= ~CAN_MCR_SLEEP;
     CAN1->MCR |= CAN_MCR_INRQ;
     if (!waitFor(CAN1->MSR, CAN_MSR_INAK, CAN_MSR_INAK, 200000u)) return false;
-    CAN1->MCR |= CAN_MCR_ABOM | CAN_MCR_AWUM;
+    // Automatic bus-off recovery; transmit in the order queued (fast-packet
+    // frames share one identifier, which the default priority would reorder).
+    CAN1->MCR |= CAN_MCR_ABOM | CAN_MCR_TXFP;
     // 250 kbit/s, 16 time quanta, sample point 87.5 % (13 + 1 before, 2 after).
     const std::uint32_t prescaler = systemClockHz / (250000u * 16u);
     CAN1->BTR = (0u << CAN_BTR_SJW_Pos) | (1u << CAN_BTR_TS2_Pos) | (12u << CAN_BTR_TS1_Pos) | (prescaler - 1u);
@@ -255,9 +265,9 @@ void startApplication(std::uint32_t base) {
     RCC->APB2RSTR &= ~RCC_APB2RSTR_USART1RST;
     RCC->AHB2RSTR |= RCC_AHB2RSTR_GPIOARST | RCC_AHB2RSTR_GPIOBRST;
     RCC->AHB2RSTR &= ~(RCC_AHB2RSTR_GPIOARST | RCC_AHB2RSTR_GPIOBRST);
-    RCC->APB1ENR1 &= ~(RCC_APB1ENR1_CAN1EN | RCC_APB1ENR1_PWREN | RCC_APB1ENR1_RTCAPBEN);
-    RCC->APB2ENR &= ~RCC_APB2ENR_USART1EN;
-    RCC->AHB2ENR &= ~(RCC_AHB2ENR_GPIOAEN | RCC_AHB2ENR_GPIOBEN);
+    RCC->APB1ENR1 = resetApb1Enr1;
+    RCC->APB2ENR = resetApb2Enr;
+    RCC->AHB2ENR = resetAhb2Enr;
     // MSI 4 MHz as after reset.
     RCC->CR |= RCC_CR_MSION;
     waitFor(RCC->CR, RCC_CR_MSIRDY, RCC_CR_MSIRDY, 200000u);

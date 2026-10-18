@@ -47,7 +47,8 @@ address: `devices`, `params <address>` (all parameters with SI values),
 `get` / `set <address> <parameter> [channel] <value>`,
 `command <address> <command> [channel] [argument]`, and
 `console <address> [line] [--follow <s>]` (runs a console command and shows
-the device log). SocketCAN only (`--can`, default `can1`). Values are raw
+the device log), and `firmware <address> <image.bin>` (firmware update over
+CAN, [FIRMWARE.md](../../lib/b1s/FIRMWARE.md)). SocketCAN only (`--can`, default `can1`). Values are raw
 B1S values; `set` takes enum names (`set 38 channelEncoding 2 b1s`).
 
 ## Bench wiring

@@ -46,9 +46,22 @@ class Client:
     def close(self):
         self.bus.shutdown()
 
+    def transmit(self, message):
+        """Sends a frame; waits while the interface queue is full (SocketCAN
+        reports ENOBUFS instead of blocking; can1 queues only 10 frames)."""
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                self.bus.send(message, timeout=1.0)
+                return
+            except can.CanOperationError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.002)
+
     def send_single(self, priority, pgn, destination, data):
-        self.bus.send(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
-                                  is_extended_id=True, data=bytes(data).ljust(8, b"\xff")), timeout=1.0)
+        self.transmit(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
+                                  is_extended_id=True, data=bytes(data).ljust(8, b"\xff")))
 
     def send_fast(self, priority, pgn, destination, data):
         self.fast_sequence = (self.fast_sequence + 1) & 7
@@ -59,8 +72,8 @@ class Client:
             frames.append(bytes([self.fast_sequence << 5 | index]) + payload[offset:offset + 7])
             offset, index = offset + 7, index + 1
         for frame in frames:
-            self.bus.send(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
-                                      is_extended_id=True, data=frame.ljust(8, b"\xff")), timeout=1.0)
+            self.transmit(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
+                                      is_extended_id=True, data=frame.ljust(8, b"\xff")))
 
     def receive(self, until, accept):
         """Messages (pgn, source, payload) until `accept` returns a result or time runs out."""
@@ -170,7 +183,7 @@ class Client:
         bootloader = address if ((names[address] >> 49) & 0x7F) == 10 else None
         started = time.monotonic()
         if bootloader is None:
-            print(f"device {unique} at {address}: enterBootloader -> {self.command(address, 'enterBootloader')}")
+            print(f"device {unique} at {address}: enterBootloader -> {self.command(address, 'enterBootloader', 0xFF, -1)}")
             bootloader = self.find(unique, True, 10.0)
             if bootloader is None:
                 sys.exit("the device did not appear in its bootloader")
@@ -203,10 +216,18 @@ class Client:
         if application is None:
             sys.exit("the application did not come back (the bootloader keeps waiting for an image)")
         print(f"application back at address {application}; waiting for it to confirm itself")
+        # Applications confirm a new image after 10 s of normal running: an
+        # uptime above that (without a restart in between) means it did.
         time.sleep(12.0)
-        if self.find(unique, False, 3.0) is None:
+        application = self.find(unique, False, 3.0)
+        if application is None:
             sys.exit("the application did not stay up")
-        print(f"update complete in {time.monotonic() - started:.1f} s")
+        status, uptime = self.read(application, PARAMETERS["uptime"]["code"])
+        if status != "done" or uptime < 10:
+            sys.exit(f"the application restarted (uptime {uptime} s): not confirmed, the bootloader takes "
+                     "over after three starts")
+        print(f"update complete in {time.monotonic() - started:.1f} s; the application runs ({uptime} s) "
+              "and has confirmed the image")
 
     def channels(self, address):
         """Channel numbers and quantities from the device's Channel Descriptions."""

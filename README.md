@@ -47,8 +47,12 @@ cmake --build --preset remote-a-debug
 ```
 
 Firmware names are directory names below `src/dev` or `src/dev/<board>`:
-`remote-a` and `lab-test-01` (can-mcu + host-dev, see
-[`src/dev/can-mcu/lab-test-01/README.md`](src/dev/can-mcu/lab-test-01/README.md)).
+`remote-a`, `lab-test-01` (can-mcu + host-dev, see
+[`src/dev/can-mcu/lab-test-01/README.md`](src/dev/can-mcu/lab-test-01/README.md)),
+and `can-mcu-bootloader` ([its README](src/dev/can-mcu/can-mcu-bootloader/README.md)).
+can-mcu applications start from that bootloader and are stamped after the
+link by a Python 3 script; they can be updated over CAN
+([FIRMWARE.md](src/lib/b1s/FIRMWARE.md)).
 
 On Windows, the root wrapper takes the firmware name first:
 

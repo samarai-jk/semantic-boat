@@ -4,8 +4,11 @@ Part of [B1S](README.md). Decided 2026-10-18: one application slot and a
 small bootloader that speaks B1S (two slots would leave too little room:
 the network display needs about 110..115 KB). remote-a has no bootloader.
 
-**Status:** being implemented for the can-mcu board (bootloader
-`src/dev/can-mcu/can-mcu-bootloader`, LT1 as the first application).
+**Status:** implemented and tested on LT1 (2026-10-18): bootloader
+[`src/dev/can-mcu/can-mcu-bootloader`](../../dev/can-mcu/can-mcu-bootloader/README.md)
+(with the bench results), LT1 as the first application, updates with
+`src/tools/can-bench/b1s_tool.py firmware`. Planned: updates from the devices
+page.
 
 ## Flash layout (can-mcu, STM32L431, 256 KB, 2 KB pages)
 
@@ -92,7 +95,12 @@ the image as new (unconfirmed), and restarts.
 
 An application enters the bootloader with the Command `enterBootloader`
 (after its reply). Images are sent from the Pi with
-`src/tools/can-bench/b1s_tool.py firmware` and, later, the devices page.
+`src/tools/can-bench/b1s_tool.py firmware <address> <image.bin>` (the
+application's or the bootloader's address): it enters the bootloader, finds
+it by the device ID, sends the image in 200-byte chunks (one request at a
+time, three tries, resuming at the offset the device reports), and checks
+that the new application runs longer than its confirmation time. Later the
+devices page.
 
 ## ST-Link
 

@@ -22,6 +22,7 @@ marked *planned* is specified here but not implemented yet.
 | File | Content |
 | --- | --- |
 | `README.md` (this file) | The rules and message layouts |
+| [`CONFIGURATION.md`](CONFIGURATION.md) | Configuration, calibration, and diagnosis over CAN (design draft) |
 | [`registry.yaml`](registry.yaml) | **Every number B1S assigns**: PGNs, quantities, events, output kinds, commands, products, standard PGN categories |
 | `include/b1s/registry.hpp` | Generated from the registry by `tools/generate_registry.py`; never edited by hand |
 | `include/b1s/messages.hpp` | Encoders: proprietary header, Measurement, Channel Description |
@@ -365,8 +366,9 @@ Every command is answered with a reply to the sender: command code with bit
 
 Addressed fast-packet messages for configuration, calibration, and data
 transfer: byte 2 is the service code (registry, `services`), the rest is
-defined by the service. Reserved for the configuration-over-CAN and
-firmware-update work, which will specify the services here.
+defined by the service. Configuration, calibration, and diagnosis over CAN
+are designed in [CONFIGURATION.md](CONFIGURATION.md) (draft); firmware
+updates will add their own services.
 
 ## Alerts
 

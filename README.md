@@ -149,8 +149,9 @@ encoded NMEA 2000 instrument feed and an alternative direct Signal K output
 for off-boat hardware and alarm testing. Use a separate development server,
 never live navigation data. Its [roadmap](src/signalk/plugin/n2k-simulator/PLAN.md)
 tracks the planned helm UI, scenarios, and hardware transports. The
-[B1S plugin](src/signalk/plugin/b1s/README.md) brings the devices on the B1S
-CAN network into Signal K.
+[Semantic Boat Devices](src/signalk/plugin/semantic-boat-devices/README.md)
+plugin also brings the devices on the B1S CAN network into Signal K and
+configures, calibrates, and backs them up over CAN (its B1S tab).
 
 ## Debugging remote-a
 

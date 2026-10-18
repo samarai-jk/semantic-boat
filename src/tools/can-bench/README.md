@@ -93,7 +93,7 @@ timeout 10 candump -L can1 | /usr/lib/node_modules/signalk-server/node_modules/.
 
 Signal K listens on both: `can0` as an NMEA 2000 connection, `can1` as the
 B1S connection with its own event names and address 150, read by the
-[B1S plugin](../../signalk/plugin/b1s/README.md).
+[Semantic Boat Devices plugin](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices).
 
 ### LT1 bench result (2026-10-18)
 

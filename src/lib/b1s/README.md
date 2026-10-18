@@ -18,7 +18,7 @@ management (`src/lib/n2k`), the standard PGNs listed in
 (130819), configuration over CAN (Service 126720, Command 61184,
 [CONFIGURATION.md](CONFIGURATION.md)), verified on LT1 with can-bench, and the
 Signal K plugin
-([`src/signalk/plugin/b1s`](../../signalk/plugin/b1s/README.md)). Everything
+(Semantic Boat Devices, [B1S Devices](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices)). Everything
 marked *planned* is specified here but not implemented yet.
 
 | File | Content |
@@ -406,7 +406,8 @@ the sum over an installation must stay within the budget.
 
 ## Signal K
 
-The Signal K plugin [`src/signalk/plugin/b1s`](../../signalk/plugin/b1s/README.md)
+The Signal K plugin Semantic Boat Devices
+([B1S Devices](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices))
 reads B1S from its own Signal K connection on the B1S interface (own event
 names, so B1S and NMEA 2000 stay apart inside Signal K; Signal K's node uses
 address 150):

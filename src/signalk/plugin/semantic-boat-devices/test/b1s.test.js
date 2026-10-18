@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { FromPgn } = require('@canboat/canboatjs');
-const { loadRegistry } = require('../src/registry');
-const { canboatDefinitions } = require('../src/canboat');
-const { B1sState } = require('../src/state');
+const { loadRegistry } = require('../src/b1s/registry');
+const { canboatDefinitions } = require('../src/b1s/canboat');
+const { B1sState } = require('../src/b1s/state');
 
 const registry = loadRegistry();
 
@@ -79,7 +79,7 @@ test('an unknown device is asked for its address claim, then its channels', () =
   assert.strictEqual(deltas.length, 0);
   b1s.handle(claim);
   b1s.handle(measurement(0, 300400));
-  assert.deepStrictEqual(requests, [[38, 60928], [38, 130819]]);
+  assert.deepStrictEqual(requests, [[38, 60928], [38, 126996], [38, 130819]]);
   assert.strictEqual(deltas[0].updates[0].values[0].path, 'b1s.unassigned.1082470.0.temperature');
   assert.strictEqual(deltas[0].updates[0].values[0].value, 300.4);
 });
@@ -126,4 +126,48 @@ test('messages of other manufacturers are ignored', () => {
   const { b1s, deltas, requests } = state();
   b1s.handle({ pgn: 65280, src: 50, fields: { manufacturerCode: 1855, data: 'ff' } });
   assert.strictEqual(deltas.length + requests.length, 0);
+});
+
+const { B1sClient } = require('../src/b1s/client');
+
+function client() {
+  const sent = [];
+  const consoles = [];
+  const b1sClient = new B1sClient(registry, {
+    send: (destination, pgn, bytes, priority) => sent.push({ destination, pgn, bytes, priority }),
+    onConsole: (address, text) => consoles.push([address, text]),
+    timeoutMs: 20
+  });
+  return { b1sClient, sent, consoles };
+}
+
+const hex = bytes => bytes.map(byte => byte.toString(16).padStart(2, '0')).join(' ');
+
+test('a parameter read is sent with the B1S header and resolved by its reply', async () => {
+  const { b1sClient, sent } = client();
+  const reading = b1sClient.read(38, 16, 0);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(sent[0].bytes, [0xfe, 0x9f, 2, sent[0].bytes[3], 16, 0, 0]);
+  const sequence = sent[0].bytes[3];
+  // Reply: service | 0x80, sequence, status, id, channel, type 1, STRING_LAU "lab", frame padding.
+  const payload = hex([0x82, sequence, 0, 16, 0, 0, 1, 5, 1, 0x6c, 0x61, 0x62, 0xff, 0xff]);
+  assert.ok(b1sClient.handle({ pgn: 126720, src: 38, fields: { manufacturerCode: 2046, payload } }));
+  assert.deepStrictEqual(await reading, { status: 'done', value: 'lab' });
+});
+
+test('a request without reply is retried, then rejected', async () => {
+  const { b1sClient, sent } = client();
+  await assert.rejects(b1sClient.read(38, 64), /no reply from address 38/);
+  assert.strictEqual(sent.length, 3);
+});
+
+test('command replies carry their result as a number; console text loses padding', async () => {
+  const { b1sClient, consoles } = client();
+  const command = b1sClient.command(38, 'calibrate', 2, 300650);
+  await new Promise(resolve => setImmediate(resolve));
+  b1sClient.handle({ pgn: 61184, src: 38, fields: { manufacturerCode: 2046, code: 0x84, channel: 2, argument: 0xffffff04 } });
+  assert.strictEqual(await command, 'refused');
+  const text = hex([0x84, 7, 0, ...Buffer.from('> help\r\n'), 0xff, 0xff, 0x00]);
+  assert.ok(b1sClient.handle({ pgn: 126720, src: 38, fields: { manufacturerCode: 2046, payload: text } }));
+  assert.deepStrictEqual(consoles, [[38, '> help\r\n']]);
 });

@@ -563,6 +563,7 @@ for (const button of document.querySelectorAll('nav .tab')) button.onclick = () 
   for (const tab of document.querySelectorAll('nav .tab')) { tab.classList.toggle('active', tab === button); tab.setAttribute('aria-selected', String(tab === button)); }
   element('devices-view').hidden = button.dataset.view !== 'devices';
   element('configurations-view').hidden = button.dataset.view !== 'configurations';
+  element('b1s-view').hidden = button.dataset.view !== 'b1s';
 };
 
 element('json').oninput = updateEditorStatus;

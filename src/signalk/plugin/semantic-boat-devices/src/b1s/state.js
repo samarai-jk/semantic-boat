@@ -9,6 +9,7 @@
 // Descriptions, at most once per requestIntervalMs.
 
 const isoAddressClaim = 60928;
+const productInformation = 126996;
 const specialValues = new Set([0x7fffffff, 0x7ffffffe, 0x7ffffffd]); // not available, error, out of range
 const encodings = ['b1s', 'standard', 'off'];
 
@@ -41,6 +42,7 @@ class B1sState {
   handle(n2k) {
     const fields = n2k.fields ?? {};
     if (n2k.pgn === isoAddressClaim) return this.addressClaim(n2k.src, fields);
+    if (n2k.pgn === productInformation) return this.product(n2k.src, fields);
     if (n2k.pgn !== this.registry.pgns.measurement && n2k.pgn !== this.registry.pgns.channelDescription) return;
     if (field(fields, 'manufacturerCode', 'Manufacturer Code') !== this.registry.manufacturerCode) return;
     this.lastMessageAt = this.now();
@@ -63,12 +65,28 @@ class B1sState {
     if (manufacturer !== this.registry.manufacturerCode) return;
     let device = this.devices.get(id);
     if (!device) {
-      device = { id, address, channels: new Map() };
+      device = { id, address, channels: new Map(), values: new Map(), product: null };
       this.devices.set(id, device);
+      this.ask(address, productInformation);
     }
     if (device.address !== address) this.addresses.delete(device.address);
     device.address = address;
     this.addresses.set(address, id);
+  }
+
+  product(address, fields) {
+    const device = this.deviceAt(address);
+    if (!device) return;
+    device.product = {
+      code: field(fields, 'productCode', 'Product Code') ?? null,
+      model: field(fields, 'modelId', 'Model ID') ?? '',
+      software: field(fields, 'softwareVersionCode', 'Software Version Code') ?? '',
+      hardware: field(fields, 'modelVersion', 'Model Version') ?? ''
+    };
+  }
+
+  deviceById(id) {
+    return this.devices.get(Number(id));
   }
 
   deviceAt(address) {
@@ -121,6 +139,7 @@ class B1sState {
       ? null
       : scaled(raw, quantity.scale);
     const path = this.pathOf(device, description, quantityCode);
+    device.values.set(channel, { value, at: this.now() });
     const update = {
       source: { label: 'b1s', type: 'NMEA2000', pgn: n2k.pgn, src: String(n2k.src) },
       values: [{ path, value }]
@@ -157,13 +176,20 @@ class B1sState {
     return [...this.devices.values()].map(device => ({
       id: device.id,
       address: device.address,
-      channels: [...device.channels.values()].map(channel => ({
-        ...channel,
-        quantity: this.registry.quantities.get(channel.kind)?.id ?? null,
-        path: channel.encoding === 'standard' ? null : this.pathOf(device, channel, channel.kind)
-      }))
+      product: device.product,
+      channels: [...device.channels.values()].sort((a, b) => a.channel - b.channel).map(channel => {
+        const quantity = this.registry.quantities.get(channel.kind);
+        const latest = device.values.get(channel.channel);
+        return {
+          ...channel,
+          quantity: quantity?.id ?? null,
+          unit: quantity?.unit ?? null,
+          value: latest?.value ?? null,
+          path: channel.encoding === 'standard' ? null : this.pathOf(device, channel, channel.kind)
+        };
+      })
     }));
   }
 }
 
-module.exports = { B1sState };
+module.exports = { B1sState, scaled };

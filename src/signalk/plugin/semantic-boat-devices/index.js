@@ -6,19 +6,23 @@ const { DevicesRuntime } = require('./src/runtime');
 
 module.exports = app => {
   let runtime = null;
+  let statusTimer = null;
+  const showStatus = instance => app.setPluginStatus(`Live Signal K gateway: ${instance.links.length} device(s)` +
+    (instance.b1s ? `; B1S: ${instance.b1s.status()}` : ''));
   let transition = Promise.resolve();
   const serialize = action => {
     transition = transition.then(action).catch(error => app.setPluginError(error.message));
     return transition;
   };
   const stop = async () => {
+    clearInterval(statusTimer); statusTimer = null;
     const previous = runtime; runtime = null;
     if (previous) await previous.stop();
   };
   const plugin = {
     id: 'semantic-boat-devices',
     name: 'Semantic Boat Devices',
-    description: 'Live Signal K bindings and a shared display configuration catalog.',
+    description: 'Live Signal K bindings, a shared display configuration catalog, and B1S CAN devices.',
     schema: {
       type: 'object',
       properties: {
@@ -38,6 +42,13 @@ module.exports = app => {
             address: { type: 'integer', minimum: 1, maximum: 254, title: 'Stored device address' }
           }
         } },
+        b1s: { type: 'object', title: 'B1S (Semantic Boat CAN network)', properties: {
+          enabled: { type: 'boolean', title: 'B1S devices: measurements, configuration, console', default: false },
+          analyzerEvent: { type: 'string', title: 'Decoded messages event of the B1S connection', default: 'b1s-N2KAnalyzerOut' },
+          outEvent: { type: 'string', title: 'Raw output event of the B1S connection', default: 'b1s-nmea2000out' },
+          jsonOutEvent: { type: 'string', title: 'JSON output event of the B1S connection', default: 'b1s-nmea2000JsonOut' },
+          registryPath: { type: 'string', title: 'B1S registry (empty: the repository copy)', default: '' }
+        } },
         mappings: { type: 'array', title: 'Exact Signal K path mappings', default: [], items: {
           type: 'object', required: ['from', 'to'], properties: {
             from: { type: 'string', title: 'Requested display path' },
@@ -52,7 +63,8 @@ module.exports = app => {
       runtime = instance;
       try {
         await instance.start(options);
-        app.setPluginStatus(`Live Signal K gateway: ${instance.links.length} device(s)`);
+        showStatus(instance);
+        statusTimer = setInterval(() => showStatus(instance), 5000);
       } catch (error) { await stop(); throw error; }
     }),
     stop: () => serialize(stop),
@@ -60,7 +72,7 @@ module.exports = app => {
       const publicDirectory = path.join(__dirname, 'public');
       router.get('/ui', (request, response) => request.path.endsWith('/')
         ? response.sendFile(path.join(publicDirectory, 'index.html')) : response.redirect('ui/'));
-      for (const name of ['app.js', 'style.css']) router.get(`/ui/${name}`,
+      for (const name of ['app.js', 'b1s.js', 'style.css']) router.get(`/ui/${name}`,
         (_request, response) => response.sendFile(path.join(publicDirectory, name)));
       router.get('/ui/lucide.js', (_request, response) => response.sendFile(require.resolve('lucide/dist/umd/lucide.js')));
       const action = handler => async (request, response) => {
@@ -90,6 +102,23 @@ module.exports = app => {
         }
         return templates;
       }));
+      // B1S devices (src/lib/b1s/CONFIGURATION.md).
+      const b1s = handler => action((request, instance) => {
+        if (!instance.b1s) throw new Error('B1S is not enabled in the plugin configuration');
+        return handler(request, instance.b1s);
+      });
+      const channelOf = value => (value === undefined || value === null || value === '' ? null : Number(value));
+      router.get('/b1s/devices', b1s((_request, adapter) => adapter.devices()));
+      router.get('/b1s/devices/:id/parameters', b1s((request, adapter) => adapter.parameters(request.params.id)));
+      router.put('/b1s/devices/:id/parameters/:name', b1s((request, adapter) => adapter.setParameter(
+        request.params.id, request.params.name, { ...request.body, channel: channelOf(request.body?.channel) })));
+      router.post('/b1s/devices/:id/commands/:name', b1s((request, adapter) => adapter.command(
+        request.params.id, request.params.name, { ...request.body, channel: channelOf(request.body?.channel) })));
+      router.post('/b1s/devices/:id/console', b1s((request, adapter) => adapter.sendConsole(request.params.id, request.body?.line ?? '')));
+      router.get('/b1s/devices/:id/console', b1s((request, adapter) => adapter.consoleOutput(request.params.id, request.query.since)));
+      router.get('/b1s/backups', b1s((_request, adapter) => adapter.backups()));
+      router.get('/b1s/backups/:id', b1s((request, adapter) => adapter.backup(request.params.id)));
+      router.post('/b1s/devices/:id/restore', b1s((request, adapter) => adapter.restore(request.params.id, request.body ?? {})));
       router.post('/devices/:id/install', action(async (request, instance) => {
         await instance.install(request.params.id, request.body.name);
         return { sent: request.body.name, status: 'Awaiting device validation and restart; not an install acknowledgement' };

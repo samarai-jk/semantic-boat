@@ -18,27 +18,29 @@ replacement device.
 ## Overview
 
 ```text
- browser: Semantic Boat Devices page ──HTTP──▶ B1S plugin (Signal K)
-                                               │  parameters, actions, backups,
+ browser: B1S tab of the Semantic Boat Devices page
+                    ──HTTP──▶ Semantic Boat Devices plugin (Signal K)
+                                               │  parameters, commands, backups,
                                                │  console sessions
                                                ▼
                                  B1S provider (can1, own events)
                                                │  Service 126720 (addressed fast packet)
                                                │  Command 61184 (addressed single frame)
                                                ▼
-                              device: b1s::ParameterService + device parameters
+                              device: b1s::ServiceServer + device parameters
                                       (slstm32 measurement registry, channel
                                        configuration, device settings in EEPROM)
 ```
 
-- **Device firmware** (`src/lib/b1s`): a `ParameterService` answers
-  parameter reads and writes and runs actions. What a device offers is a
+- **Device firmware** (`src/lib/b1s`): a `ServiceServer` answers
+  parameter reads and writes and runs commands. What a device offers is a
   table in its composition root, built from generic pieces (channel
   configuration, measurement calibration and thresholds, device role).
-- **Semantic Boat Devices plugin** (decided: one plugin): it takes over the
-  B1S plugin as its CAN adapter and gets a B1S view next to the display
-  devices: devices, channels with live values, editable parameters,
-  calibration actions, backup and restore, and a console.
+- **Semantic Boat Devices plugin**
+  ([B1S Devices](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices)):
+  B1S measurements to Signal K, the configuration client, backups, and the
+  B1S tab of its page: devices, channels with live values, editable
+  parameters, calibration, backup and restore, and a console.
 
 ## Parameters
 
@@ -143,19 +145,15 @@ line during the session arrive this way.
 
 ## Pi side
 
-- **B1S plugin API:** `GET /devices` (exists),
-  `GET /devices/:id/parameters` (all values, read live),
-  `PUT /devices/:id/parameters/:name[/:channel]`,
-  `POST /devices/:id/actions/:command`, `GET|POST /devices/:id/backup`,
-  `POST /devices/:id/restore[?from=<device ID>]`, and (if decided)
-  `POST /devices/:id/console`.
-- **Backups:** after every change and once a day, the plugin stores each
-  device's `rw` parameters as JSON in its data directory, by device ID and
-  product, with the time.
-- **Replacement:** a device of the same product without a role appears
-  while a configured one has been missing for a while: the page offers
-  "restore the configuration of *X* onto this device". Calibration is not
-  copied (it belongs to the old sensors).
+- **API** of the Semantic Boat Devices plugin: see its
+  [README](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices).
+- **Backups:** every complete parameter read and every change stores the
+  device's `rw` parameters as JSON in the plugin data directory, by device
+  ID, with product and time.
+- **Replacement:** Restore writes another device's backup onto a new device
+  (without calibration, which belongs to the old sensors). *Planned:* the
+  page offers this by itself when a device of the same product without a
+  role appears while a configured one has been missing for a while.
 - After a location change, Signal K paths change at once (the plugin
   re-reads the Channel Descriptions the device sends after each change).
 
@@ -193,7 +191,8 @@ bytes per channel slot.
    invalid values refused), calibrate / reset / acknowledge / identify /
    restart commands, the console with its log mirror; a location change moves
    the Signal K path at once.
-2. Merge the B1S plugin into Semantic Boat Devices as its CAN adapter;
-   service client, API, backups.
-3. Devices page: B1S view.
-4. Replacement flow.
+2. Done: the Semantic Boat Devices plugin took over the B1S plugin;
+   configuration client, API, backups, B1S tab. Verified against LT1 through
+   the adapter (parameters with SI values, writes, calibration, commands,
+   backup, restore, console).
+3. Planned: replacement offered automatically; daily backups.

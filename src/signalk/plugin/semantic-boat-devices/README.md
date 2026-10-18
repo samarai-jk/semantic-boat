@@ -185,17 +185,93 @@ For the upcoming weather station test:
   restoring the appropriate display wiring, not while an unknown sensor remains
   isolated on the same channel.
 
-## Adapter Roadmap
+## B1S Devices
 
-Keep the N2K instrument network separate from the Semantic Boat device network.
-Dedicated CAN device PGNs/commands remain to be specified; N2K devices should
-bind by NAME/address-claim identity rather than mutable source address.
+[B1S](../../../lib/b1s/README.md) is the Semantic Boat CAN network, kept
+separate from the NMEA 2000 instrument network. With `b1s.enabled`, the plugin
+brings its devices into Signal K and configures them over CAN
+([CONFIGURATION.md](../../../lib/b1s/CONFIGURATION.md)):
+
+- **Measurements.** Canboat definitions of the B1S messages, built from the
+  B1S registry (`src/lib/b1s/registry.yaml`), make Signal K decode them (also
+  in the Data Fiddler and `@signalk/n2k-debug`). Each B1S measurement goes to
+  `<quantity template with location>`, e.g.
+  `environment.inside.refrigerator.temperature`, or, while its channel has no
+  location, to `b1s.unassigned.<device ID>.<channel>.<quantity>`; SI values,
+  `null` for "not available", "error", and "out of range"; metadata with the
+  unit and the channel label. Standard PGNs of B1S devices are decoded by
+  Signal K itself.
+- **Identity.** Devices are bound by the unique number of their NAME (the
+  device ID), never by address; a device that moves keeps its channels.
+  Unknown devices and channels are asked for their address claim, product
+  information, and Channel Descriptions (at most every 10 s per device);
+  global requests go out 3 s after start.
+- **B1S tab** of the page: every device with product, software, and
+  hardware; its channels with live value, label, location, encoding, and
+  Signal K path (edit and Save; Calibrate against a reference in °C or %;
+  Reset calibration and thresholds); all parameters (thresholds and
+  calibration in °C / K / %); Identify, Restart, Restore; and a console that
+  runs commands on the device and shows its live log.
+- **Backups.** Every complete parameter read and every change is stored as
+  `b1s-backups/<device ID>.json` in the plugin data directory. Restore writes
+  a backup onto a device: its own, or another device's (a replacement; then
+  without calibration, which belongs to the old sensors).
+- The plugin status shows B1S devices, channels, measurements, and the age
+  of the last B1S message.
+
+API (admin login): `GET /b1s/devices`, `GET /b1s/devices/:id/parameters`
+(read live, then backed up), `PUT /b1s/devices/:id/parameters/:name` with
+`{channel, value}` (raw, text, or enum name) or `{channel, si}`,
+`POST /b1s/devices/:id/commands/:name` with `{channel, argument | si}`,
+`POST /b1s/devices/:id/console` with `{line}`,
+`GET /b1s/devices/:id/console?since=<position>`, `GET /b1s/backups[/:id]`,
+`POST /b1s/devices/:id/restore` with `{from, calibration}`.
+
+### B1S setup
+
+1. **B1S connection.** A `canbus-canboatjs` NMEA 2000 connection on the B1S
+   interface (bench Pi: `can1`, see
+   [can-bench](../../../tools/can-bench/README.md#raspberry-pi-bench)) with
+   its own event names, so B1S traffic stays apart from NMEA 2000 inside
+   Signal K: this plugin's requests go only to B1S, other plugins' NMEA 2000
+   output never reaches B1S, and this plugin sees only B1S messages.
+   Preferred address 150 (the B1S range for gateways on the Pi). In
+   `settings.json`:
+
+   ```json
+   {
+     "id": "can1", "enabled": true,
+     "pipeElements": [{
+       "type": "providers/simple",
+       "options": {
+         "logging": false, "type": "NMEA2000",
+         "subOptions": {
+           "type": "canbus-canboatjs", "interface": "can1", "uniqueNumber": 600251,
+           "preferredAddress": 150,
+           "analyzerOutEvent": "b1s-N2KAnalyzerOut",
+           "outEvent": "b1s-nmea2000out",
+           "jsonOutEvent": "b1s-nmea2000JsonOut"
+         }
+       }
+     }]
+   }
+   ```
+
+   canboatjs remembers the last claimed address in `canboatjs-data.json`;
+   change `lastAddress` there as well (with Signal K stopped) to move an
+   existing connection.
+2. **Plugin configuration:** `"b1s": {"enabled": true}` (the event names
+   default to the ones above; `registryPath` overrides the repository copy of
+   the registry). Restart Signal K after a registry change.
+
+## Adapter Roadmap
 
 The runtime separates device sessions/catalog from transport adapters. Addressed
 RS485 is implemented with explicit direction, master grants, bounded reply
 windows, retry replay and duplicate configured-address rejection. Physical
-addresses must still be set uniquely; automatic identity/discovery and CAN
-adapters remain future work. Multiple devices on a legacy serial bus are rejected.
+addresses must still be set uniquely. Multiple devices on a legacy serial bus
+are rejected. B1S devices (above) are discovered, not configured; serving
+display sessions over B1S (a network display) is future work.
 
 This local monorepo plugin reuses `src/tools/disp-sim/src/protocol.js` and the display
 JSON schema. Its templates live in `configs/`. It is not yet a standalone npm
@@ -230,6 +306,6 @@ npm install
 npm test
 ```
 
-Tests cover preferred-source binding, replacement/cleanup, malformed snapshots,
+Tests cover B1S decoding (frames recorded from LT1), paths, requests, the configuration client, preferred-source binding, replacement/cleanup, malformed snapshots,
 catalog limits/path safety, transfer CRC/chunk offsets, serial pacing/lifecycle,
 plugin routes, and unsafe bus configuration rejection.

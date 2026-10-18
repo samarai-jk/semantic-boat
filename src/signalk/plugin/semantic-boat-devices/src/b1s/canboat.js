@@ -33,6 +33,19 @@ function definition(pgn, id, description, type, length, fields) {
 function canboatDefinitions(registry) {
   return {
     PGNs: [
+      // Service and Command carry a code that selects the rest; the rest
+      // arrives as hex ("payload", padding of the last frame included) and
+      // is parsed by src/b1s/client.js.
+      definition(registry.pgns.service, 'b1sService', 'B1S: Service', 'Fast', 223, [
+        ...header(registry),
+        { Id: 'payload', Name: 'Payload', BitLength: 1768, BitOffset: 16, BitStart: 0, FieldType: 'BINARY' }
+      ]),
+      definition(registry.pgns.command, 'b1sCommand', 'B1S: Command', 'Single', 8, [
+        ...header(registry),
+        number('code', 'Command', 8, 16),
+        number('channel', 'Channel', 8, 24),
+        { Id: 'argument', Name: 'Argument or Result', BitLength: 32, BitOffset: 32, BitStart: 0, FieldType: 'BINARY' }
+      ]),
       definition(registry.pgns.measurement, 'b1sMeasurement', 'B1S: Measurement', 'Single', 8, [
         ...header(registry),
         number('quantity', 'Quantity', 8, 16),

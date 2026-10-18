@@ -108,6 +108,7 @@ commands:
   - {code: 6, id: resetChannel, argument: "none (0xFF)", description: "Calibration and alarm thresholds of a measurement channel back to defaults"}
   - {code: 7, id: acknowledgeAlarms, argument: "none (0xFF), channel 0xFF", description: "Acknowledge all alarms of the device, like a button"}
   - {code: 8, id: restart, argument: "none (0xFF), channel 0xFF", description: "Restart the device after the reply"}
+  - {code: 9, id: enterBootloader, argument: "none (0xFF), channel 0xFF", description: "Restart into the bootloader for a firmware update (FIRMWARE.md)"}
 
 # Service codes of the Service message (126720); layouts in CONFIGURATION.md.
 services:
@@ -115,6 +116,9 @@ services:
   - {code: 2, id: parameterRead,  description: "Value of a parameter"}
   - {code: 3, id: parameterWrite, description: "Store a parameter; the reply carries the stored value"}
   - {code: 4, id: console,        description: "Run a console command line; the device log follows as replies for 30 s"}
+  - {code: 5, id: firmwareBegin,  description: "Bootloader: start an update with the image header (FIRMWARE.md)"}
+  - {code: 6, id: firmwareData,   description: "Bootloader: a chunk of the image at an offset"}
+  - {code: 7, id: firmwareEnd,    description: "Bootloader: check the image and start it"}
 
 # Parameters for configuration over CAN (CONFIGURATION.md). scope: device or
 # channel. type: wire value int32 for uint8/uint16/uint32/int32/bool/enum,
@@ -141,6 +145,11 @@ parameters:
   - {code: 47, id: alarmRule3,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 3"}
   - {code: 64, id: uptime,                  scope: device,  type: uint32, access: ro, unit: s, description: "Time since the last start"}
 
+# Boards that run B1S firmware with a bootloader (FIRMWARE.md); the image
+# header names the board an image is built for.
+boards:
+  - {code: 1, id: canMcuV1, description: "can-mcu V1.0 (STM32L431CC): bootloader 16 KB at 0x08000000, application 224 KB at 0x08004000"}
+
 # Device types. product_code: 126996; preferred_address: start address of
 # the claim; device_class/device_function: NMEA 2000 NAME table;
 # frames_per_second: typical bus load for the 30 % budget.
@@ -148,3 +157,6 @@ products:
   - {product_code: 1, id: lab-test-01, model: "Semantic Boat LT1", preferred_address: 35,
      device_class: 75, device_function: 130, frames_per_second: 3,
      description: "can-mcu + host-dev lab device (src/dev/can-mcu/lab-test-01)"}
+  - {product_code: 2, id: can-mcu-bootloader, model: "Semantic Boat can-mcu bootloader", preferred_address: 240,
+     device_class: 10, device_function: 130, frames_per_second: 0.1,
+     description: "Bootloader of can-mcu devices while it waits for or receives a firmware update (src/dev/can-mcu/can-mcu-bootloader)"}

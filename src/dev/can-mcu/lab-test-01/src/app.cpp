@@ -3,6 +3,8 @@
 #include "can_mcu/board.hpp"
 #include "can_mcu/board_temperatures.hpp"
 #include "can_mcu/can_bus.hpp"
+#include "can_mcu/firmware.hpp"
+#include "can_mcu/image_header.hpp"
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
 #include "can_mcu/supervision.hpp"
@@ -69,6 +71,16 @@ constexpr std::uint32_t watchdogTimeoutMs = 4000u;
 // B1S / NMEA 2000 identity from the B1S registry (product code, class 75
 // "sensor communication interface", function 130 "temperature").
 constexpr b1s::Product product = b1s::product::labTest01;
+// Builds with development tools say so in the software version, visible to
+// every NMEA 2000 tool (Signal K, can-bench) and in the image header.
+constexpr const char* softwareVersion = slstm32::devTools ? "0.1.0-dev " __DATE__ : "0.1.0 " __DATE__;
+// Firmware image header for the bootloader; size and CRC are stamped in
+// after the link (src/lib/b1s/FIRMWARE.md).
+[[gnu::section(".image_header"), gnu::used]] const can_mcu::image::Header imageHeader =
+    can_mcu::image::makeHeader(product.code, 0u, 1u, 0u, slstm32::devTools,
+                               slstm32::devTools ? "0.1.0-dev " __DATE__ : "0.1.0 " __DATE__);
+// The application confirms a newly installed image once it has run normally this long.
+constexpr std::uint32_t firmwareConfirmAfterMs = 10000u;
 
 const slstm32::Runtime runtime = can_mcu::runtime();
 slstm32::EventBus events{runtime};
@@ -132,10 +144,7 @@ std::uint8_t n2kFastReceiveBuffer[96]{};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2k::manufacturerCode, 0u, 0u, product.deviceFunction, product.deviceClass, 0u, 4u, true},
     lab_test_01::DeviceSettings{}.n2kAddress,
-    // Builds with development tools say so in the software version, visible
-    // to every NMEA 2000 tool (Signal K, can-bench).
-    n2k::ProductInfo{2100u, product.code, "Semantic Boat LT1",
-                     slstm32::devTools ? "0.1.0-dev " __DATE__ : "0.1.0 " __DATE__,
+    n2k::ProductInfo{2100u, product.code, "Semantic Boat LT1", softwareVersion,
                      "can-mcu V1.0 + host-dev", serialCode, 0u, 1u},
     n2kTransmitPgns,
     sizeof n2kTransmitPgns / sizeof n2kTransmitPgns[0],
@@ -249,6 +258,8 @@ const b1s::ServiceServerConfig serviceServerConfig{
 b1s::ServiceServer serviceServer{runtime, n2kNode, serviceServerConfig};
 std::uint32_t restartAt{};
 bool restartRequested{};
+bool bootloaderRequested{};
+bool firmwareConfirmed{};
 std::uint32_t identifyUntil{};
 
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
@@ -420,8 +431,8 @@ b1s::ParameterStatus writePreferredAddress(void*, std::int32_t value) {
     return saveSettings() ? b1s::ParameterStatus::done : b1s::ParameterStatus::busy;
 }
 
-// Device commands over CAN: identify (green LED blinks fast, one quiet beep)
-// and restart (after the reply has gone out).
+// Device commands over CAN: identify (green LED blinks fast, one quiet beep),
+// restart, and restart into the bootloader (both after the reply has gone out).
 b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, std::int32_t argument) {
     switch (command) {
     case b1s::Command::identify: {
@@ -436,7 +447,10 @@ b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, s
         return b1s::CommandResult::done;
     }
     case b1s::Command::restart:
-        logger.write(LogLevel::warning, "b1s: restart requested over CAN");
+    case b1s::Command::enterBootloader:
+        bootloaderRequested = command == b1s::Command::enterBootloader;
+        logger.write(LogLevel::warning, bootloaderRequested ? "b1s: firmware update requested over CAN, restarting into the bootloader"
+                                                            : "b1s: restart requested over CAN");
         restartRequested = true;
         restartAt = runtime.millis() + 300u;
         return b1s::CommandResult::done;
@@ -504,8 +518,13 @@ extern "C" void lab_test_01_app_run(void) {
         identifyUntil = 0u;
         greenLed.blink(2000u, 60u);
     }
+    if (!firmwareConfirmed && now >= firmwareConfirmAfterMs) {
+        firmwareConfirmed = true;
+        can_mcu::confirmFirmware();
+    }
     if (restartRequested && static_cast<std::int32_t>(now - restartAt) >= 0) {
         serialLog.flush(startupLogFlushMs);
+        if (bootloaderRequested) can_mcu::restartIntoBootloader();
         NVIC_SystemReset();
     }
 }

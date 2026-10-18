@@ -109,6 +109,7 @@ enum class Command : std::uint8_t {
     resetChannel = 6u,
     acknowledgeAlarms = 7u,
     restart = 8u,
+    enterBootloader = 9u,
 };
 
 // Service codes of the Service message.
@@ -117,6 +118,14 @@ enum class Service : std::uint8_t {
     parameterRead = 2u,
     parameterWrite = 3u,
     console = 4u,
+    firmwareBegin = 5u,
+    firmwareData = 6u,
+    firmwareEnd = 7u,
+};
+
+// Boards of firmware images (FIRMWARE.md).
+enum class Board : std::uint16_t {
+    canMcuV1 = 1u,
 };
 
 // Parameters for configuration over CAN (scope, type, unit: registry).
@@ -207,6 +216,7 @@ struct Product {
 
 namespace product {
 inline constexpr Product labTest01{1u, 35u, 75u, 130u};
+inline constexpr Product canMcuBootloader{2u, 240u, 10u, 130u};
 } // namespace product
 
 } // namespace b1s

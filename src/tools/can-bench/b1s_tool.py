@@ -11,6 +11,7 @@ bench address (153). Values are raw B1S values (SI unit x quantity scale);
     python b1s_tool.py command 38 calibrate 2 295150      # air channel to 22.0 C
     python b1s_tool.py console 38 "sensor air"
     python b1s_tool.py console 38 --follow 20             # live device log for 20 s
+    python b1s_tool.py firmware 38 lab-test-01.bin         # update over CAN (FIRMWARE.md)
 """
 
 import argparse
@@ -47,7 +48,7 @@ class Client:
 
     def send_single(self, priority, pgn, destination, data):
         self.bus.send(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
-                                  is_extended_id=True, data=bytes(data).ljust(8, b"\xff")))
+                                  is_extended_id=True, data=bytes(data).ljust(8, b"\xff")), timeout=1.0)
 
     def send_fast(self, priority, pgn, destination, data):
         self.fast_sequence = (self.fast_sequence + 1) & 7
@@ -59,7 +60,7 @@ class Client:
             offset, index = offset + 7, index + 1
         for frame in frames:
             self.bus.send(can.Message(arbitration_id=encode_id(priority, pgn, BENCH_ADDRESS, destination),
-                                      is_extended_id=True, data=frame.ljust(8, b"\xff")))
+                                      is_extended_id=True, data=frame.ljust(8, b"\xff")), timeout=1.0)
 
     def receive(self, until, accept):
         """Messages (pgn, source, payload) until `accept` returns a result or time runs out."""
@@ -131,6 +132,81 @@ class Client:
             encoded = bytes([0]) + struct.pack("<i", value)
         reply = self.service(address, "parameterWrite", struct.pack("<HB", parameter, channel) + encoded)
         return decode_value(reply)
+
+    def claims(self, seconds=1.0):
+        """Address claims after a global request: address -> NAME."""
+        self.send_single(6, 59904, 255, (60928).to_bytes(3, "little"))
+        seen = {}
+
+        def accept(pgn, source, destination, data):
+            if pgn == 60928 and len(data) >= 8:
+                seen[source] = struct.unpack_from("<Q", data)[0]
+            return None
+        self.receive(time.monotonic() + seconds, accept)
+        return seen
+
+    def find(self, unique, bootloader, seconds):
+        """Address of the device with this unique number, in the bootloader
+        (device class 10) or not, within `seconds`."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            for address, name in self.claims().items():
+                if name & 0x1FFFFF == unique and (((name >> 49) & 0x7F) == 10) == bootloader:
+                    return address
+        return None
+
+    def update(self, address, image):
+        """Firmware update over CAN (src/lib/b1s/FIRMWARE.md)."""
+        header = image[0x200:0x240]
+        magic, _, board, product, _, size, crc = struct.unpack_from("<IHHHHII", header)
+        text = header[24:].split(b"\0")[0].decode("ascii", "replace")
+        if magic != 0x21533142 or size != len(image):
+            sys.exit("not a stamped B1S image (stamp_image.py)")
+        print(f"image: {size} bytes, CRC {crc:08X}, board {board}, product {product}, {text}")
+        names = self.claims()
+        if address not in names:
+            sys.exit(f"no device at address {address}")
+        unique = names[address] & 0x1FFFFF
+        bootloader = address if ((names[address] >> 49) & 0x7F) == 10 else None
+        started = time.monotonic()
+        if bootloader is None:
+            print(f"device {unique} at {address}: enterBootloader -> {self.command(address, 'enterBootloader')}")
+            bootloader = self.find(unique, True, 10.0)
+            if bootloader is None:
+                sys.exit("the device did not appear in its bootloader")
+        print(f"bootloader of device {unique} at address {bootloader}")
+        reply = self.service(bootloader, "firmwareBegin", header)
+        if reply[0] != 0:
+            sys.exit(f"firmwareBegin refused: status {reply[0]}")
+        chunk = reply[1]
+        offset = 0
+        last_report = 0
+        while offset < size:
+            data = image[offset:offset + chunk]
+            reply = self.service(bootloader, "firmwareData", struct.pack("<I", offset) + data)
+            status, following = reply[0], struct.unpack_from("<I", reply, 1)[0]
+            if status == 10:  # unexpected offset: continue where the device is
+                offset = following
+                continue
+            if status != 0:
+                sys.exit(f"firmwareData at {offset} refused: status {status}")
+            offset = following
+            if offset - last_report >= 16384 or offset == size:
+                last_report = offset
+                elapsed = time.monotonic() - started
+                print(f"  {offset:7d} / {size} bytes, {offset / 1024 / max(elapsed, 0.001):.1f} KB/s")
+        reply = self.service(bootloader, "firmwareEnd")
+        if reply[0] != 0:
+            sys.exit(f"firmwareEnd refused: status {reply[0]} (11 = CRC mismatch)")
+        print(f"image written and checked in {time.monotonic() - started:.1f} s; the device restarts")
+        application = self.find(unique, False, 15.0)
+        if application is None:
+            sys.exit("the application did not come back (the bootloader keeps waiting for an image)")
+        print(f"application back at address {application}; waiting for it to confirm itself")
+        time.sleep(12.0)
+        if self.find(unique, False, 3.0) is None:
+            sys.exit("the application did not stay up")
+        print(f"update complete in {time.monotonic() - started:.1f} s")
 
     def channels(self, address):
         """Channel numbers and quantities from the device's Channel Descriptions."""
@@ -209,6 +285,9 @@ def main():
     console.add_argument("address", type=int)
     console.add_argument("line", nargs="?", default="")
     console.add_argument("--follow", type=float, default=2.0, metavar="SECONDS", help="how long to show the log")
+    firmware = sub.add_parser("firmware", help="update the firmware over CAN")
+    firmware.add_argument("address", type=int, help="the device's address (application or bootloader)")
+    firmware.add_argument("image", type=argparse.FileType("rb"), help="stamped image (.bin)")
     args = parser.parse_args()
 
     client = Client(args.can)
@@ -256,6 +335,8 @@ def main():
         elif args.action == "command":
             argument = args.argument if args.argument != -1 else -1
             print(client.command(args.address, args.command, args.channel, argument))
+        elif args.action == "firmware":
+            client.update(args.address, args.image.read())
         elif args.action == "console":
             client.sequence = (client.sequence + 1) & 0xFF
             client.send_fast(6, PGN["service"], args.address,

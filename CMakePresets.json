@@ -40,12 +40,52 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "can-mcu-bootloader-debug",
+      "displayName": "can-mcu-bootloader (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/can-mcu-bootloader/debug",
+      "toolchainFile": "${sourceDir}/src/dev/can-mcu/can-mcu-bootloader/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEMANTIC_BOAT_DEVICE": "can-mcu-bootloader"
+      }
+    },
+    {
+      "name": "can-mcu-bootloader-release",
+      "inherits": "can-mcu-bootloader-debug",
+      "displayName": "can-mcu-bootloader (Release)",
+      "binaryDir": "${sourceDir}/build/can-mcu-bootloader/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "remote-a-debug", "configurePreset": "remote-a-debug" },
-    { "name": "remote-a-release", "configurePreset": "remote-a-release" },
-    { "name": "lab-test-01-debug", "configurePreset": "lab-test-01-debug" },
-    { "name": "lab-test-01-release", "configurePreset": "lab-test-01-release" }
+    {
+      "name": "remote-a-debug",
+      "configurePreset": "remote-a-debug"
+    },
+    {
+      "name": "remote-a-release",
+      "configurePreset": "remote-a-release"
+    },
+    {
+      "name": "lab-test-01-debug",
+      "configurePreset": "lab-test-01-debug"
+    },
+    {
+      "name": "lab-test-01-release",
+      "configurePreset": "lab-test-01-release"
+    },
+    {
+      "name": "can-mcu-bootloader-debug",
+      "configurePreset": "can-mcu-bootloader-debug"
+    },
+    {
+      "name": "can-mcu-bootloader-release",
+      "configurePreset": "can-mcu-bootloader-release"
+    }
   ]
 }

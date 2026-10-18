@@ -48,9 +48,5 @@ target_link_libraries(${LAB_TEST_01_TARGET} b1s n2k semantic_modules slstm32 stm
 target_link_options(${LAB_TEST_01_TARGET} PRIVATE
     -Wl,-Map=$<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.map)
 
-add_custom_command(TARGET ${LAB_TEST_01_TARGET} POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${LAB_TEST_01_TARGET}> $<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.hex
-    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${LAB_TEST_01_TARGET}> $<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.bin
-    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${LAB_TEST_01_TARGET}>
-    VERBATIM
-)
+# Started by the can-mcu bootloader: stamped image (lab-test-01.bin).
+can_mcu_add_image(${LAB_TEST_01_TARGET} lab-test-01)

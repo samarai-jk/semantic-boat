@@ -44,7 +44,7 @@ def enum(lines, name, comment, entries, base="std::uint8_t"):
 
 
 def generate(registry):
-    for section in ("quantities", "events", "output_kinds", "commands", "services", "parameters"):
+    for section in ("quantities", "events", "output_kinds", "commands", "services", "parameters", "boards"):
         check_codes(section, registry[section])
     check_codes("products", registry["products"], "product_code")
     manufacturer = registry["manufacturer_code"]
@@ -100,6 +100,7 @@ def generate(registry):
     enum(lines, "OutputKind", "Output kinds of Output Status and Channel Description.", registry["output_kinds"])
     enum(lines, "Command", "Commands of the Command message; bit 7 marks a reply.", registry["commands"])
     enum(lines, "Service", "Service codes of the Service message.", registry["services"])
+    enum(lines, "Board", "Boards of firmware images (FIRMWARE.md).", registry["boards"], "std::uint16_t")
     enum(lines, "Parameter", "Parameters for configuration over CAN (scope, type, unit: registry).",
          registry["parameters"], "std::uint16_t")
     lines.append("// True for parameters of a channel (addressed with a channel number).")

@@ -158,3 +158,10 @@ product code, model strings, device class and function).
 - `src/tools/can-bench` is the CAN / NMEA 2000 counterpart on the PC.
 - A brand-new STM32L4 boots its bootloader until the first power cycle after
   the first flash.
+- can-mcu devices start from the can-mcu bootloader (first 16 KB; the
+  application at 0x08004000, [FIRMWARE.md](src/lib/b1s/FIRMWARE.md)).
+  `build.sh <device> flash` writes the application only; `flash-all` writes
+  bootloader and application; `rescue` connects under reset.
+- **Never write the option bytes from firmware or tools, and never set
+  readout protection level 2**: level 2 locks out the ST-Link permanently,
+  the only way to brick a device for good.

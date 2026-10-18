@@ -22,7 +22,9 @@ set(CMAKE_C_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C compiler flags for 
 set(CMAKE_CXX_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C++ compiler flags for Release builds")
 
 get_filename_component(LAB_TEST_01_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-set(LINKER_SCRIPT "${LAB_TEST_01_DIR}/cmx/STM32L431xx_FLASH.ld")
+# Started by the can-mcu bootloader: application at 0x08004000 with an image
+# header (src/lib/b1s/FIRMWARE.md), not the CubeMX script at 0x08000000.
+set(LINKER_SCRIPT "${LAB_TEST_01_DIR}/../common/can-mcu-app.ld")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "${MCU_FLAGS} -T\"${LINKER_SCRIPT}\" --specs=nano.specs --specs=nosys.specs -Wl,--gc-sections -Wl,--print-memory-usage")
 
 set(CMAKE_EXECUTABLE_SUFFIX ".elf")

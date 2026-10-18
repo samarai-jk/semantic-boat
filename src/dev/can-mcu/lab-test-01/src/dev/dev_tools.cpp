@@ -8,7 +8,6 @@
 #include "activity_service.hpp"
 #include "hardware_test_service.hpp"
 #include "input_module_test_service.hpp"
-#include "rpm_test_service.hpp"
 
 namespace lab_test_01 {
 namespace {
@@ -25,8 +24,7 @@ public:
                         context.greenLed, context.redLed, context.buzzer},
           inputModuleTest_{context.runtime, context.log, context.inputModule},
           activity_{context.runtime, context.n2kNode, context.inputModule, context.health, context.greenLed,
-                    context.redLed},
-          rpmTest_{context.runtime, context.log, context.console} {}
+                    context.redLed} {}
 
     bool init() override {
         bool ok = context_.console.add({"trap", "trap hang|fault  provoke a watchdog restart or a HardFault (dev)",
@@ -36,7 +34,6 @@ public:
         ok = hardwareTest_.init() && ok;
         ok = inputModuleTest_.init() && ok;
         ok = activity_.init() && ok;
-        ok = rpmTest_.init() && ok; // TEMPORARY: rpm frequency test
         context_.log.write(LogLevel::warning,
                            "dev tools: hardware and module tests, background load, trap and i2c commands");
         return ok;
@@ -46,7 +43,6 @@ public:
         hardwareTest_.run();
         inputModuleTest_.run();
         activity_.run();
-        rpmTest_.run();
     }
 
 private:
@@ -118,14 +114,9 @@ private:
     HardwareTestService hardwareTest_;
     InputModuleTestService inputModuleTest_;
     ActivityService activity_;
-    RpmTestService rpmTest_;
 };
 
 } // namespace
-
-void devToolsInterrupt(std::uint16_t pin) {
-    RpmTestService::onEdge(pin);
-}
 
 slstm32::Service& devTools(const DevToolsContext& context) {
     static DevToolsService service{context};

@@ -11,7 +11,9 @@ namespace can_mcu {
 // synthesizer's sample rate. This layer owns TIM6 and TIM6_DAC_IRQHandler;
 // do not enable TIM6 or the DAC in CubeMX. One output per device.
 //
-// Cost at 16 kHz: about 3 % CPU with three active oscillators.
+// Cost at 16 kHz: about 3 % CPU with three active oscillators. Status: the
+// same register setup ran as dev code on lab-test-01 (git history, commit
+// 6f15ce6); this class itself has not run on hardware yet.
 class DacAudio {
 public:
     enum class Pin : std::uint8_t { pa4, pa5 };

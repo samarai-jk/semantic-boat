@@ -13,8 +13,6 @@ public:
 
 } // namespace
 
-void devToolsInterrupt(std::uint16_t) {}
-
 slstm32::Service& devTools(const DevToolsContext&) {
     static NoDevTools none;
     return none;

@@ -134,24 +134,9 @@ std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
     }};
 }
 
-void configureEngineSpeedInput() {
-    GPIO_InitTypeDef gpio{};
-    gpio.Pin = engineSpeedPin;
-    gpio.Mode = GPIO_MODE_IT_FALLING;
-    gpio.Pull = GPIO_PULLUP;
-    HAL_GPIO_Init(GPIOA, &gpio);
-    HAL_NVIC_SetPriority(EXTI9_5_IRQn, 3u, 0u);
-    HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-}
-
-bool engineSpeedEdge() {
-    return (GPIOA->IDR & engineSpeedPin) == 0u;
-}
-
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs() {
     std::array<slstm32::drivers::DigitalInputHardware, 4> result{};
-    // PA4 is the 1-Wire bus of the sensor tests: DI0 stays unconnected.
-    for (std::size_t index = 1; index < result.size(); ++index) {
+    for (std::size_t index = 0; index < result.size(); ++index) {
         result[index] = {&moduleInputPins[index], &configureModuleInput, &readModuleInput, true};
     }
     return result;

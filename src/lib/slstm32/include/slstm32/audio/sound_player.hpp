@@ -11,7 +11,9 @@ namespace slstm32::audio {
 // Alarm sounds, signals, and chimes on a Synthesizer, updated every
 // millisecond from run(). Starting a sound replaces the one playing. The
 // defaults are the values tried on the bench (lab-test-01, DFRobot FIT0449
-// speaker): see slstm32/SENSORS.md.
+// speaker, at 3.3 V about as loud as the passive buzzer at 2.7 kHz).
+// Status: the sounds were tried with a dev-only copy of this code (git
+// history, commit 6f15ce6); this library form has not run on hardware yet.
 class SoundPlayer final : public Service {
 public:
     SoundPlayer(Runtime runtime, Synthesizer& synthesizer) : runtime_(runtime), synth_(synthesizer) {}

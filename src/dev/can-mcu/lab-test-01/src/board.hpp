@@ -19,15 +19,8 @@ slstm32::drivers::PwmOutputHardware greenLed();
 slstm32::drivers::PwmOutputHardware redLed();
 slstm32::drivers::ToneOutputHardware buzzer();
 
-// PA5..PA7 wired to OUT_D_1..3 of the 12v-ad-input-iso module (physical pin
-// level, pull-up so an unplugged module reads "no 12 V"). PA4 (OUT_D_0) is
-// the 1-Wire bus of the sensor tests, so DI0 is not connected.
+// PA4..PA7 wired to OUT_D_0..3 of the 12v-ad-input-iso module (physical pin
+// level, pull-up so an unplugged module reads "no 12 V").
 std::array<slstm32::drivers::DigitalInputHardware, 4> isolatedModuleInputs();
-
-// PA5 (OUT_D_1, module input D1) as the engine speed input: interrupt on
-// the falling edge (12 V appears; the module inverts), pull-up.
-inline constexpr std::uint16_t engineSpeedPin = 1u << 5u;
-void configureEngineSpeedInput();
-bool engineSpeedEdge(); // the pin is low, i.e. the edge was a falling one
 
 } // namespace lab_test_01::board

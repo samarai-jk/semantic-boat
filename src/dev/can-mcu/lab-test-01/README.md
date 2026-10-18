@@ -137,20 +137,27 @@ are logged every 5 s as `values: ...`):
 | --- | --- | --- |
 | `board` | TMP75 on the can-mcu (case temperature) | 130316 instance 0, inside |
 | `mcu` | MCU die sensor | 130316 instance 1, inside |
-| `air`, `air-rh` | DFRobot DHT20 on the I2C connectors (reference) | 130316 instance 2 / 130313 instance 0, inside |
-| `light` | DFRobot VEML7700 ambient light sensor on the I2C connectors | - |
+| `air`, `air-rh` | DFRobot DHT20 on the I2C connectors | 130316 instance 2 / 130313 instance 0, inside |
 
-Drivers for the other bench-tested DFRobot sensors are in slstm32
-(`Sht31Driver`, `Ds18b20Driver`, `Ct1780Driver`, `AnalogSensor` with
-`rtdBridgeConversion` for the SEN0198 PT100, `As3935Driver` for the SEN0290
-lightning sensor); LT1 wires up only what is connected. What was measured
-with each of them, and what is open (for example the storm warning), is in
-[slstm32/SENSORS.md](../../../lib/slstm32/SENSORS.md). PA4 is kept as a 1-Wire bus for the next sensor; `onewire` shows
-its line level, presence pulse, and ROM code.
+All four are sent every 2 s. Alarm rules (bench values; a heat gun on the
+board reaches all three severities):
 
-The channels carry no alarm rules while sensors are being brought up. The
-alarm path was tested on the board channel: each severity sounds different
-on the buzzer and blinks the red LED at its own rate:
+| Channel | Rules |
+| --- | --- |
+| `board` | > 40 C warning, > 50 C alarm, > 60 C emergency (latching), sensor fault alarm after 5 s |
+| `mcu` | rise > 10 C/min warning, > 75 C alarm |
+| `air` | sensor fault (DHT20 missing or failing) warning after 10 s |
+
+Many more sensors were brought up on LT1 one at a time (SHT31, DS18B20,
+CT1780, PT100, VEML7700, AS3935, UV index, BMP585, BNO055 + BMP280, SCD41,
+engine rpm on a module input) and removed again; their drivers are in
+slstm32, with what was measured and how to wire them up in
+[slstm32/SENSORS.md](../../../lib/slstm32/SENSORS.md). A sensor is added to
+LT1 by giving it a channel in `app.cpp`, binding its driver, and adding the
+channel to `channels[]` (and to `publications[]` for NMEA 2000).
+
+Each severity sounds different on the buzzer and blinks the red LED at its
+own rate:
 
 | Severity | Meaning | Sound | Red LED |
 | --- | --- | --- | --- |
@@ -169,8 +176,23 @@ Console examples:
 sensor air cal 21.5          offset calibration against a reference of 21.5 C (stored per sensor)
 sensor air cal2 80.0         second point: gain and offset from both points
 sensor air reset             calibration and thresholds back to the defaults
-onewire                      line level, presence pulse and ROM code on PA4
+sensor board alarm 0 30      change a threshold (stored); "sensor board reset" undoes it
 ```
+
+## Known issues
+
+- Release builds are effectively `-O3`, not `-Os`: CMake appends its default
+  `-O3 -DNDEBUG` after the `-Os` from `cmake/gcc-arm-none-eabi.cmake`.
+  Fixing it should save flash (affects remote-a too).
+- The heartbeat's `i2c err` counter also counts NACKs from drivers retrying
+  absent sensors (about once a second each); `rec` (bus recoveries) is the
+  number that indicates a real bus problem.
+- The product check of AGENTS.md (`strings <elf> | grep -E "DEV BUILD|-dev"`)
+  also matches "host-dev" in LT1's model string. Harmless for this lab
+  device; a product must not contain "-dev".
+- NMEA 2000: address claim, product information, and heartbeat were tested
+  with `src/tools/can-bench`; the measurement PGNs (130316, 130313) have not
+  been checked against a decoder on a real bus yet.
 
 ## Build and flash
 

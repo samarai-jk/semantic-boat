@@ -34,8 +34,21 @@ struct FrequencyInputConfig {
 // frequencies) and updates the channel in thousandths of a unit per minute
 // or second. No pulses for timeoutMs: the value is 0, still valid.
 //
-// Bench (lab-test-01, 12v-ad-input-iso): 750 Hz counted exactly, period
-// resolution about +-5 us with the 80 MHz cycle counter.
+// Status: this driver itself has not run on hardware yet. Its method was
+// verified on lab-test-01 with a temporary dev tool (git history, commit
+// acdeb37 "rpm frequency test"): TIM2 PWM on PA0 drove an isolated MOSFET
+// switch that put 12 V onto a digital input of the 12v-ad-input-iso module,
+// and the module output was timestamped by interrupt with the cycle counter.
+// Results: 750 Hz (an alternator W terminal at 3000 rpm: 6 pole pairs x 2.5
+// pulley ratio) counted without a missing pulse, period resolution about
+// +-5 us, also with 0.33 ms gaps and with the module's standard 100 nF input
+// filter. Pitfall for repeating the test: isolated "PWM MOSFET" modules
+// switch off about 0.9 ms late (optocoupler and gate discharge), so they
+// limit the test, not the input; a direct NPN or logic-level MOSFET switch
+// with a 1 kOhm pull-up to 12 V is a faster source. To check this driver:
+// bind it to a module input (interrupt on the edge where 12 V appears), feed
+// a known frequency, compare the channel value with f x 60 / pulses per
+// revolution.
 class FrequencyInput final : public Driver {
 public:
     FrequencyInput(Runtime runtime, const FrequencyInputConfig& config, sensors::Measurement* channel)

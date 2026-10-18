@@ -45,7 +45,5 @@ struct DevToolsContext {
 };
 
 slstm32::Service& devTools(const DevToolsContext& context);
-// GPIO interrupt hook for test tools (called from HAL_GPIO_EXTI_Callback).
-void devToolsInterrupt(std::uint16_t pin);
 
 } // namespace lab_test_01

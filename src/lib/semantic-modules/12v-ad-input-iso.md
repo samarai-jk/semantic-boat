@@ -62,6 +62,29 @@ Per channel: 10 kΩ → SMBJ24CA TVS → 1N4148 → 100 kΩ / 22 kΩ divider wit
 - An open input reads off. A host pin with a pull-up also reads off while the
   module is unplugged.
 
+### Pulse and frequency inputs (engine rpm)
+
+The digital inputs are fast enough for frequency measurement, e.g. engine
+rpm from an alternator W terminal (pole pairs x pulley ratio pulses per
+revolution, typically 15: 750 Hz at 3000 rpm). Measured on lab-test-01
+(2026-10-17, timestamps from an interrupt on OUT_D_x with the MCU cycle
+counter):
+
+- 750 Hz counted without a missing pulse, period resolution about +-5 us,
+  even with 0 V gaps of only 0.33 ms, with the standard 100 nF as well as
+  with 10 nF. The 100 nF adds only about 0.04 ms to the off edge (Q1's base
+  discharges C4 quickly at first; the slow R10 x C4 tail is short). The
+  upper limit was not reached; the test source limited it.
+- Test source pitfall: isolated "PWM MOSFET" modules switch off about 0.9 ms
+  late (optocoupler and gate discharge; their output also needs a load,
+  1 kOhm was used). They stretch the 12 V phase and fail from a few hundred
+  Hz. Use a direct NPN or logic-level MOSFET switch with a 1 kOhm pull-up to
+  12 V instead.
+- The polled `DigitalInputDriver` of the module driver (20 ms debounce) is
+  for switches; frequency inputs need an edge interrupt, e.g.
+  `slstm32::drivers::FrequencyInput` (see its header for its status).
+- The input threshold is about 4 V: check the W terminal amplitude at idle.
+
 ## Driver configuration
 
 ```cpp

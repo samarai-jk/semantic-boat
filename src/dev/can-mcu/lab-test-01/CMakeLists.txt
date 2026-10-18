@@ -28,7 +28,6 @@ target_sources(${LAB_TEST_01_TARGET} PRIVATE
     src/diagnostics_service.cpp
     src/health_service.cpp
     src/i2c_scan_service.cpp
-    src/one_wire_command.cpp
 )
 
 # LT1 is a lab device: development tools are on by default. Check that it also
@@ -40,7 +39,6 @@ sb_firmware_profile(${LAB_TEST_01_TARGET} LAB
         src/dev/dev_tools.cpp
         src/dev/hardware_test_service.cpp
         src/dev/input_module_test_service.cpp
-        src/dev/rpm_test_service.cpp
     STUB_SOURCES
         src/dev_tools_disabled.cpp
 )

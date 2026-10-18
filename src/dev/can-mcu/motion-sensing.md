@@ -4,8 +4,11 @@ Design note for a can-mcu device with an orientation sensor (bench-tested:
 BNO055 on the DFRobot SEN0253, driver `slstm32::drivers::Bno055Driver`; bench
 findings in [SENSORS.md](../../lib/slstm32/SENSORS.md#bno055-orientation-sen0253-i2c-0x28)).
 It records what the data is for, what goes on the bus, and the application
-ideas for later. Status: standard 1 Hz output implemented on lab-test-01;
-everything under "Applications" is an idea, not code.
+ideas for later. Status: the standard 1 Hz output is implemented
+(`sensors::AttitudeSummarizer`, `n2k::AttitudePublisher`) and ran on
+lab-test-01 during the bench test (git history: commit 90b3216 shows the
+wiring in `app.cpp`); LT1 no longer wires it up. Everything under
+"Applications" is an idea, not code.
 
 ## Purpose
 
@@ -23,8 +26,9 @@ sensor at 10..20 Hz internally and sends summaries.
 
 ## Data products and rates
 
-Implemented (lab-test-01, `sensors::AttitudeSummarizer` +
-`n2k::AttitudePublisher`): one summary per second from the 10 Hz samples.
+Implemented (`sensors::AttitudeSummarizer` + `n2k::AttitudePublisher`,
+bench-tested on lab-test-01): one summary per second from the 10 Hz
+samples. Not yet checked against a decoder on a real bus.
 
 | Data | Message | Rate | Notes |
 | --- | --- | --- | --- |

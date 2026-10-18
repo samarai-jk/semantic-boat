@@ -20,6 +20,7 @@ channels, alarms, and settings storage are described in the
 | BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
 | BNO055 + BMP280 (DFRobot SEN0253 10-DOF) | `Bno055Driver`, `Bmp280Driver` | I2C 0x28, 0x76 | Verified (orientation, pressure) |
 | SCD41 CO2 (generic module, sold as "SD40/SD41") | `Scd4xDriver` | I2C 0x62 | Verified |
+| Engine rpm (12v-ad-input-iso digital input) | `FrequencyInput` | EXTI + cycle counter | Method verified at 750 Hz; driver not yet run on hardware |
 | Speaker (DFRobot FIT0449, 8002 amplifier) | `audio::Synthesizer`, `audio::SoundPlayer`, `can_mcu::DacAudio` | DAC PA4/PA5 | Tested as dev code; library form not yet run on hardware |
 
 ## Common behaviour
@@ -67,7 +68,8 @@ channels, alarms, and settings storage are described in the
 - One sensor per pin (Read ROM). A different sensor on the same pin is picked
   up with its own identity and settings.
 - `OneWireBus::presenceProfile()` diagnoses a silent bus (line driven low?
-  presence pulse when?); LT1 exposes it as the `onewire` command.
+  presence pulse when?). During the bench tests LT1 exposed it as the
+  service command `onewire` (git history, commit 148915a).
 
 ## DS18B20
 
@@ -169,12 +171,27 @@ channels, alarms, and settings storage are described in the
   pressure x16 / temperature x2 and polls the data-ready flag.
 - Bench: 1009.84 hPa, 28.2 C die temperature (the die runs about 1 C above
   the room). Published as PGN 130314 (Actual Pressure, atmospheric).
-- Pressure tendency: the channel keeps a 3-hour trend (19 samples, one per
-  10 min). LT1 warns at a fall of more than 3 hPa in 3 h and alarms at more
-  than 6 hPa; tendency labels steady below 0.1 hPa, rapid above 3.5 hPa.
-  `sensor baro trend <min>` shortens the window for tests. The trend is lost
-  at a restart (3 h until fully valid again); keeping it in the RTC backup
-  registers would be a later improvement.
+- Pressure tendency (bench configuration, see the git history of
+  lab-test-01's `app.cpp`, commit a00900d): a 3-hour channel trend (19
+  samples, one per 10 min, `MeasurementConfig::trendWindowMs` and
+  `Measurement::setTrendBuffer()`), alarm rules `trendFall` 3 hPa
+  (warning) and 6 hPa (alarm), hysteresis 0.5 hPa, tendency labels steady
+  below 0.1 hPa, rapid above 3.5 hPa. `sensor <name> trend <min>` shortens
+  the window for tests. The trend is lost at a restart (3 h until fully
+  valid again); keeping it in the RTC backup registers would be a later
+  improvement.
+
+Overnight comparison BMP585 (SEN0664) against BMP280 (SEN0253), 10.3 h on
+lab-test-01 (2026-10-17/18), both with the 3-hour trend:
+
+- Offset 0.05..0.24 hPa (typically 0.14), stable; 3 h trends within 0.12
+  hPa (mean 0.025). No visible temperature dependence while the room cooled
+  by 2.5 C. For weather both are good enough; the BMP585's gel package is
+  the better choice for humid, salty air.
+- The curve showed the semidiurnal pressure tide (about +-1 hPa, minima
+  around 04:00 and 16:00, maxima around 10:00 and 22:00): the largest fall
+  was -1.24 hPa in 3 h without any weather. Trend thresholds must stay above
+  that; 3 hPa / 6 hPa in 3 h (warning / alarm) did not trigger.
 
 ## BNO055 orientation (SEN0253, I2C 0x28)
 

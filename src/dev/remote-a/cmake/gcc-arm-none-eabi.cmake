@@ -18,8 +18,12 @@ set(CMAKE_ASM_FLAGS_INIT "${MCU_FLAGS} -x assembler-with-cpp")
 # directories keep their old cache: configure them with --fresh once.
 set(CMAKE_C_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C compiler flags for Debug builds")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C++ compiler flags for Debug builds")
-set(CMAKE_C_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C compiler flags for Release builds")
-set(CMAKE_CXX_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C++ compiler flags for Release builds")
+# remote-a release builds are optimized for speed (-O3, 166 KB of 240 KB):
+# the display is noticeably more responsive than with -Os (104 KB), and
+# remote-a has no bootloader to leave room for (decision 2026-10-18). can-mcu
+# devices use -Os.
+set(CMAKE_C_FLAGS_RELEASE "-O3 -g0 -DNDEBUG" CACHE STRING "C compiler flags for Release builds")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g0 -DNDEBUG" CACHE STRING "C++ compiler flags for Release builds")
 
 get_filename_component(REMOTE_A_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(LINKER_SCRIPT "${REMOTE_A_DIR}/cmx/STM32L431xx_FLASH.ld")

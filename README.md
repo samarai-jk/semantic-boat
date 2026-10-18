@@ -17,6 +17,7 @@ reusable drivers live outside generated code.
 - `src/lib/semantic-display/` — portable configured-display compiler and runtime
 - `src/lib/semantic-modules/` — drivers for Semantic Boat peripheral modules (for example 12v-ad-input-iso)
 - `src/lib/n2k/` — small NMEA 2000 stack on slstm32 (address claim, requests, heartbeat, product information)
+- `src/lib/b1s/` — **B1S**, the NMEA 2000 compatible CAN protocol of all Semantic Boat devices: specification and registry of every assigned number
 - `src/lib/` — other first- or third-party libraries
 
 Only code inside CubeMX `USER CODE` sections should be hand-edited under

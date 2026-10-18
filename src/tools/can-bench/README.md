@@ -51,7 +51,7 @@ both brought up by systemd-networkd at 250 kbit/s, sample point 87.5 %:
 
 | Interface | MCP2515 | Wired to |
 | --- | --- | --- |
-| `can1` | `spi1.1`, interrupt GPIO22 | Semantic Boat CAN backbone, with LT1 (terminated at both ends) |
+| `can1` | `spi1.1`, interrupt GPIO22 | [B1S](../../lib/b1s/README.md) backbone, with LT1 (terminated at both ends) |
 | `can0` | `spi1.2`, interrupt GPIO13 | NMEA 2000 port, not connected on the bench |
 
 Identified on 2026-10-18: with LT1 on the backbone, `can1` received its

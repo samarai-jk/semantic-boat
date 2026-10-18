@@ -22,6 +22,20 @@ described here unless the user explicitly asks for it.
   [can-mcu.md](src/dev/can-mcu/can-mcu.md), [host-dev.md](src/dev/can-mcu/host-dev.md),
   module notes in `src/lib/semantic-modules/`.
 
+## B1S, the CAN protocol (mandatory)
+
+All Semantic Boat CAN devices speak B1S, an NMEA 2000 compatible protocol
+specified in [src/lib/b1s/README.md](src/lib/b1s/README.md). Every number it
+assigns (proprietary PGNs, quantities, events, output kinds, commands,
+services, product codes, standard PGN categories) is in
+[src/lib/b1s/registry.yaml](src/lib/b1s/registry.yaml).
+
+- Before sending anything new on CAN, read the section "Adding to B1S" and
+  follow it. Never invent a PGN, quantity, or code in device code.
+- Standard PGNs of the `navigation` category are never sent by default.
+- B1S-specific code lives in `src/lib/b1s`; `src/lib/n2k` stays plain
+  NMEA 2000.
+
 ## Firmware code categories and build profiles (mandatory)
 
 Development and test code must never end up in product firmware. The

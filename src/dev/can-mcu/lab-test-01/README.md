@@ -274,7 +274,7 @@ editor or by other tools at the same time.
   wiring fault (no level change) can be told apart from an interrupt fault.
 - The supply (VDDA = +3V3) is measured through VREFINT about 23,000 times per
   second. A 100 ms window below 3.15 V is logged as a supply dip.
-- NMEA 2000 (see [`src/lib/n2k`](../../../lib/n2k/README.md)): the node claims
+- NMEA 2000 / [B1S](../../../lib/b1s/README.md) (stack: [`src/lib/n2k`](../../../lib/n2k/README.md)): the node claims
   its stored address (default 35) with a NAME whose unique number is derived
   from the MCU unique ID (manufacturer code 2046 like all Semantic Boat
   devices, device class 75 "sensor communication interface", function 130

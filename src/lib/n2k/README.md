@@ -1,5 +1,9 @@
 # n2k
 
+> Semantic Boat devices speak **B1S** on top of this stack: the protocol,
+> its rules, and every assigned number are in [`src/lib/b1s`](../b1s/README.md).
+> This library stays plain NMEA 2000; B1S-specific code does not belong here.
+
 A small NMEA 2000 stack for slstm32 firmware. It contains no HAL code: it runs
 on an `slstm32::drivers::CanBusDriver` and is a regular `slstm32::Service`, so
 any board with a CAN binding can use it. It is sized for the STM32L431 class

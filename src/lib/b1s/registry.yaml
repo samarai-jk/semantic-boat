@@ -1,0 +1,117 @@
+# B1S registry: every number the B1S protocol assigns.
+#
+# Rules: README.md in this directory, section "Adding to B1S". In short:
+# reuse before adding; append with the next free code; never reuse,
+# renumber, or redefine a code; deprecate instead of changing a quantity's
+# unit, scale, or encoding. Generated code (firmware headers, can-bench and
+# canboat definitions, the Signal K plugin) will be produced from this file;
+# it is the single source of truth.
+
+manufacturer_code: 2046   # n2k::manufacturerCode; not assigned by NMEA, never registered
+industry_code: 4          # marine
+proprietary_header: 0x9FFE  # sent as FE 9F
+
+# B1S proprietary PGNs. Layouts: README.md, "B1S messages".
+pgns:
+  - {pgn: 65280,  id: measurement,         kind: single,  addressing: broadcast}
+  - {pgn: 65281,  id: outputStatus,        kind: single,  addressing: broadcast}
+  - {pgn: 130816, id: measurementWide,     kind: fast,    addressing: broadcast}
+  - {pgn: 130817, id: measurementSummary,  kind: fast,    addressing: broadcast}
+  - {pgn: 130818, id: event,               kind: fast,    addressing: broadcast}
+  - {pgn: 130819, id: channelDescription,  kind: fast,    addressing: broadcast}
+  - {pgn: 61184,  id: command,             kind: single,  addressing: addressed}
+  - {pgn: 126720, id: service,             kind: fast,    addressing: addressed}
+
+# Standard NMEA 2000 PGNs that B1S devices may send, with their category.
+# display: shown only; default encoding "standard".
+# navigation: chartplotters select sources for it; default encoding "b1s",
+#   and Signal K forwards it to NMEA 2000 only deliberately.
+# Network management PGNs (59392, 59904, 60928, 126464, 126993, 126996,
+# 126998) are always sent and not listed. When in doubt: navigation.
+standard_pgns:
+  - {pgn: 127488, name: Engine Parameters Rapid Update,  category: display}
+  - {pgn: 127501, name: Binary Switch Bank Status,       category: display}
+  - {pgn: 127508, name: Battery Status,                  category: display}
+  - {pgn: 130313, name: Humidity,                        category: display}
+  - {pgn: 130314, name: Actual Pressure,                 category: display}
+  - {pgn: 130316, name: Temperature Extended Range,      category: display}
+  - {pgn: 126983, name: Alert,                           category: navigation}
+  - {pgn: 126984, name: Alert Response,                  category: navigation}
+  - {pgn: 126985, name: Alert Text,                      category: navigation}
+  - {pgn: 126992, name: System Time,                     category: navigation}
+  - {pgn: 127245, name: Rudder,                          category: navigation}
+  - {pgn: 127250, name: Vessel Heading,                  category: navigation}
+  - {pgn: 127251, name: Rate of Turn,                    category: navigation}
+  - {pgn: 127257, name: Attitude,                        category: navigation}
+  - {pgn: 127258, name: Magnetic Variation,              category: navigation}
+  - {pgn: 128259, name: Speed,                           category: navigation}
+  - {pgn: 128267, name: Water Depth,                     category: navigation}
+  - {pgn: 129025, name: Position Rapid Update,           category: navigation}
+  - {pgn: 129026, name: COG and SOG Rapid Update,        category: navigation}
+  - {pgn: 129029, name: GNSS Position Data,              category: navigation}
+  - {pgn: 130306, name: Wind Data,                       category: navigation}
+
+# Quantities of the Measurement messages. Physical value = raw x scale, in
+# the SI unit (as Signal K). signalk: path template; {location} is the
+# channel's location from its Channel Description. Code 0 is invalid, 255
+# reserved.
+quantities:
+  - {code: 1,  id: temperature,        unit: K,      scale: 0.001, encoding: int32, signalk: "environment.{location}.temperature"}
+  - {code: 2,  id: relativeHumidity,   unit: ratio,  scale: 1.0e-6, encoding: int32, signalk: "environment.{location}.relativeHumidity"}
+  - {code: 3,  id: pressure,           unit: Pa,     scale: 0.1,   encoding: int32, signalk: "environment.{location}.pressure"}
+  - {code: 4,  id: voltage,            unit: V,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.voltage"}
+  - {code: 5,  id: current,            unit: A,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.current"}
+  - {code: 6,  id: power,              unit: W,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.power"}
+  - {code: 7,  id: energy,             unit: J,      scale: 1,     encoding: int32, signalk: "electrical.{location}.energy",
+     description: "Use Measurement Wide for running totals above about 596 kWh"}
+  - {code: 8,  id: frequency,          unit: Hz,     scale: 0.001, encoding: int32, signalk: "{location}.frequency"}
+  - {code: 9,  id: rotationalSpeed,    unit: Hz,     scale: 0.001, encoding: int32, signalk: "propulsion.{location}.revolutions",
+     description: "Revolutions per second, as Signal K (rpm / 60)"}
+  - {code: 10, id: illuminance,        unit: lx,     scale: 0.001, encoding: int32, signalk: "environment.{location}.illuminance"}
+  - {code: 11, id: uvIndex,            unit: "1",    scale: 0.001, encoding: int32, signalk: "environment.{location}.uvIndex"}
+  - {code: 12, id: co2,                unit: ratio,  scale: 1.0e-9, encoding: int32, signalk: "environment.{location}.co2",
+     description: "CO2 mole fraction; 1 ppm = 1000 raw"}
+  - {code: 13, id: angle,              unit: rad,    scale: 1.0e-6, encoding: int32, signalk: "{location}.angle",
+     description: "Generic angle; prefer a specific quantity (heading, pitch, roll) when one exists"}
+  - {code: 14, id: heading,            unit: rad,    scale: 1.0e-6, encoding: int32, signalk: "{location}.heading",
+     description: "Magnetic heading of a sensor, not of the vessel (that is PGN 127250, navigation)"}
+  - {code: 15, id: pitch,              unit: rad,    scale: 1.0e-6, encoding: int32, signalk: "{location}.pitch",
+     description: "Bow up positive"}
+  - {code: 16, id: roll,               unit: rad,    scale: 1.0e-6, encoding: int32, signalk: "{location}.roll",
+     description: "Starboard down positive"}
+  - {code: 17, id: angularVelocity,    unit: rad/s,  scale: 1.0e-6, encoding: int32, signalk: "{location}.angularVelocity"}
+  - {code: 18, id: acceleration,       unit: m/s2,   scale: 1.0e-4, encoding: int32, signalk: "{location}.acceleration"}
+  - {code: 19, id: distance,           unit: m,      scale: 0.001, encoding: int32, signalk: "{location}.distance"}
+  - {code: 20, id: speed,              unit: m/s,    scale: 0.001, encoding: int32, signalk: "{location}.speed"}
+  - {code: 21, id: ratio,              unit: ratio,  scale: 1.0e-6, encoding: int32, signalk: "{location}.ratio",
+     description: "Dimensionless 0..1 (levels, duty, state of charge) when no specific quantity exists"}
+  - {code: 22, id: count,              unit: "1",    scale: 1,     encoding: int32, signalk: "{location}.count"}
+  - {code: 23, id: duration,           unit: s,      scale: 0.001, encoding: int32, signalk: "{location}.duration"}
+
+# Event types of the Event message; parameters are int32 in the given units.
+events:
+  - {code: 1, id: lightningStrike, parameters: [{name: distance, unit: m, scale: 1}, {name: energy, unit: "1", scale: 1, description: "Sensor-specific raw energy"}]}
+
+# Output kinds of Output Status and Channel Description.
+output_kinds:
+  - {code: 1, id: relay,      description: "On/off switched load"}
+  - {code: 2, id: dimmer,     description: "PWM or constant-current load with a level"}
+  - {code: 3, id: fan,        description: "Fan with a speed level"}
+
+# Commands of the Command message (61184). Bit 7 of the code marks a reply.
+commands:
+  - {code: 1, id: identify,  argument: "uint16 seconds (bytes 4..5), bytes 6..7 0xFF", description: "Make the device visible (blink an LED, beep); 0 stops"}
+  - {code: 2, id: setState,  argument: "uint8 0 off, 1 on (byte 4), bytes 5..7 0xFF", description: "Switch an output channel"}
+  - {code: 3, id: setLevel,  argument: "uint16 level 0.01 % (bytes 4..5), uint16 fade time 0.01 s (bytes 6..7)", description: "Set an output channel's level"}
+
+# Service codes of the Service message (126720). Defined by the
+# configuration-over-CAN and firmware-update work.
+services: []
+
+# Device types. product_code: 126996; preferred_address: start address of
+# the claim; device_class/device_function: NMEA 2000 NAME table;
+# frames_per_second: typical bus load for the 30 % budget.
+products:
+  - {product_code: 1, id: lab-test-01, model: "Semantic Boat LT1", preferred_address: 35,
+     device_class: 75, device_function: 130, frames_per_second: 3,
+     description: "can-mcu + host-dev lab device (src/dev/can-mcu/lab-test-01)"}

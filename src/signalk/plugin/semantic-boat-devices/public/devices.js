@@ -146,7 +146,7 @@
   function b1sCard(id) {
     if (!b1sCards.has(id)) {
       b1sCards.set(id, { parameters: null, version: 0, logOpen: false, logSince: 0, logText: '', logRemaining: 0,
-        levels: new Set(Object.keys(levels)), openChannels: new Set() });
+        levels: new Set(Object.keys(levels)), openChannels: new Set(), channelTab: new Map() });
     }
     return b1sCards.get(id);
   }
@@ -209,38 +209,45 @@
   }
 
   function fieldRow(label, edit, hint = '') {
-    const row = text('label', '', 'field');
+    const row = text('div', '', 'field');
     row.append(text('span', label, 'field-label'));
     const value = text('span', '', 'field-value');
-    if (edit) value.append(edit.element, text('span', edit.unit ? ` ${edit.unit}` : '', 'field-unit'));
+    if (edit) value.append(edit.element, text('span', edit.unit ?? '', 'field-unit'));
     else value.append(text('span', '–', 'muted'));
     row.append(value);
     if (hint) row.append(text('small', hint, 'field-hint'));
     return row;
   }
 
-  // A group of settings with one Save for everything edited in it.
-  function group(title, device, edits, rows, extra = []) {
-    const section = text('section', '', 'settings-group');
-    section.append(text('h4', title), ...rows);
-    const actions = text('div', '', 'row-actions');
+  // Stores the edited fields of one block; the button says what it saves.
+  function saveButton(device, label, edits) {
     const writable = edits.filter(edit => edit && edit.entry.access === 'rw');
-    if (writable.length) {
-      actions.append(button('Save', async () => {
-        const changes = writable.map(edit => [edit, edit.change()]).filter(([, body]) => body);
-        if (!changes.length) { notice(`${title}: nothing changed`); return; }
-        for (const [edit, body] of changes) {
-          const result = await api(`b1s/devices/${device.id}/parameters/${edit.entry.name}`, 'PUT',
-            { channel: edit.entry.channel, ...body });
-          if (result.status !== 'done') throw new Error(`${edit.entry.name}: ${result.status}`);
-        }
-        notice(`${title}: ${changes.length} setting(s) stored on the device`);
-        await loadParameters(device.id);
-        render();
-      }, 'Store the changes of this group on the device'));
-    }
-    actions.append(...extra);
-    if (actions.children.length) section.append(actions);
+    if (!writable.length) return null;
+    const element = button(label, async () => {
+      const changes = writable.map(edit => [edit, edit.change()]).filter(([, body]) => body);
+      if (!changes.length) { notice('Nothing changed'); return; }
+      for (const [edit, body] of changes) {
+        const result = await api(`b1s/devices/${device.id}/parameters/${edit.entry.name}`, 'PUT',
+          { channel: edit.entry.channel, ...body });
+        if (result.status !== 'done') throw new Error(`${edit.entry.name}: ${result.status}`);
+      }
+      notice(`${changes.length} setting(s) stored on the device`);
+      await loadParameters(device.id);
+      render();
+    }, 'Store the edited fields above on the device');
+    element.classList?.add('primary');
+    return element;
+  }
+
+  // A block of fields with its own actions underneath.
+  function block(title, explanation, rows, actions) {
+    const section = text('section', '', 'block');
+    if (title) section.append(text('h4', title));
+    if (explanation) section.append(text('p', explanation, 'block-text'));
+    section.append(...rows);
+    const bar = text('div', '', 'block-actions');
+    bar.append(...actions.filter(Boolean));
+    if (bar.children.length) section.append(bar);
     return section;
   }
 
@@ -249,60 +256,76 @@
     const address = editor(parameter(card, 'preferredAddress'));
     const uptime = parameter(card, 'uptime');
     const seconds = uptime?.value ?? 0;
-    const uptimeText = uptime ? `${Math.floor(seconds / 3600)} h ${Math.floor(seconds / 60) % 60} min (when read)` : '–';
     const uptimeRow = text('div', '', 'field');
-    uptimeRow.append(text('span', 'Uptime', 'field-label'), text('span', uptimeText, 'field-value'));
-    return group('Device', device, [role, address],
-      [fieldRow('Role', role, 'What this device is for on the boat'),
-        fieldRow('Preferred address', address, 'Address claimed first; takes effect after a restart'), uptimeRow]);
+    uptimeRow.append(text('span', 'Uptime', 'field-label'), text('span',
+      uptime ? `${Math.floor(seconds / 3600)} h ${Math.floor(seconds / 60) % 60} min (when read)` : '–', 'field-value'));
+    const panel = text('section', '', 'device-settings');
+    panel.append(text('h3', 'Device'), block('', '', [
+      fieldRow('Role', role, 'What this device is for on the boat'),
+      fieldRow('Preferred address', address, 'Address claimed first; takes effect after a restart'), uptimeRow],
+    [saveButton(device, 'Save device settings', [role, address])]));
+    return panel;
   }
 
-  function setupGroup(device, channel, card) {
+  function setupPane(device, channel, card) {
     const label = editor(parameter(card, 'channelLabel', channel.channel), { placeholder: 'name for people' });
     const location = editor(parameter(card, 'channelLocation', channel.channel), { placeholder: 'unassigned' });
-    const rows = [fieldRow('Label', label),
+    const rows = [fieldRow('Label', label, 'Name shown for this channel'),
       fieldRow('Location', location, 'Signal K path fragment, e.g. inside.refrigerator; empty = unassigned')];
     const edits = [label, location];
     if (!channel.noStandard) {
       const encoding = editor(parameter(card, 'channelEncoding', channel.channel));
       const instance = editor(parameter(card, 'channelStandardInstance', channel.channel));
-      rows.push(fieldRow('Sent as', encoding, 'automatic: standard PGN for display data; b1s: B1S message; off: not sent'),
+      rows.push(fieldRow('Sent as', encoding, 'automatic: standard PGN for display data · b1s: B1S message · off: not sent'),
         fieldRow('Standard instance', instance, 'Instance of the standard PGN; 255 = firmware default'));
       edits.push(encoding, instance);
     } else {
       rows.push(fieldRow('Sent as', null, 'B1S message (no standard PGN for this quantity)'));
     }
-    return group('Setup', device, edits, rows);
+    return [block('', '', rows, [saveButton(device, 'Save setup', edits)])];
   }
 
-  function calibrationGroup(device, channel, card) {
+  function calibrationPane(device, channel, card) {
     const offset = editor(parameter(card, 'calibrationOffset', channel.channel));
     const gain = editor(parameter(card, 'calibrationGain', channel.channel), { factor: 1e6, unit: '×' });
-    if (!offset && !gain) return null;
+    if (!offset && !gain) return [text('p', 'This channel has no calibration.', 'empty')];
     const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit;
-    const reference = (command, what) => button(what, async () => {
-      const input = prompt(`${what}: reference value for ${channel.label || `channel ${channel.channel}`} now, in ${unit}:`);
-      if (input === null) return;
+    const reference = Object.assign(document.createElement('input'), { placeholder: `e.g. ${unit === '°C' ? '21.5' : '50'}` });
+    reference.setAttribute('aria-label', 'Reference value');
+    const referenceRow = text('div', '', 'field');
+    const referenceValue = text('span', '', 'field-value');
+    referenceValue.append(reference, text('span', unit, 'field-unit'));
+    referenceRow.append(text('span', 'Reference now', 'field-label'), referenceValue);
+    const apply = (command, label, title) => button(label, async () => {
+      if (!reference.value.trim()) throw new Error('Enter the reference value first');
       const result = await api(`b1s/devices/${device.id}/commands/${command}`, 'POST',
-        { channel: channel.channel, si: fromDisplay(input, channel.unit, true) });
-      notice(`${what}: ${result.result}`, result.result !== 'done');
+        { channel: channel.channel, si: fromDisplay(reference.value, channel.unit, true) });
+      notice(`${label}: ${result.result}`, result.result !== 'done');
       await loadParameters(device.id);
       render();
-    }, command === 'calibrate' ? 'Set the offset so that the current reading equals a reference'
-      : 'After a first point: gain and offset from both points (at least one unit apart)');
-    const reset = button('Reset', async () => {
-      if (!confirm(`Reset calibration and alarm thresholds of ${channel.label || `channel ${channel.channel}`}?`)) return;
+    }, title);
+    const reset = button('Reset channel to defaults', async () => {
+      if (!confirm(`Reset calibration AND alarm thresholds of ${channel.label || `channel ${channel.channel}`} to the defaults?`)) return;
       const result = await api(`b1s/devices/${device.id}/commands/resetChannel`, 'POST', { channel: channel.channel });
       notice(`Reset: ${result.result}`, result.result !== 'done');
       await loadParameters(device.id);
       render();
-    }, 'Calibration and alarm thresholds back to the defaults');
-    return group('Calibration', device, [offset, gain],
-      [fieldRow('Offset', offset, 'value = raw × gain + offset'), fieldRow('Gain', gain)],
-      [reference('calibrate', 'Calibrate…'), reference('calibrateSecondPoint', 'Second point…'), reset]);
+    }, 'Calibration and alarm thresholds back to the firmware defaults');
+    reset.classList?.add('danger');
+    return [
+      block('Calibrate against a reference',
+        'Measure the real value with a reference instrument and enter it. One point corrects the offset; ' +
+        'a second point, at least one unit away, also corrects the gain.',
+        [referenceRow],
+        [apply('calibrate', 'Calibrate (offset)', 'The current reading becomes the reference value'),
+          apply('calibrateSecondPoint', 'Add second point (gain)', 'Gain and offset from the first and this point')]),
+      block('Calibration values', 'value = raw × gain + offset', [fieldRow('Offset', offset), fieldRow('Gain', gain)],
+        [saveButton(device, 'Save calibration values', [offset, gain])]),
+      block('', '', [], [reset])
+    ];
   }
 
-  function alarmsGroup(device, channel, card) {
+  function alarmsPane(device, channel, card) {
     const rows = [];
     const edits = [];
     for (let rule = 0; rule < 4; rule += 1) {
@@ -312,24 +335,27 @@
       const kind = value & 0xff;
       const severity = severities[(value >> 8) & 0xff] ?? 'Alarm';
       const state = value & (1 << 17) ? (value & (1 << 18) ? 'active, acknowledged' : 'ACTIVE') : 'ok';
-      const row = text('div', '', 'field alarm');
-      row.append(text('span', severity, `severity ${severity.toLowerCase()}`));
-      const sentence = text('span', `${ruleTexts[kind] ?? `rule kind ${kind}`} `, 'field-value');
+      const row = text('div', '', 'alarm');
+      row.append(text('span', severity, `severity ${severity.toLowerCase()}`), text('span', ruleTexts[kind] ?? `rule ${kind}`, 'alarm-rule'));
+      const threshold = text('span', '', 'field-value');
       if (kind !== 3) {
-        const threshold = editor(parameter(card, `alarmThreshold${rule}`, channel.channel), { label: `${severity} threshold` });
-        if (threshold) {
+        const edit = editor(parameter(card, `alarmThreshold${rule}`, channel.channel), { label: `${severity} threshold` });
+        if (edit) {
           const perMinute = kind === 2 ? '/min' : kind >= 4 ? ' over the trend window' : '';
-          sentence.append(threshold.element, text('span', ` ${threshold.unit}${perMinute}`, 'field-unit'));
-          edits.push(threshold);
+          threshold.append(edit.element, text('span', `${edit.unit}${perMinute}`, 'field-unit'));
+          edits.push(edit);
         }
       }
-      row.append(sentence, text('small', `${state}${value & (1 << 16) ? ' · latching' : ''}`,
+      row.append(threshold, text('span', `${state}${value & (1 << 16) ? ' · latching' : ''}`,
         `alarm-state${state === 'ACTIVE' ? ' active' : ''}`));
       rows.push(row);
     }
-    if (!rows.length) return null;
-    return group('Alarms', device, edits, rows);
+    if (!rows.length) return [text('p', 'This channel has no alarm rules.', 'empty')];
+    return [block('', 'Thresholds are stored per sensor; Reset on the Calibration tab restores the defaults.', rows,
+      [saveButton(device, 'Save thresholds', edits)])];
   }
+
+  const channelTabs = [['setup', 'Setup', setupPane], ['calibration', 'Calibration', calibrationPane], ['alarms', 'Alarms', alarmsPane]];
 
   function channelPanel(device, channel, card) {
     const panel = document.createElement('details');
@@ -348,10 +374,19 @@
       panel.append(text('p', 'Reading the device’s settings …', 'empty'));
       return panel;
     }
-    const groups = text('div', '', 'settings-groups');
-    groups.append(...[setupGroup(device, channel, card), calibrationGroup(device, channel, card),
-      alarmsGroup(device, channel, card)].filter(Boolean));
-    panel.append(groups);
+    const current = card.channelTab.get(channel.channel) ?? 'setup';
+    const tabs = text('div', '', 'channel-tabs');
+    tabs.setAttribute('role', 'tablist');
+    for (const [id, label] of channelTabs) {
+      const tab = text('button', label, `channel-tab${id === current ? ' selected' : ''}`);
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(id === current));
+      tab.onclick = () => { card.channelTab.set(channel.channel, id); card.version += 1; render(); };
+      tabs.append(tab);
+    }
+    const pane = text('div', '', 'channel-pane');
+    pane.append(...channelTabs.find(([id]) => id === current)[2](device, channel, card));
+    panel.append(tabs, pane);
     return panel;
   }
 

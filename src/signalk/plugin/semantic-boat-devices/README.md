@@ -45,12 +45,15 @@ plugins have their own.
     Restore, and Restart, then its settings grouped as on the device:
     - **Device**: role, preferred address (after a restart), uptime.
     - **Channels**, one panel each with label, quantity, live value, and
-      Signal K path; opened, it shows **Setup** (label, location, how it is
-      sent, standard instance), **Calibration** (offset, gain as a factor;
-      Calibrate and Second point against a reference in °C or %, Reset), and
-      **Alarms** (each rule as a sentence: "Warning when above 40.0 °C",
-      rise rates per minute, its state). Each group stores its changes with
-      one Save.
+      Signal K path. Opened, it has three tabs, each with its own clearly
+      named button: **Setup** (label, location, how it is sent, standard
+      instance; Save setup), **Calibration** (calibrate against a reference
+      entered in °C or %: one point for the offset, a second for the gain;
+      the calibration values with Save calibration values; Reset channel to
+      defaults, set apart), and **Alarms** (each rule as a sentence: "Warning
+      when above 40.0 °C", rise rates per minute, its state; Save
+      thresholds). A Save stores only the edited fields, then reads the
+      device again.
     - **Log**: the device streams its log (debug lines included) only when
       switched on there, for 5, 15, or 60 minutes, at most 512 B/s, and stops
       by itself when the time is up; Stop ends it at once. Level filter,

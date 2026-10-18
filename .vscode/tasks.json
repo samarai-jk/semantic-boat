@@ -196,6 +196,10 @@
         "-File",
         "${workspaceFolder}/script/monitor.ps1"
       ],
+      "linux": {
+        "command": "${workspaceFolder}/script/monitor.sh",
+        "args": []
+      },
       "options": {
         "cwd": "${workspaceFolder}"
       },

@@ -190,9 +190,9 @@ sensor board alarm 0 30      change a threshold (stored); "sensor board reset" u
 - The product check of AGENTS.md (`strings <elf> | grep -E "DEV BUILD|-dev"`)
   also matches "host-dev" in LT1's model string. Harmless for this lab
   device; a product must not contain "-dev".
-- NMEA 2000: address claim, product information, and heartbeat were tested
-  with `src/tools/can-bench`; the measurement PGNs (130316, 130313) have not
-  been checked against a decoder on a real bus yet.
+- NMEA 2000 on the backbone was not yet checked against a commercial
+  display or plotter; see the bench result in
+  [can-bench](../../../tools/can-bench/README.md#lt1-bench-result-2026-10-18).
 
 ## Build and flash
 
@@ -214,9 +214,10 @@ remove the 12 V supply once. A reset alone is not enough.
 
 | Tool | Purpose |
 | --- | --- |
-| `script\serial-log.ps1` (task **Serial log**) | Owns COM4, writes `build/logs/serial.log`, sends console commands |
-| `script\monitor.ps1` (task **Monitor**) | Live events in colour (restarts, buttons, supply dips, CAN state, module changes, console), warns when the board goes silent, sends typed commands; `-All` shows every line |
-| `script\swd-probe.ps1` (task **SWD probe**, **SWD log (follow)**) | Pin and CAN register probes over SWD into `build/logs/swd.log`; `-Follow` tails it, `-Every <s>` repeats |
+| `script\serial-log.ps1` / `script/serial-log.sh` (task **Serial log**) | Owns the ST-Link VCP (COM4 / `/dev/serial/by-id/*STLINK*`), writes `build/logs/serial.log`, sends console commands |
+| `script\monitor.ps1` / `script/monitor.sh` (task **Monitor**) | Live events in colour (restarts, buttons, supply dips, CAN state, module changes, console), warns when the board goes silent, sends typed commands; `-All` (`--all` on Linux) shows every line |
+| `script\swd-probe.ps1` (task **SWD probe**, **SWD log (follow)**; Windows only) | Pin and CAN register probes over SWD into `build/logs/swd.log`; `-Follow` tails it, `-Every <s>` repeats |
+| `src/tools/can-bench` | NMEA 2000 monitor and test node on the bus; on the Raspberry Pi the backbone is `can1` ([Raspberry Pi bench](../../../tools/can-bench/README.md#raspberry-pi-bench)) |
 
 Only one serial logger can run at a time. The monitor only reads the logs,
 so any number of monitors can run next to it.

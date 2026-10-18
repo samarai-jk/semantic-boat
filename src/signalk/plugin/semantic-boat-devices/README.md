@@ -43,9 +43,14 @@ plugins have their own.
     configurations, if its transport can install.
   - A **B1S device** shows product and software, Identify, Read settings,
     Restore, and Restart, then its settings grouped as on the device:
-    - **Device**: role, preferred address (after a restart), uptime.
-    - **Channels**, one panel each with label, quantity, live value, and
-      Signal K path. Opened, it has three tabs, each with its own clearly
+    - **Device**: role, preferred address (after a restart), uptime, and
+      the Signal K path prefix of the device (stored on the Pi, part of the
+      backup; see [B1S Devices](#b1s-devices)).
+    - **Channels**, one panel each: label, quantity, how it is sent (B1S
+      message, standard PGN with its number and instance, or off), its live
+      value with its age ("3 s ago", red when overdue; "off" when not sent),
+      and its Signal K path (for standard PGN channels the path Signal K
+      mapped, learned from Signal K's data). Opened, it has three tabs, each with its own clearly
       named button: **Setup** (label, location, how it is sent, standard
       instance; Save setup), **Calibration** (calibrate against a reference
       entered in °C or %: one point for the offset, a second for the gain;
@@ -175,6 +180,11 @@ brings its devices into Signal K and configures them over CAN
   `null` for "not available", "error", and "out of range"; metadata with the
   unit and the channel label. Standard PGNs of B1S devices are decoded by
   Signal K itself.
+- **Path prefixes.** `b1s.pathPrefix` (plugin) and each device's prefix
+  (Devices page, Pi-side) form a namespace for the paths of B1S messages:
+  `sb.lab.environment.inside.temperature`. Standard PGN channels keep the
+  path Signal K's NMEA 2000 mapping gives them; `b1s.providerId` (default
+  `can1`) names the B1S connection whose mapped values the page shows.
 - **Identity.** Devices are bound by the unique number of their NAME (the
   device ID), never by address; a device that moves keeps its channels.
   Unknown devices and channels are asked for their address claim, product
@@ -199,6 +209,7 @@ API (admin login): `GET /b1s/devices`, `GET /b1s/devices/:id/parameters`
 `POST /b1s/devices/:id/commands/:name` with `{channel, argument | si}`,
 `POST /b1s/devices/:id/console` with `{line}`,
 `POST /b1s/devices/:id/log` with `{minutes}` (1..60; 0 stops),
+`PUT /b1s/devices/:id/settings` with `{pathPrefix}` (Pi-side device settings),
 `GET /b1s/devices/:id/console?since=<position>` (log text, next position,
 seconds the stream still runs), `GET /b1s/backups[/:id]`,
 `POST /b1s/devices/:id/restore` with `{from, calibration}`.

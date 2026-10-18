@@ -164,6 +164,25 @@
   // --- B1S device: settings grouped by device and channel --------------------
 
   const severities = ['Warning', 'Alarm', 'Emergency'];
+  const encodingLabels = { automatic: 'automatic', standard: 'standard PGN', b1s: 'B1S message', off: 'off (not sent)' };
+
+  function age(ms) {
+    if (ms === null || ms === undefined) return '';
+    const seconds = Math.round(ms / 1000);
+    if (seconds < 60) return `${seconds} s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+    return `${Math.floor(seconds / 3600)} h ago`;
+  }
+
+  // What the channel header shows: value (or off), how it is sent, age, path.
+  function channelState(channel) {
+    const via = channel.encoding === 'standard' ? `standard PGN ${channel.standardPgn ?? ''}, instance ${channel.standardInstance}`
+      : channel.encoding === 'off' ? 'off: not sent' : 'B1S message';
+    const value = channel.encoding === 'off' ? 'off' : display(channel.value, channel.unit, true).text;
+    const stale = channel.ageMs !== null && channel.period && channel.ageMs > Math.max(3 * channel.period * 1000, 10000);
+    const path = channel.path ?? (channel.encoding === 'standard' ? 'path appears with the first value Signal K maps' : '');
+    return { via, value, age: channel.encoding === 'off' ? '' : age(channel.ageMs), stale, path };
+  }
   const ruleTexts = ['when above', 'when below', 'when rising faster than', 'when the sensor fails',
     'when falling by more than', 'when rising by more than'];
 
@@ -181,7 +200,7 @@
     let unit = '';
     if (entry.values) {
       element = document.createElement('select');
-      for (const name of entry.values) element.append(Object.assign(text('option', name), { value: name }));
+      for (const name of entry.values) element.append(Object.assign(text('option', options.labels?.[name] ?? name), { value: name }));
       original = entry.values[entry.value] ?? '';
       read = () => element.value === original ? null : { value: element.value };
     } else if (entry.type === 'string') {
@@ -227,8 +246,8 @@
       const changes = writable.map(edit => [edit, edit.change()]).filter(([, body]) => body);
       if (!changes.length) { notice('Nothing changed'); return; }
       for (const [edit, body] of changes) {
-        const result = await api(`b1s/devices/${device.id}/parameters/${edit.entry.name}`, 'PUT',
-          { channel: edit.entry.channel, ...body });
+        const result = edit.save ? await edit.save(body)
+          : await api(`b1s/devices/${device.id}/parameters/${edit.entry.name}`, 'PUT', { channel: edit.entry.channel, ...body });
         if (result.status !== 'done') throw new Error(`${edit.entry.name}: ${result.status}`);
       }
       notice(`${changes.length} setting(s) stored on the device`);
@@ -254,6 +273,14 @@
   function devicePanel(device, card) {
     const role = editor(parameter(card, 'deviceRole'), { placeholder: 'e.g. fridgeSensor (unassigned)' });
     const address = editor(parameter(card, 'preferredAddress'));
+    // The Signal K path prefix is a Pi-side setting of the device (not stored on it).
+    const pluginPrefix = device.detail.pluginPrefix ?? '';
+    const prefixInput = Object.assign(document.createElement('input'), { value: device.detail.pathPrefix ?? '', placeholder: 'none' });
+    prefixInput.setAttribute('aria-label', 'Signal K path prefix of the device');
+    const prefix = { element: prefixInput, unit: '', entry: { access: 'rw', name: 'pathPrefix' },
+      change: () => prefixInput.value.trim() === (device.detail.pathPrefix ?? '') ? null : { pathPrefix: prefixInput.value.trim() },
+      save: body => api(`b1s/devices/${device.id}/settings`, 'PUT', body).then(() => ({ status: 'done' })) };
+    const example = [pluginPrefix, prefixInput.value.trim() || device.detail.pathPrefix, 'environment.inside.temperature'].filter(Boolean).join('.');
     const uptime = parameter(card, 'uptime');
     const seconds = uptime?.value ?? 0;
     const uptimeRow = text('div', '', 'field');
@@ -262,8 +289,11 @@
     const panel = text('section', '', 'device-settings');
     panel.append(text('h3', 'Device'), block('', '', [
       fieldRow('Role', role, 'What this device is for on the boat'),
-      fieldRow('Preferred address', address, 'Address claimed first; takes effect after a restart'), uptimeRow],
-    [saveButton(device, 'Save device settings', [role, address])]));
+      fieldRow('Preferred address', address, 'Address claimed first; takes effect after a restart'),
+      fieldRow('Signal K path prefix', prefix, `Namespace for this device's B1S paths, below the plugin's${pluginPrefix ? ` (${pluginPrefix})` : ' (none set)'}: ` +
+        `e.g. ${example}. Not for standard PGN channels: Signal K maps those itself. Stored on the Pi, part of the backup.`),
+      uptimeRow],
+    [saveButton(device, 'Save device settings', [role, address, prefix])]));
     return panel;
   }
 
@@ -274,10 +304,10 @@
       fieldRow('Location', location, 'Signal K path fragment, e.g. inside.refrigerator; empty = unassigned')];
     const edits = [label, location];
     if (!channel.noStandard) {
-      const encoding = editor(parameter(card, 'channelEncoding', channel.channel));
+      const encoding = editor(parameter(card, 'channelEncoding', channel.channel), { labels: encodingLabels });
       const instance = editor(parameter(card, 'channelStandardInstance', channel.channel));
-      rows.push(fieldRow('Sent as', encoding, 'automatic: standard PGN for display data · b1s: B1S message · off: not sent'),
-        fieldRow('Standard instance', instance, 'Instance of the standard PGN; 255 = firmware default'));
+      rows.push(fieldRow('Sent as', encoding, `automatic: standard PGN ${channel.standardPgn ?? ''} where the registry lists it for display, otherwise B1S message`),
+        fieldRow('Standard PGN instance', instance, 'Instance in the standard PGN; 255 = firmware default'));
       edits.push(encoding, instance);
     } else {
       rows.push(fieldRow('Sent as', null, 'B1S message (no standard PGN for this quantity)'));
@@ -363,12 +393,14 @@
     panel.open = card.openChannels.has(channel.channel);
     panel.ontoggle = () => { if (panel.open) card.openChannels.add(channel.channel); else card.openChannels.delete(channel.channel); };
     const summary = text('summary', '');
-    const value = channel.encoding === 'standard' ? `standard PGN, instance ${channel.standardInstance}`
-      : display(channel.value, channel.unit, true).text;
-    const live = text('span', value, 'channel-value');
+    const state = channelState(channel);
+    const live = text('span', state.value, `channel-value${channel.encoding === 'off' ? ' off' : ''}`);
     live.dataset.channel = String(channel.channel);
+    const when = text('span', state.age, `channel-age${state.stale ? ' stale' : ''}`);
+    when.dataset.age = String(channel.channel);
     summary.append(text('span', `${channel.channel}`, 'channel-number'), text('span', channel.label || `Channel ${channel.channel}`, 'channel-name'),
-      text('span', channel.quantity ?? '', 'muted'), live, text('span', channel.path ?? '', 'channel-path'));
+      text('span', channel.quantity ?? '', 'muted'), text('span', state.via, `channel-via${channel.encoding === 'off' ? ' off' : ''}`),
+      live, when, text('span', state.path, `channel-path${channel.encoding === 'off' ? ' off' : ''}`));
     panel.append(summary);
     if (!card.parameters) {
       panel.append(text('p', 'Reading the device’s settings …', 'empty'));
@@ -488,8 +520,14 @@
 
   function updateB1s(device) {
     for (const channel of device.detail?.channels ?? []) {
+      const state = channelState(channel);
       const live = detail.querySelector(`.channel-value[data-channel="${channel.channel}"]`);
-      if (live && channel.encoding !== 'standard') live.textContent = display(channel.value, channel.unit, true).text;
+      if (live) live.textContent = state.value;
+      const when = detail.querySelector(`.channel-age[data-age="${channel.channel}"]`);
+      if (when) {
+        when.textContent = state.age;
+        when.className = `channel-age${state.stale ? ' stale' : ''}`;
+      }
     }
   }
 
@@ -517,8 +555,8 @@
     // Rebuild when the structure changed; otherwise only live values, so
     // inputs keep what is being typed.
     const structure = device.kind === 'b1s'
-      ? [device.detail.address, device.detail.product, device.detail.channels.map(channel =>
-        [channel.channel, channel.label, channel.location, channel.encoding]), b1sCard(device.id).version]
+      ? [device.detail.address, device.detail.product, device.detail.pathPrefix, device.detail.channels.map(channel =>
+        [channel.channel, channel.label, channel.location, channel.encoding, channel.path]), b1sCard(device.id).version]
       : [device.status, (device.detail?.subscriptions ?? []).map(source => source.sourceIndex), catalogNames,
         device.detail?.lastTransfer, device.detail?.error];
     const key = JSON.stringify([keyOf(device), structure]);

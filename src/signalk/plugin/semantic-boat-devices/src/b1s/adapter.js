@@ -22,8 +22,11 @@ const absoluteKinds = new Set([0, 1]); // alarm rules: high, low
 const defaults = {
   analyzerEvent: 'b1s-N2KAnalyzerOut',
   outEvent: 'b1s-nmea2000out',
-  jsonOutEvent: 'b1s-nmea2000JsonOut'
+  jsonOutEvent: 'b1s-nmea2000JsonOut',
+  providerId: 'can1', // the B1S connection; its standard PGNs are mapped by Signal K
+  pathPrefix: ''
 };
+const prefixPattern = /^([A-Za-z0-9]+(\.[A-Za-z0-9]+)*)?$/;
 
 function hex(byte) {
   return byte.toString(16).padStart(2, '0');
@@ -37,6 +40,8 @@ class B1sAdapter {
     this.onDelta = onDelta;
     this.onError = onError;
     this.consoles = new Map(); // device ID -> { text, start }: the device log as streamed
+    this.settingsFile = path.join(directory, 'b1s-devices.json');
+    this.deviceSettings = {}; // device ID -> { pathPrefix }: Pi-side settings of a device
     this.streams = new Map();  // device ID -> time the device stops its log stream
     this.timers = [];
   }
@@ -44,11 +49,22 @@ class B1sAdapter {
   async start() {
     const registry = loadRegistry(this.options.registryPath || undefined);
     this.registry = registry;
+    if (!prefixPattern.test(this.options.pathPrefix ?? '')) throw new Error('B1S path prefix: letters and digits, separated by dots');
     await fs.mkdir(this.directory, { recursive: true });
+    this.deviceSettings = JSON.parse(await fs.readFile(this.settingsFile, 'utf8').catch(() => '{}'));
     this.app.emitPropertyValue('canboat-custom-pgns', canboatDefinitions(registry));
     const request = (destination, pgn) => this.app.emit(this.options.jsonOutEvent,
       { pgn: isoRequest, dst: destination, prio: 6, fields: { pgn } });
-    this.state = new B1sState(registry, { onDelta: this.onDelta, request });
+    this.state = new B1sState(registry, { onDelta: this.onDelta, request, pathPrefix: this.options.pathPrefix ?? '',
+      devicePrefix: id => this.deviceSettings[id]?.pathPrefix ?? '' });
+    // Standard PGNs of B1S devices: Signal K maps them itself; their paths,
+    // values, and times are learned from its stream.
+    const standardPgns = new Set([...registry.quantities.values()].map(entry => entry.standard_pgn).filter(Boolean));
+    this.unsubscribeStream = this.app.streambundle?.getSelfBus().onValue(entry => {
+      if (!entry.isMeta && entry.source?.label === this.options.providerId && standardPgns.has(entry.source.pgn)) {
+        this.state.standardValue(entry);
+      }
+    });
     this.client = new B1sClient(registry, {
       send: (destination, pgn, bytes, priority) => this.app.emit(this.options.outEvent,
         `${new Date().toISOString()},${priority},${pgn},0,${destination},${bytes.length},${bytes.map(hex).join(',')}`),
@@ -76,6 +92,7 @@ class B1sAdapter {
     }
     this.streams.clear();
     if (this.listener) this.app.removeListener(this.options.analyzerEvent, this.listener);
+    this.unsubscribeStream?.();
     this.timers.forEach(clearTimeout);
     this.listener = null;
   }
@@ -88,6 +105,18 @@ class B1sAdapter {
     return this.state.snapshot();
   }
 
+  // Pi-side settings of a device (they concern Signal K, not the device).
+  async setDeviceSettings(id, { pathPrefix } = {}) {
+    const device = this.device(id);
+    const prefix = String(pathPrefix ?? '').trim();
+    if (!prefixPattern.test(prefix)) throw new Error('Path prefix: letters and digits, separated by dots');
+    this.deviceSettings[device.id] = { ...this.deviceSettings[device.id], pathPrefix: prefix };
+    await fs.writeFile(`${this.settingsFile}.tmp`, JSON.stringify(this.deviceSettings, null, 2));
+    await fs.rename(`${this.settingsFile}.tmp`, this.settingsFile);
+    this.state.metaSent.clear(); // new paths get their metadata
+    return { pathPrefix: prefix, pluginPrefix: this.options.pathPrefix ?? '' };
+  }
+
   // B1S devices in the form of the hub's transport contract.
   transportDevices() {
     return this.state.snapshot().map(device => ({
@@ -97,7 +126,7 @@ class B1sAdapter {
       online: device.online,
       status: device.online ? 'online' : 'silent',
       address: `address ${device.address}`,
-      detail: device
+      detail: { ...device, pluginPrefix: this.options.pathPrefix ?? '' }
     }));
   }
 
@@ -241,6 +270,7 @@ class B1sAdapter {
   async saveBackup(device, parameters) {
     const backup = {
       deviceId: device.id, product: device.product, savedAt: new Date().toISOString(),
+      piSettings: this.deviceSettings[device.id] ?? {},
       parameters: parameters.filter(parameter => parameter.access === 'rw' && parameter.status === 'done')
         .map(({ name, channel, value }) => ({ name, channel, value }))
     };
@@ -287,6 +317,10 @@ class B1sAdapter {
     const ownBackup = Number(from) === device.id;
     const copyCalibration = calibration ?? ownBackup;
     const results = [];
+    if (backup.piSettings?.pathPrefix !== undefined) {
+      await this.setDeviceSettings(device.id, { pathPrefix: backup.piSettings.pathPrefix });
+      results.push({ name: 'pathPrefix (Pi)', channel: null, value: backup.piSettings.pathPrefix, status: 'done' });
+    }
     for (const parameter of backup.parameters) {
       if (!copyCalibration && parameter.name.startsWith('calibration')) continue;
       if (parameter.channel !== null && !device.channels.has(parameter.channel)) {

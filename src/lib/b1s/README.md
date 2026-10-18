@@ -415,10 +415,17 @@ address 150):
 - Standard PGNs are decoded by Signal K itself.
 - B1S messages are decoded with canboat definitions the plugin builds from
   `registry.yaml`, so canboat-based analyzers decode B1S too.
-- Paths come from the quantity's Signal K template and the channel's
-  location, for example quantity `temperature` (`environment.{location}.temperature`)
-  with location `inside.refrigerator`. Unassigned channels appear under
-  `b1s.unassigned.<device ID>.<channel>.<quantity>`.
+- Paths of channels sent as B1S messages come from the quantity's Signal K
+  template and the channel's location, for example quantity `temperature`
+  (`environment.{location}.temperature`) with location `inside.refrigerator`.
+  Unassigned channels appear under `b1s.unassigned.<device ID>.<channel>.<quantity>`.
+  Optional path prefixes, one for the plugin and one per device (a Pi-side
+  device setting), put these paths into a namespace:
+  `<plugin prefix>.<device prefix>.<path>`.
+- Channels sent as standard PGNs get the path Signal K's own NMEA 2000
+  mapping gives them (from PGN, source, and instance, e.g.
+  `environment.inside.2.temperature`); prefixes do not apply. The plugin
+  learns these paths from Signal K's data to show them.
 - Devices are bound by their device ID, never by address.
 - *Planned:* the plugin is the bridge to NMEA 2000: it forwards chosen
   signals in a chosen form, never everything.

@@ -25,7 +25,12 @@ function field(fields, id, name) {
 }
 
 class B1sState {
-  constructor(registry, { onDelta, request, now = Date.now, requestIntervalMs = 10000 }) {
+  // pathPrefix: Signal K namespace of all B1S paths (plugin setting);
+  // devicePrefix(id): the namespace of one device (Pi-side device setting).
+  constructor(registry, { onDelta, request, now = Date.now, requestIntervalMs = 10000, pathPrefix = '',
+    devicePrefix = () => '' }) {
+    this.pathPrefix = pathPrefix;
+    this.devicePrefix = devicePrefix;
     this.registry = registry;
     this.onDelta = onDelta;
     this.request = request;
@@ -117,13 +122,26 @@ class B1sState {
     device.channels.set(channel, description);
   }
 
+  // Path of a channel sent as a B1S message: the quantity's template with the
+  // channel's location (or the unassigned path), below the plugin's and the
+  // device's prefixes if set.
   pathOf(device, description, quantityCode) {
     const quantity = this.registry.quantities.get(quantityCode);
     const name = quantity ? quantity.id : `quantity${quantityCode}`;
-    if (description?.location && quantity?.signalk) {
-      return quantity.signalk.replace('{location}', description.location);
-    }
-    return `b1s.unassigned.${device.id}.${description?.channel ?? '?'}.${name}`;
+    const base = description?.location && quantity?.signalk
+      ? quantity.signalk.replace('{location}', description.location)
+      : `b1s.unassigned.${device.id}.${description?.channel ?? '?'}.${name}`;
+    return [this.pathPrefix, this.devicePrefix(device.id), base].filter(Boolean).join('.');
+  }
+
+  // A value Signal K mapped from a standard PGN of a B1S device (its own
+  // NMEA 2000 mapping decides the path; prefixes do not apply).
+  standardValue(entry) {
+    const device = this.deviceAt(Number(entry.source?.src));
+    if (!device) return;
+    device.standard ??= new Map();
+    device.standard.set(`${entry.source.pgn}:${entry.source.instance ?? ''}`,
+      { path: entry.path, value: entry.value, at: Date.parse(entry.timestamp) || this.now() });
   }
 
   measure(device, n2k, fields) {
@@ -180,15 +198,28 @@ class B1sState {
       address: device.address,
       product: device.product,
       online: device.lastSeen !== undefined && this.now() - device.lastSeen < 10000,
+      pathPrefix: this.devicePrefix(device.id),
       channels: [...device.channels.values()].sort((a, b) => a.channel - b.channel).map(channel => {
         const quantity = this.registry.quantities.get(channel.kind);
-        const latest = device.values.get(channel.channel);
+        const standardPgn = quantity?.standard_pgn ?? null;
+        let latest = device.values.get(channel.channel);
+        let path = this.pathOf(device, channel, channel.kind);
+        if (channel.encoding === 'standard') {
+          // Learned from Signal K's mapping once the first value arrived.
+          const mapped = device.standard?.get(`${standardPgn}:${channel.standardInstance ?? ''}`);
+          latest = mapped;
+          path = mapped?.path ?? null;
+        } else if (channel.encoding === 'off') {
+          latest = null; // not sent: an older value would mislead
+        }
         return {
           ...channel,
           quantity: quantity?.id ?? null,
           unit: quantity?.unit ?? null,
+          standardPgn,
           value: latest?.value ?? null,
-          path: channel.encoding === 'standard' ? null : this.pathOf(device, channel, channel.kind)
+          ageMs: latest?.at ? Math.max(0, this.now() - latest.at) : null,
+          path
         };
       })
     }));

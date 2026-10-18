@@ -53,19 +53,20 @@ standard_pgns:
 
 # Quantities of the Measurement messages. Physical value = raw x scale, in
 # the SI unit (as Signal K). signalk: path template; {location} is the
-# channel's location from its Channel Description. Code 0 is invalid, 255
-# reserved.
+# channel's location from its Channel Description. standard_pgn: the
+# standard PGN a channel of this quantity can be sent as (firmware:
+# n2k::standardPgn()). Code 0 is invalid, 255 reserved.
 quantities:
-  - {code: 1,  id: temperature,        unit: K,      scale: 0.001, encoding: int32, signalk: "environment.{location}.temperature"}
-  - {code: 2,  id: relativeHumidity,   unit: ratio,  scale: 1.0e-6, encoding: int32, signalk: "environment.{location}.relativeHumidity"}
-  - {code: 3,  id: pressure,           unit: Pa,     scale: 0.1,   encoding: int32, signalk: "environment.{location}.pressure"}
+  - {code: 1,  id: temperature,        unit: K,      scale: 0.001, encoding: int32, signalk: "environment.{location}.temperature", standard_pgn: 130316}
+  - {code: 2,  id: relativeHumidity,   unit: ratio,  scale: 1.0e-6, encoding: int32, signalk: "environment.{location}.relativeHumidity", standard_pgn: 130313}
+  - {code: 3,  id: pressure,           unit: Pa,     scale: 0.1,   encoding: int32, signalk: "environment.{location}.pressure", standard_pgn: 130314}
   - {code: 4,  id: voltage,            unit: V,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.voltage"}
   - {code: 5,  id: current,            unit: A,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.current"}
   - {code: 6,  id: power,              unit: W,      scale: 0.001, encoding: int32, signalk: "electrical.{location}.power"}
   - {code: 7,  id: energy,             unit: J,      scale: 1,     encoding: int32, signalk: "electrical.{location}.energy",
      description: "Use Measurement Wide for running totals above about 596 kWh"}
   - {code: 8,  id: frequency,          unit: Hz,     scale: 0.001, encoding: int32, signalk: "{location}.frequency"}
-  - {code: 9,  id: rotationalSpeed,    unit: Hz,     scale: 0.001, encoding: int32, signalk: "propulsion.{location}.revolutions",
+  - {code: 9,  id: rotationalSpeed,    unit: Hz,     scale: 0.001, encoding: int32, signalk: "propulsion.{location}.revolutions", standard_pgn: 127488,
      description: "Revolutions per second, as Signal K (rpm / 60)"}
   - {code: 10, id: illuminance,        unit: lx,     scale: 0.001, encoding: int32, signalk: "environment.{location}.illuminance"}
   - {code: 11, id: uvIndex,            unit: "1",    scale: 0.001, encoding: int32, signalk: "environment.{location}.uvIndex"}

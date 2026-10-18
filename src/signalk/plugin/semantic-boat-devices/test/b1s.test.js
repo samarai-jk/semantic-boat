@@ -181,3 +181,35 @@ test('a log stream request carries the minutes and returns the remaining seconds
   b1sClient.handle({ pgn: 126720, src: 38, fields: { manufacturerCode: 2046, payload: hex([0x88, sequence, 0, 0x2c, 0x01, 0xff]) } });
   assert.strictEqual(await request, 300);
 });
+
+test('prefixes form a namespace for B1S paths, not for standard PGN channels', () => {
+  const deltas = [];
+  const b1s = new B1sState(registry, { onDelta: delta => deltas.push(delta), request: () => {}, now: () => 1000,
+    pathPrefix: 'sb', devicePrefix: id => (id === 1082470 ? 'lab' : '') });
+  b1s.handle(claim);
+  b1s.handle(description(0, 'inside', 'Cabin'));
+  b1s.handle(measurement(0, 293150));
+  assert.strictEqual(deltas[0].updates[0].values[0].path, 'sb.lab.environment.inside.temperature');
+  b1s.handle(measurement(1, 293150));
+  assert.strictEqual(deltas[1].updates[0].values[0].path, 'sb.lab.b1s.unassigned.1082470.1.temperature');
+  // A channel sent as standard PGN: the path Signal K mapped, no prefixes.
+  b1s.handle({ pgn: 130819, src: 38, fields: { manufacturerCode: 2046, channel: 2, kind: 1, encoding: 1,
+    standardInstance: 2, period: 2, label: 'Air' } });
+  let channel = b1s.snapshot()[0].channels.find(entry => entry.channel === 2);
+  assert.strictEqual(channel.path, null); // nothing mapped yet
+  b1s.standardValue({ path: 'environment.inside.2.temperature', value: 300.1, timestamp: new Date(400).toISOString(),
+    source: { label: 'can1', src: '38', pgn: 130316, instance: '2' } });
+  channel = b1s.snapshot()[0].channels.find(entry => entry.channel === 2);
+  assert.deepStrictEqual([channel.path, channel.value, channel.ageMs, channel.standardPgn],
+    ['environment.inside.2.temperature', 300.1, 600, 130316]);
+});
+
+test('a channel switched off shows no value', () => {
+  const { b1s } = state();
+  b1s.handle(claim);
+  b1s.handle(description(0, '', 'Board'));
+  b1s.handle(measurement(0, 300000));
+  b1s.handle({ ...description(0, '', 'Board'), fields: { ...description(0, '', 'Board').fields, encoding: 2 } });
+  const channel = b1s.snapshot()[0].channels[0];
+  assert.deepStrictEqual([channel.encoding, channel.value, channel.ageMs], ['off', null, null]);
+});

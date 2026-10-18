@@ -42,6 +42,8 @@ module.exports = app => {
           analyzerEvent: { type: 'string', title: 'Decoded messages event of the B1S connection', default: 'b1s-N2KAnalyzerOut' },
           outEvent: { type: 'string', title: 'Raw output event of the B1S connection', default: 'b1s-nmea2000out' },
           jsonOutEvent: { type: 'string', title: 'JSON output event of the B1S connection', default: 'b1s-nmea2000JsonOut' },
+          providerId: { type: 'string', title: 'ID of the B1S connection (for its standard PGNs)', default: 'can1' },
+          pathPrefix: { type: 'string', title: 'Signal K path prefix of all B1S values (e.g. sb; empty: none)', default: '' },
           registryPath: { type: 'string', title: 'B1S registry (empty: the repository copy)', default: '' }
         } }
       }
@@ -111,6 +113,7 @@ module.exports = app => {
         request.params.id, request.params.name, { ...request.body, channel: channelOf(request.body?.channel) })));
       router.post('/b1s/devices/:id/console', b1s((request, adapter) => adapter.sendConsole(request.params.id, request.body?.line ?? '')));
       router.get('/b1s/devices/:id/console', b1s((request, adapter) => adapter.consoleOutput(request.params.id, request.query.since)));
+      router.put('/b1s/devices/:id/settings', b1s((request, adapter) => adapter.setDeviceSettings(request.params.id, request.body ?? {})));
       router.post('/b1s/devices/:id/log', b1s((request, adapter) => adapter.setLogStream(request.params.id, request.body?.minutes)));
       router.get('/b1s/backups', b1s((_request, adapter) => adapter.backups()));
       router.get('/b1s/backups/:id', b1s((request, adapter) => adapter.backup(request.params.id)));

@@ -187,9 +187,6 @@ sensor board alarm 0 30      change a threshold (stored); "sensor board reset" u
 
 ## Known issues
 
-- Release builds are effectively `-O3`, not `-Os`: CMake appends its default
-  `-O3 -DNDEBUG` after the `-Os` from `cmake/gcc-arm-none-eabi.cmake`.
-  Fixing it should save flash (affects remote-a too).
 - The heartbeat's `i2c err` counter also counts NACKs from drivers retrying
   absent sensors (about once a second each); `rec` (bus recoveries) is the
   number that indicates a real bus problem.

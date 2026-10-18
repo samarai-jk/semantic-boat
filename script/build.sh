@@ -65,7 +65,13 @@ preset="$firmware-$build_type"
 elf_path="build/$firmware/$build_type/$firmware_dir/$firmware.elf"
 printf '[build.sh] Firmware: %s | type: %s | refresh=%s | flash=%s\n' \
     "$firmware" "$build_type" "$do_refresh" "$do_flash"
-cmake --preset "$preset"
+# A clean build also configures from scratch, so a stale cache (old compiler
+# flags) cannot outlive it.
+configure_arguments=(--preset "$preset")
+if [[ "$do_refresh" -eq 0 ]]; then
+    configure_arguments+=(--fresh)
+fi
+cmake "${configure_arguments[@]}"
 build_arguments=(--build --preset "$preset")
 if [[ "$do_refresh" -eq 0 ]]; then
     build_arguments+=(--clean-first)

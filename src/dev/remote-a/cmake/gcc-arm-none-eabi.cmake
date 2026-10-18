@@ -13,10 +13,13 @@ set(MCU_FLAGS "-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
 set(CMAKE_C_FLAGS_INIT "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -fstack-usage")
 set(CMAKE_CXX_FLAGS_INIT "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -fstack-usage -fno-exceptions -fno-rtti -fno-threadsafe-statics")
 set(CMAKE_ASM_FLAGS_INIT "${MCU_FLAGS} -x assembler-with-cpp")
-set(CMAKE_C_FLAGS_DEBUG_INIT "-O0 -g3")
-set(CMAKE_CXX_FLAGS_DEBUG_INIT "-O0 -g3")
-set(CMAKE_C_FLAGS_RELEASE_INIT "-Os -g0")
-set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Os -g0")
+# Cache entries, not the *_INIT variables: CMake appends its defaults
+# (-O3 -DNDEBUG for Release) to *_INIT, and the last -O wins. Existing build
+# directories keep their old cache: configure them with --fresh once.
+set(CMAKE_C_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C compiler flags for Debug builds")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C++ compiler flags for Debug builds")
+set(CMAKE_C_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C compiler flags for Release builds")
+set(CMAKE_CXX_FLAGS_RELEASE "-Os -g0 -DNDEBUG" CACHE STRING "C++ compiler flags for Release builds")
 
 get_filename_component(REMOTE_A_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(LINKER_SCRIPT "${REMOTE_A_DIR}/cmx/STM32L431xx_FLASH.ld")

@@ -162,8 +162,9 @@ line during the session arrive this way.
 Measured on LT1 (product build, 4 channels, 8 settings slots): service
 server, channel settings, and console mirror +5.2 KiB of flash, +136 bytes
 of RAM; fast-packet reception before that +464 bytes of flash and +144
-bytes of RAM (96 of them the receive buffer). Release builds are
-effectively -O3 (LT1 README, known issues); -Os should shrink this. EEPROM:
+bytes of RAM (96 of them the receive buffer); measured on the then -O3
+release builds. Since release builds use -Os (2026-10-18), B1S (n2k stack,
+b1s library, CAN binding) is about 9.3 KiB of LT1's 72.6 KiB. EEPROM:
 `ChannelSettings::requiredBytes(slots)`, 128 bytes for the role and 384
 bytes per channel slot.
 

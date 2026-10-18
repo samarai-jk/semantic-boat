@@ -96,7 +96,11 @@ if errorlevel 1 (
 
 echo [build.bat] Firmware: %FIRMWARE% ^| type: %BUILD_TYPE% ^| refresh=%DO_REFRESH% ^| flash=%DO_FLASH%
 echo [build.bat] Configuring preset "%PRESET%"...
-cmake --preset "%PRESET%"
+REM A clean build also configures from scratch, so a stale cache (old
+REM compiler flags) cannot outlive it.
+set "FRESH=--fresh"
+if "%DO_REFRESH%"=="1" set "FRESH="
+cmake --preset "%PRESET%" %FRESH%
 if errorlevel 1 (
   echo [build.bat] Error: configure failed for preset "%PRESET%".
   popd >NUL 2>&1

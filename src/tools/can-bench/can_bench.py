@@ -35,7 +35,7 @@ with B1S_REGISTRY.open() as registry_file:
     B1S = yaml.safe_load(registry_file)
 B1S_PGNS = {entry["pgn"]: entry["id"] for entry in B1S["pgns"]}
 B1S_QUANTITIES = {entry["code"]: entry for entry in B1S["quantities"]}
-B1S_ENCODINGS = {0: "b1s", 1: "standard", 2: "off", 3: "b1s (no standard PGN)"}
+B1S_ENCODINGS = {0: "b1s", 1: "standard", 2: "off", 3: "n/a"}
 FAST_PACKET_PGNS |= {entry["pgn"] for entry in B1S["pgns"] if entry["kind"] == "fast"}
 
 PGN_NAMES = {
@@ -136,7 +136,8 @@ def decode_b1s(pgn, data):
             kind = f"output kind {quantity}"
         standard = f", standard instance {instance}" if instance != 0xFF else ""
         every = "on change" if period == 0xFFFF else f"every {period / 100:g} s"
-        return (f"channel {channel}: {kind}, sent as {B1S_ENCODINGS[flags & 3]}{standard}, {every}, "
+        encoding = B1S_ENCODINGS[flags & 3] + (" (no standard PGN)" if flags & 0x08 else "")
+        return (f"channel {channel}: {kind}, sent as {encoding}{standard}, {every}, "
                 f"location '{location or '(unassigned)'}', label '{label}'")
     return f"{name}: {data[2:].hex(' ')}"
 

@@ -46,7 +46,11 @@ int main() {
     channel.label = "Fridge";
     const auto length = encodeChannelDescription(description, channel);
     assert(length == 8u + 2u + 19u + 2u + 6u);
-    assert(description[4] == 0xF9u); // standard, not an output, reserved bits set
+    assert(description[4] == 0xF1u); // standard, not an output, has a standard PGN, reserved bits set
+    channel.noStandard = true;
+    channel.encoding = Encoding::b1s;
+    encodeChannelDescription(description, channel);
+    assert(description[4] == 0xF8u);
     assert(description[5] == 2u && description[6] == 200u && description[7] == 0u);
     assert(description[8] == 21u && description[9] == 1u);
     assert(std::memcmp(description + 10, "inside.refrigerator", 19u) == 0);

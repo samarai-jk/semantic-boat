@@ -17,12 +17,12 @@ inline constexpr std::int32_t notAvailable = 0x7FFFFFFF; // no value yet, sensor
 inline constexpr std::int32_t error = 0x7FFFFFFE;        // sensor fault
 inline constexpr std::int32_t outOfRange = 0x7FFFFFFD;
 
-// How a channel is sent (Channel Description flags, bits 0..1).
+// How a channel is sent (Channel Description flags, bits 0..1; 3 = not
+// available).
 enum class Encoding : std::uint8_t {
-    b1s = 0u,        // B1S message
-    standard = 1u,   // standard NMEA 2000 PGN
-    off = 2u,        // not sent
-    noStandard = 3u, // B1S message; the quantity has no standard PGN
+    b1s = 0u,      // B1S message
+    standard = 1u, // standard NMEA 2000 PGN
+    off = 2u,      // not sent
 };
 
 inline constexpr std::size_t maxTextLength = 32u;
@@ -49,6 +49,7 @@ struct ChannelDescription {
     std::uint8_t kind{}; // Quantity, or OutputKind for an output channel
     Encoding encoding{Encoding::b1s};
     bool output{};
+    bool noStandard{}; // the quantity has no standard PGN
     std::uint8_t standardInstance{0xFFu};    // 0xFF = none
     std::uint16_t periodCentiseconds{0xFFFFu}; // 0xFFFF = on change only
     const char* location{};                  // Signal K path fragment, "" = unassigned
@@ -75,7 +76,8 @@ inline std::size_t encodeChannelDescription(std::uint8_t (&out)[channelDescripti
     out[2] = description.channel;
     out[3] = description.kind;
     out[4] = static_cast<std::uint8_t>(static_cast<std::uint8_t>(description.encoding) |
-                                       (description.output ? 0x04u : 0u) | 0xF8u);
+                                       (description.output ? 0x04u : 0u) | (description.noStandard ? 0x08u : 0u) |
+                                       0xF0u);
     out[5] = description.standardInstance;
     n2k::bytes::put16(out + 6, description.periodCentiseconds);
     std::size_t length = 8u;

@@ -27,11 +27,11 @@ Encoding MeasurementPublisher::encoding(const ChannelConfig& channel) {
     const auto pgn = n2k::standardPgn(channel.measurement->quantity());
     switch (channel.publish) {
     case Publish::off: return Encoding::off;
-    case Publish::b1s: return pgn != 0u ? Encoding::b1s : Encoding::noStandard;
-    case Publish::standard: return pgn != 0u ? Encoding::standard : Encoding::noStandard;
+    case Publish::b1s: return Encoding::b1s;
+    case Publish::standard: return pgn != 0u ? Encoding::standard : Encoding::b1s;
     case Publish::automatic: break;
     }
-    if (pgn == 0u) return Encoding::noStandard;
+    if (pgn == 0u) return Encoding::b1s;
     return standardCategory(pgn) == StandardCategory::display ? Encoding::standard : Encoding::b1s;
 }
 
@@ -85,7 +85,6 @@ bool MeasurementPublisher::send(const ChannelConfig& channel) {
         number = n2k::encodeStandardMeasurement(measurement, channel.standardSource, sequenceId_, data);
         break;
     case Encoding::b1s:
-    case Encoding::noStandard:
         encodeMeasurement(data, quantityOf(measurement.quantity()), channel.channel, rawValue(measurement));
         number = pgn::measurement;
         break;
@@ -103,6 +102,7 @@ void MeasurementPublisher::describeNext() {
     description.channel = channel.channel;
     description.kind = static_cast<std::uint8_t>(quantityOf(channel.measurement->quantity()));
     description.encoding = encoded;
+    description.noStandard = n2k::standardPgn(channel.measurement->quantity()) == 0u;
     description.standardInstance = encoded == Encoding::standard ? channel.measurement->config().instance : 0xFFu;
     description.periodCentiseconds = static_cast<std::uint16_t>(periodMs_ / 10u);
     description.location = channel.location;

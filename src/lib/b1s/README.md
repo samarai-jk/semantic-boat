@@ -15,8 +15,9 @@ quantity, location), so it can become part of an information graph.
 management (`src/lib/n2k`), the standard PGNs listed in
 [Standard PGNs](#standard-pgns) with the per-channel encoding switch
 (compile-time), Measurement (65280), and Channel Description (130819),
-verified on LT1 with can-bench. Everything marked *planned* is specified here
-but not implemented yet.
+verified on LT1 with can-bench, and the Signal K plugin
+([`src/signalk/plugin/b1s`](../../signalk/plugin/b1s/README.md)). Everything
+marked *planned* is specified here but not implemented yet.
 
 | File | Content |
 | --- | --- |
@@ -334,7 +335,7 @@ request it when they see a channel they do not know.
 | 0..1 | Proprietary header | |
 | 2 | Channel | uint8 |
 | 3 | Quantity or output kind | uint8 (quantity for measurement channels, output kind for outputs) |
-| 4 | Flags | bits 0..1 encoding mode (0 `b1s`, 1 `standard`, 2 `off`, 3 no standard PGN), bit 2 output channel, bits 3..7 reserved (1) |
+| 4 | Flags | bits 0..1 encoding mode (0 `b1s`, 1 `standard`, 2 `off`, 3 not available), bit 2 output channel, bit 3 the quantity has no standard PGN, bits 4..7 reserved (1) |
 | 5 | Standard PGN instance | uint8, `0xFF` = none |
 | 6..7 | Nominal period | uint16, 0.01 s, `0xFFFF` = on change only |
 | 8.. | Location | NMEA 2000 STRING_LAU, ASCII, at most 32 characters |
@@ -401,17 +402,21 @@ the sum over an installation must stay within the budget.
 
 ## Signal K
 
-*Planned:* a Signal K plugin under `src/signalk/plugin/` reads B1S:
+The Signal K plugin [`src/signalk/plugin/b1s`](../../signalk/plugin/b1s/README.md)
+reads B1S from its own Signal K connection on the B1S interface (own event
+names, so B1S and NMEA 2000 stay apart inside Signal K; Signal K's node uses
+address 150):
 
 - Standard PGNs are decoded by Signal K itself.
-- B1S messages are decoded from `registry.yaml`, and canboat definitions for
-  them are generated from it, so analyzers decode B1S too.
+- B1S messages are decoded with canboat definitions the plugin builds from
+  `registry.yaml`, so canboat-based analyzers decode B1S too.
 - Paths come from the quantity's Signal K template and the channel's
   location, for example quantity `temperature` (`environment.{location}.temperature`)
   with location `inside.refrigerator`. Unassigned channels appear under
-  `b1s.unassigned.<device ID>.<channel>`.
-- The plugin is the bridge to NMEA 2000: it forwards chosen signals in a
-  chosen form, never everything.
+  `b1s.unassigned.<device ID>.<channel>.<quantity>`.
+- Devices are bound by their device ID, never by address.
+- *Planned:* the plugin is the bridge to NMEA 2000: it forwards chosen
+  signals in a chosen form, never everything.
 
 ## Device lifecycle
 

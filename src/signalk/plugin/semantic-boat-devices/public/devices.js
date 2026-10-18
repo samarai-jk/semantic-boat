@@ -146,7 +146,7 @@
   function b1sCard(id) {
     if (!b1sCards.has(id)) {
       b1sCards.set(id, { parameters: null, version: 0, logOpen: false, logSince: 0, logText: '', logRemaining: 0,
-        levels: new Set(Object.keys(levels)) });
+        levels: new Set(Object.keys(levels)), openChannels: new Set() });
     }
     return b1sCards.get(id);
   }
@@ -161,75 +161,198 @@
     } finally { card.loading = false; }
   }
 
-  function channelRow(device, channel, card) {
-    const parameter = name => card.parameters?.find(entry => entry.name === name && entry.channel === channel.channel);
-    const label = Object.assign(document.createElement('input'), { value: parameter('channelLabel')?.value ?? channel.label });
-    const location = Object.assign(document.createElement('input'), {
-      value: parameter('channelLocation')?.value ?? channel.location, placeholder: 'unassigned' });
-    const encoding = document.createElement('select');
-    for (const name of encodings) encoding.append(Object.assign(text('option', name), { value: name }));
-    encoding.value = encodings[parameter('channelEncoding')?.value] ?? 'automatic';
-    encoding.disabled = !card.parameters;
-    const value = channel.encoding === 'standard' ? 'standard PGN' : display(channel.value, channel.unit, true).text;
-    const actions = text('div', '', 'row-actions');
-    actions.append(
-      button('Save', async () => {
-        const writes = [['channelLabel', label.value], ['channelLocation', location.value]];
-        if (card.parameters) writes.push(['channelEncoding', encoding.value]);
-        for (const [name, entry] of writes) {
-          const result = await api(`b1s/devices/${device.id}/parameters/${name}`, 'PUT', { channel: channel.channel, value: entry });
-          if (result.status !== 'done') throw new Error(`${name}: ${result.status}`);
-        }
-        notice(`Channel ${channel.channel} saved`);
-        await loadParameters(device.id);
-      }, 'Store label, location, and encoding on the device'),
-      button('Calibrate…', async () => {
-        const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit;
-        const input = prompt(`Reference value for ${channel.label || `channel ${channel.channel}`} in ${unit}:`);
-        if (input === null) return;
-        const result = await api(`b1s/devices/${device.id}/commands/calibrate`, 'POST',
-          { channel: channel.channel, si: fromDisplay(input, channel.unit, true) });
-        notice(`Calibrate channel ${channel.channel}: ${result.result}`, result.result !== 'done');
-        await loadParameters(device.id);
-      }, 'Offset calibration against a reference at the current reading'),
-      button('Reset', async () => {
-        if (!confirm(`Reset calibration and alarm thresholds of channel ${channel.channel}?`)) return;
-        const result = await api(`b1s/devices/${device.id}/commands/resetChannel`, 'POST', { channel: channel.channel });
-        notice(`Reset channel ${channel.channel}: ${result.result}`, result.result !== 'done');
-        await loadParameters(device.id);
-      }, 'Calibration and alarm thresholds back to the defaults'));
-    const row = cells(String(channel.channel), channel.quantity ?? String(channel.kind), value, label, location, encoding,
-      channel.path ?? `standard PGN, instance ${channel.standardInstance}`, actions);
-    row.children[2].className = 'value';
-    row.children[6].className = 'path';
+  // --- B1S device: settings grouped by device and channel --------------------
+
+  const severities = ['Warning', 'Alarm', 'Emergency'];
+  const ruleTexts = ['when above', 'when below', 'when rising faster than', 'when the sensor fails',
+    'when falling by more than', 'when rising by more than'];
+
+  function parameter(card, name, channel = null) {
+    return card.parameters?.find(entry => entry.name === name && entry.channel === channel);
+  }
+
+  // An input bound to one parameter. change() returns the request body if the
+  // value was edited, otherwise null; groups save all their changes at once.
+  function editor(entry, options = {}) {
+    if (!entry || entry.status !== 'done') return null;
+    let element;
+    let original;
+    let read;
+    let unit = '';
+    if (entry.values) {
+      element = document.createElement('select');
+      for (const name of entry.values) element.append(Object.assign(text('option', name), { value: name }));
+      original = entry.values[entry.value] ?? '';
+      read = () => element.value === original ? null : { value: element.value };
+    } else if (entry.type === 'string') {
+      original = entry.value ?? '';
+      read = () => element.value === original ? null : { value: element.value };
+    } else if (options.factor) {
+      original = (entry.value / options.factor).toFixed(6);
+      read = () => element.value === original ? null : { value: Math.round(Number(element.value) * options.factor) };
+    } else if (entry.si !== null && entry.si !== undefined) {
+      const shown = display(entry.si, entry.siUnit, entry.absolute);
+      original = shown.value;
+      unit = shown.unit;
+      read = () => element.value === original ? null : { si: fromDisplay(element.value, entry.siUnit, entry.absolute) };
+    } else {
+      original = String(entry.value);
+      read = () => element.value === original ? null : { value: Number(element.value) };
+    }
+    if (!element) element = document.createElement('input');
+    element.value = original;
+    if (options.placeholder) element.placeholder = options.placeholder;
+    element.disabled = entry.access !== 'rw';
+    element.title = entry.description ?? '';
+    element.setAttribute('aria-label', options.label ?? entry.name);
+    return { element, unit: options.unit ?? unit, change: () => (entry.access === 'rw' ? read() : null), entry };
+  }
+
+  function fieldRow(label, edit, hint = '') {
+    const row = text('label', '', 'field');
+    row.append(text('span', label, 'field-label'));
+    const value = text('span', '', 'field-value');
+    if (edit) value.append(edit.element, text('span', edit.unit ? ` ${edit.unit}` : '', 'field-unit'));
+    else value.append(text('span', '–', 'muted'));
+    row.append(value);
+    if (hint) row.append(text('small', hint, 'field-hint'));
     return row;
   }
 
-  function parameterRows(device, card) {
-    return (card.parameters ?? []).filter(parameter =>
-      !['channelLabel', 'channelLocation', 'channelEncoding'].includes(parameter.name)).map(parameter => {
-      const shown = parameter.si !== null ? display(parameter.si, parameter.siUnit, parameter.absolute)
-        : parameter.values ? { text: parameter.values[parameter.value] ?? String(parameter.value), value: parameter.values[parameter.value] }
-          : { text: parameter.status === 'done' ? String(parameter.value) : parameter.status, value: String(parameter.value ?? '') };
-      let valueCell = shown.text;
-      let action = '';
-      if (parameter.access === 'rw' && parameter.status === 'done') {
-        const input = Object.assign(document.createElement('input'), { value: shown.value });
-        valueCell = text('span', '', 'parameter-input');
-        valueCell.append(input, text('span', ` ${shown.unit ?? (parameter.si === null ? parameter.unit ?? '' : '')}`));
-        action = button('Set', async () => {
-          const body = { channel: parameter.channel };
-          if (parameter.si !== null) body.si = fromDisplay(input.value, parameter.siUnit, parameter.absolute);
-          else body.value = parameter.type === 'string' || parameter.values ? input.value : Number(input.value);
-          const result = await api(`b1s/devices/${device.id}/parameters/${parameter.name}`, 'PUT', body);
-          notice(`${parameter.name}: ${result.status}`, result.status !== 'done');
-          await loadParameters(device.id);
-        });
+  // A group of settings with one Save for everything edited in it.
+  function group(title, device, edits, rows, extra = []) {
+    const section = text('section', '', 'settings-group');
+    section.append(text('h4', title), ...rows);
+    const actions = text('div', '', 'row-actions');
+    const writable = edits.filter(edit => edit && edit.entry.access === 'rw');
+    if (writable.length) {
+      actions.append(button('Save', async () => {
+        const changes = writable.map(edit => [edit, edit.change()]).filter(([, body]) => body);
+        if (!changes.length) { notice(`${title}: nothing changed`); return; }
+        for (const [edit, body] of changes) {
+          const result = await api(`b1s/devices/${device.id}/parameters/${edit.entry.name}`, 'PUT',
+            { channel: edit.entry.channel, ...body });
+          if (result.status !== 'done') throw new Error(`${edit.entry.name}: ${result.status}`);
+        }
+        notice(`${title}: ${changes.length} setting(s) stored on the device`);
+        await loadParameters(device.id);
+        render();
+      }, 'Store the changes of this group on the device'));
+    }
+    actions.append(...extra);
+    if (actions.children.length) section.append(actions);
+    return section;
+  }
+
+  function devicePanel(device, card) {
+    const role = editor(parameter(card, 'deviceRole'), { placeholder: 'e.g. fridgeSensor (unassigned)' });
+    const address = editor(parameter(card, 'preferredAddress'));
+    const uptime = parameter(card, 'uptime');
+    const seconds = uptime?.value ?? 0;
+    const uptimeText = uptime ? `${Math.floor(seconds / 3600)} h ${Math.floor(seconds / 60) % 60} min (when read)` : '–';
+    const uptimeRow = text('div', '', 'field');
+    uptimeRow.append(text('span', 'Uptime', 'field-label'), text('span', uptimeText, 'field-value'));
+    return group('Device', device, [role, address],
+      [fieldRow('Role', role, 'What this device is for on the boat'),
+        fieldRow('Preferred address', address, 'Address claimed first; takes effect after a restart'), uptimeRow]);
+  }
+
+  function setupGroup(device, channel, card) {
+    const label = editor(parameter(card, 'channelLabel', channel.channel), { placeholder: 'name for people' });
+    const location = editor(parameter(card, 'channelLocation', channel.channel), { placeholder: 'unassigned' });
+    const rows = [fieldRow('Label', label),
+      fieldRow('Location', location, 'Signal K path fragment, e.g. inside.refrigerator; empty = unassigned')];
+    const edits = [label, location];
+    if (!channel.noStandard) {
+      const encoding = editor(parameter(card, 'channelEncoding', channel.channel));
+      const instance = editor(parameter(card, 'channelStandardInstance', channel.channel));
+      rows.push(fieldRow('Sent as', encoding, 'automatic: standard PGN for display data; b1s: B1S message; off: not sent'),
+        fieldRow('Standard instance', instance, 'Instance of the standard PGN; 255 = firmware default'));
+      edits.push(encoding, instance);
+    } else {
+      rows.push(fieldRow('Sent as', null, 'B1S message (no standard PGN for this quantity)'));
+    }
+    return group('Setup', device, edits, rows);
+  }
+
+  function calibrationGroup(device, channel, card) {
+    const offset = editor(parameter(card, 'calibrationOffset', channel.channel));
+    const gain = editor(parameter(card, 'calibrationGain', channel.channel), { factor: 1e6, unit: '×' });
+    if (!offset && !gain) return null;
+    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit;
+    const reference = (command, what) => button(what, async () => {
+      const input = prompt(`${what}: reference value for ${channel.label || `channel ${channel.channel}`} now, in ${unit}:`);
+      if (input === null) return;
+      const result = await api(`b1s/devices/${device.id}/commands/${command}`, 'POST',
+        { channel: channel.channel, si: fromDisplay(input, channel.unit, true) });
+      notice(`${what}: ${result.result}`, result.result !== 'done');
+      await loadParameters(device.id);
+      render();
+    }, command === 'calibrate' ? 'Set the offset so that the current reading equals a reference'
+      : 'After a first point: gain and offset from both points (at least one unit apart)');
+    const reset = button('Reset', async () => {
+      if (!confirm(`Reset calibration and alarm thresholds of ${channel.label || `channel ${channel.channel}`}?`)) return;
+      const result = await api(`b1s/devices/${device.id}/commands/resetChannel`, 'POST', { channel: channel.channel });
+      notice(`Reset: ${result.result}`, result.result !== 'done');
+      await loadParameters(device.id);
+      render();
+    }, 'Calibration and alarm thresholds back to the defaults');
+    return group('Calibration', device, [offset, gain],
+      [fieldRow('Offset', offset, 'value = raw × gain + offset'), fieldRow('Gain', gain)],
+      [reference('calibrate', 'Calibrate…'), reference('calibrateSecondPoint', 'Second point…'), reset]);
+  }
+
+  function alarmsGroup(device, channel, card) {
+    const rows = [];
+    const edits = [];
+    for (let rule = 0; rule < 4; rule += 1) {
+      const definition = parameter(card, `alarmRule${rule}`, channel.channel);
+      if (!definition || definition.status !== 'done') continue;
+      const value = definition.value;
+      const kind = value & 0xff;
+      const severity = severities[(value >> 8) & 0xff] ?? 'Alarm';
+      const state = value & (1 << 17) ? (value & (1 << 18) ? 'active, acknowledged' : 'ACTIVE') : 'ok';
+      const row = text('div', '', 'field alarm');
+      row.append(text('span', severity, `severity ${severity.toLowerCase()}`));
+      const sentence = text('span', `${ruleTexts[kind] ?? `rule kind ${kind}`} `, 'field-value');
+      if (kind !== 3) {
+        const threshold = editor(parameter(card, `alarmThreshold${rule}`, channel.channel), { label: `${severity} threshold` });
+        if (threshold) {
+          const perMinute = kind === 2 ? '/min' : kind >= 4 ? ' over the trend window' : '';
+          sentence.append(threshold.element, text('span', ` ${threshold.unit}${perMinute}`, 'field-unit'));
+          edits.push(threshold);
+        }
       }
-      const row = cells(parameter.name, parameter.channel === null ? '' : String(parameter.channel), valueCell, action);
-      row.title = parameter.description;
-      return row;
-    });
+      row.append(sentence, text('small', `${state}${value & (1 << 16) ? ' · latching' : ''}`,
+        `alarm-state${state === 'ACTIVE' ? ' active' : ''}`));
+      rows.push(row);
+    }
+    if (!rows.length) return null;
+    return group('Alarms', device, edits, rows);
+  }
+
+  function channelPanel(device, channel, card) {
+    const panel = document.createElement('details');
+    panel.className = 'channel';
+    panel.open = card.openChannels.has(channel.channel);
+    panel.ontoggle = () => { if (panel.open) card.openChannels.add(channel.channel); else card.openChannels.delete(channel.channel); };
+    const summary = text('summary', '');
+    const value = channel.encoding === 'standard' ? `standard PGN, instance ${channel.standardInstance}`
+      : display(channel.value, channel.unit, true).text;
+    const live = text('span', value, 'channel-value');
+    live.dataset.channel = String(channel.channel);
+    summary.append(text('span', `${channel.channel}`, 'channel-number'), text('span', channel.label || `Channel ${channel.channel}`, 'channel-name'),
+      text('span', channel.quantity ?? '', 'muted'), live, text('span', channel.path ?? '', 'channel-path'));
+    panel.append(summary);
+    if (!card.parameters) {
+      panel.append(text('p', 'Reading the device’s settings …', 'empty'));
+      return panel;
+    }
+    const groups = text('div', '', 'settings-groups');
+    groups.append(...[setupGroup(device, channel, card), calibrationGroup(device, channel, card),
+      alarmsGroup(device, channel, card)].filter(Boolean));
+    panel.append(groups);
+    return panel;
   }
 
   // Log panel: the device streams its log only when asked, for a fixed time,
@@ -302,7 +425,8 @@
     controls.append(
       button('Identify', async () => notice(`Identify: ${(await api(`b1s/devices/${device.id}/commands/identify`, 'POST', { argument: 5 })).result}`),
         'Blink the device for 5 s'),
-      button('Read parameters', async () => { await loadParameters(device.id); render(); notice('Parameters read and backed up'); }),
+      button('Read settings', async () => { await loadParameters(device.id); render(); notice('Settings read from the device and backed up'); },
+        'Read all settings from the device again (also stores the backup)'),
       button('Restore…', async () => {
         const backups = await api('b1s/backups');
         const own = backups.find(backup => backup.deviceId === Number(device.id));
@@ -321,20 +445,17 @@
     const product = info.product ?? {};
     const meta = text('p', [`B1S · ${device.address}`, `device ID ${device.id}`, product.software, product.hardware,
       product.code !== undefined && product.code !== null ? `product ${product.code}` : null].filter(Boolean).join(' · '), 'device-meta');
-    const channels = table(['Ch', 'Quantity', 'Value', 'Label', 'Location', 'Encoding', 'Signal K path', ''],
-      (info.channels ?? []).map(channel => channelRow(device, channel, card)), 'channels');
-    const parameters = document.createElement('details');
-    parameters.append(text('summary', card.parameters ? 'Parameters' : 'Parameters (reading …)'));
-    if (card.parameters) parameters.append(table(['Parameter', 'Channel', 'Value', ''], parameterRows(device, card)));
-    detail.replaceChildren(header, meta, text('h3', 'Channels'), channels, parameters, logPanel(device, card));
+    const channels = text('div', '', 'channels');
+    channels.append(...(info.channels ?? []).map(channel => channelPanel(device, channel, card)));
+    detail.replaceChildren(header, meta, card.parameters ? devicePanel(device, card) : text('p', 'Reading the device’s settings …', 'empty'),
+      text('h3', 'Channels'), channels, logPanel(device, card));
   }
 
   function updateB1s(device) {
-    const body = detail.querySelector('tbody.channels');
-    (device.detail?.channels ?? []).forEach((channel, index) => {
-      const row = body?.children[index];
-      if (row && channel.encoding !== 'standard') row.children[2].textContent = display(channel.value, channel.unit, true).text;
-    });
+    for (const channel of device.detail?.channels ?? []) {
+      const live = detail.querySelector(`.channel-value[data-channel="${channel.channel}"]`);
+      if (live && channel.encoding !== 'standard') live.textContent = display(channel.value, channel.unit, true).text;
+    }
   }
 
   // The log keeps coming in while the panel is closed; it is polled for the

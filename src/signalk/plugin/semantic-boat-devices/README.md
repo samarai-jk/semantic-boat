@@ -41,13 +41,20 @@ plugins have their own.
   - A **display** shows the live values it requested (path, value, source),
     link counters, the last install, and **Install** with the catalog's
     configurations, if its transport can install.
-  - A **B1S device** shows product and software, its channels (live value,
-    label, location, encoding, Signal K path; Save, Calibrate, Reset), all
-    parameters, Identify, Read parameters, Restore, Restart, and the **Log**:
-    the device streams its log (debug lines included) only when switched on
-    there, for 5, 15, or 60 minutes, at most 512 B/s, and stops by itself
-    when the time is up; Stop ends it at once. Level filter, console line
-    (its output streams for 30 s).
+  - A **B1S device** shows product and software, Identify, Read settings,
+    Restore, and Restart, then its settings grouped as on the device:
+    - **Device**: role, preferred address (after a restart), uptime.
+    - **Channels**, one panel each with label, quantity, live value, and
+      Signal K path; opened, it shows **Setup** (label, location, how it is
+      sent, standard instance), **Calibration** (offset, gain as a factor;
+      Calibrate and Second point against a reference in °C or %, Reset), and
+      **Alarms** (each rule as a sentence: "Warning when above 40.0 °C",
+      rise rates per minute, its state). Each group stores its changes with
+      one Save.
+    - **Log**: the device streams its log (debug lines included) only when
+      switched on there, for 5, 15, or 60 minutes, at most 512 B/s, and stops
+      by itself when the time is up; Stop ends it at once. Level filter,
+      console line (its output streams for 30 s).
 - **Display designer**: the configuration catalog on the left, the editor on
   the right. Saving never installs; install from the display's details or
   with **Apps** on the display.

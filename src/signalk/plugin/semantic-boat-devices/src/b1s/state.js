@@ -104,6 +104,7 @@ class B1sState {
       kind: field(fields, 'kind', 'Quantity or Output Kind'),
       encoding: encodings[encoding] ?? 'n/a',
       output: field(fields, 'output', 'Output Channel') === 1,
+      noStandard: field(fields, 'noStandard', 'No Standard PGN') === 1,
       standardInstance: field(fields, 'standardInstance', 'Standard PGN Instance') ?? null,
       period: field(fields, 'period', 'Nominal Period') ?? null,
       location: field(fields, 'location', 'Location') ?? '',

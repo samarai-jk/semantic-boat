@@ -1,4 +1,5 @@
 #include "n2k/measurement_publisher.hpp"
+#include "n2k/engine.hpp"
 #include "n2k/humidity.hpp"
 #include "n2k/pgn.hpp"
 #include "n2k/pressure.hpp"
@@ -66,6 +67,11 @@ bool MeasurementPublisher::send(const MeasurementPublication& publication) {
         encodeActualPressure(data, sequenceId_, instance, static_cast<PressureSource>(publication.source),
                              available ? channel->value() : pressureNotAvailable);
         pgn = pgn::actualPressure;
+        break;
+    case Quantity::rotationalSpeed:
+        // The channel instance is the engine instance (0 = single or port engine).
+        encodeEngineRapidUpdate(data, instance, available ? channel->value() : engineSpeedNotAvailable);
+        pgn = pgn::engineRapidUpdate;
         break;
     default:
         return true;

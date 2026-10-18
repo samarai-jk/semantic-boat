@@ -20,7 +20,8 @@ struct MeasurementPublication {
 
 // Sends measurement channels periodically once the node has an address:
 // temperatures as PGN 130316, relative humidity as PGN 130313, pressure as
-// PGN 130314. A channel
+// PGN 130314, rotational speed as PGN 127488 (engine speed; the publisher's
+// period applies, a dedicated engine device would send it every 100 ms). A channel
 // that faulted or went stale is sent as "not available", so displays show
 // the failure instead of a frozen value; a channel without any result yet is
 // not sent. Quantities without a PGN mapping are skipped. A full transmit

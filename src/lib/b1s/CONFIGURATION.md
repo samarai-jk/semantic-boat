@@ -70,6 +70,7 @@ The parameters are in the registry; the first set:
 | 17 | `channelLabel` | channel | string | rw | Label for people |
 | 18 | `channelEncoding` | channel | enum `automatic`, `standard`, `b1s`, `off` | rw | Encoding switch |
 | 19 | `channelStandardInstance` | channel | uint8 | rw | Instance of the standard PGN; 255 = firmware default |
+| 20 | `channelStandardSource` | channel | uint8 | rw | Source field of the standard PGN (registry `standard_sources`); 255 = firmware default |
 | 32 | `calibrationOffset` | channel | int32, quantityDelta | rw | value = raw x gain + offset |
 | 33 | `calibrationGain` | channel | int32, ppm | rw | 500000..2000000 |
 | 40..43 | `alarmThreshold0..3` | channel | int32 | rw | Threshold of alarm rule n: absolute for high/low, a difference (per minute for rise rate) otherwise; sensor-fault rules have none |

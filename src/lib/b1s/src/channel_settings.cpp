@@ -25,17 +25,18 @@ RedundantBlobStore ChannelSettings::store(std::size_t item) {
 
 void ChannelSettings::load() {
     for (std::size_t channel = 0u; channel < slots_; ++channel) {
-        std::uint8_t data[2]{};
+        // Two bytes before the source byte was added: the source stays unset.
+        std::uint8_t data[3]{notSet, notSet, notSet};
         std::size_t size = 0u;
-        if (store(3u + 3u * channel).load(data, sizeof data, size) && size == sizeof data) {
-            overrides_[channel] = Override{data[0], data[1]};
+        if (store(3u + 3u * channel).load(data, sizeof data, size) && (size == 2u || size == 3u)) {
+            overrides_[channel] = Override{data[0], data[1], size == 3u ? data[2] : notSet};
         }
     }
 }
 
 bool ChannelSettings::writeOverride(std::uint8_t channel, const Override& value) {
     if (channel >= slots_) return false;
-    const std::uint8_t data[2]{value.publish, value.standardInstance};
+    const std::uint8_t data[3]{value.publish, value.standardInstance, value.standardSource};
     if (!store(3u + 3u * channel).commit(data, sizeof data)) return false;
     overrides_[channel] = value;
     return true;

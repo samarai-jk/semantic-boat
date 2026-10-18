@@ -52,6 +52,7 @@ class DevicesHub {
     await this.catalog.init();
     if (b1s.enabled) {
       this.b1s = new B1sAdapter({ app: this.app, options: b1s, directory: this.directory, onError: this.onError,
+        pluginId: this.pluginId,
         onDelta: delta => this.app.handleMessage(this.pluginId, delta) });
       await this.b1s.start();
       this.registerTransport({ id: 'b1s', label: 'B1S', devices: () => this.b1s.transportDevices() });

@@ -51,8 +51,9 @@ plugins have their own.
       value with its age ("3 s ago", red when overdue; "off" when not sent),
       and its Signal K path (for standard PGN channels the path Signal K
       mapped, learned from Signal K's data). Opened, it has three tabs, each with its own clearly
-      named button: **Setup** (label, location, how it is sent, standard
-      instance; Save setup), **Calibration** (calibrate against a reference
+      named button: **Setup** (label, location, a custom Signal K path, how
+      it is sent, the standard PGN's source by name and instance; Save
+      setup), **Calibration** (calibrate against a reference
       entered in °C or %: one point for the offset, a second for the gain;
       the calibration values with Save calibration values; Reset channel to
       defaults, set apart), and **Alarms** (each rule as a sentence: "Warning
@@ -180,6 +181,13 @@ brings its devices into Signal K and configures them over CAN
   `null` for "not available", "error", and "out of range"; metadata with the
   unit and the channel label. Standard PGNs of B1S devices are decoded by
   Signal K itself.
+- **Custom paths.** A channel can have its own Signal K path (Setup, stored
+  on the Pi, part of the backup): used exactly as written, or below the
+  prefixes when it starts with `*` (`*environment.cabin.temperature`). Not
+  for standard PGN channels.
+- **Conflicts.** A channel whose path also receives values from another
+  source (the boat's NMEA 2000 network, another device) is marked red in its
+  header.
 - **Path prefixes.** `b1s.pathPrefix` (plugin) and each device's prefix
   (Devices page, Pi-side) form a namespace for the paths of B1S messages:
   `sb.lab.environment.inside.temperature`. Standard PGN channels keep the
@@ -210,6 +218,7 @@ API (admin login): `GET /b1s/devices`, `GET /b1s/devices/:id/parameters`
 `POST /b1s/devices/:id/console` with `{line}`,
 `POST /b1s/devices/:id/log` with `{minutes}` (1..60; 0 stops),
 `PUT /b1s/devices/:id/settings` with `{pathPrefix}` (Pi-side device settings),
+`PUT /b1s/devices/:id/channels/:channel/settings` with `{path}` (custom path; '' = automatic),
 `GET /b1s/devices/:id/console?since=<position>` (log text, next position,
 seconds the stream still runs), `GET /b1s/backups[/:id]`,
 `POST /b1s/devices/:id/restore` with `{from, calibration}`.

@@ -21,7 +21,8 @@ function indexRegistry(registry) {
     services: Object.fromEntries(registry.services.map(entry => [entry.id, entry.code])),
     commands: Object.fromEntries(registry.commands.map(entry => [entry.id, entry.code])),
     parameters: new Map(registry.parameters.map(entry => [entry.code, entry])),
-    parameterNames: new Map(registry.parameters.map(entry => [entry.id, entry]))
+    parameterNames: new Map(registry.parameters.map(entry => [entry.id, entry])),
+    standardSources: registry.standard_sources ?? {}
   };
 }
 

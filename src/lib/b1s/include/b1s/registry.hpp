@@ -137,6 +137,7 @@ enum class Parameter : std::uint16_t {
     channelLabel = 17u,
     channelEncoding = 18u,
     channelStandardInstance = 19u,
+    channelStandardSource = 20u,
     calibrationOffset = 32u,
     calibrationGain = 33u,
     alarmThreshold0 = 40u,
@@ -157,6 +158,7 @@ constexpr bool isChannelParameter(Parameter parameter) {
     case Parameter::channelLabel:
     case Parameter::channelEncoding:
     case Parameter::channelStandardInstance:
+    case Parameter::channelStandardSource:
     case Parameter::calibrationOffset:
     case Parameter::calibrationGain:
     case Parameter::alarmThreshold0:

@@ -205,16 +205,15 @@ sensors::MeasurementRegistry measurements{runtime, logger, channels, sizeof chan
                                           &sensorSettings, &events, lab_test_01::alarmChanged};
 sensors::MeasurementConsole measurementConsole{measurements, logger};
 sensors::MeasurementLog measurementLog{runtime, logger, measurements, 5000u};
-// The channels on B1S (src/lib/b1s/README.md). Board and MCU temperatures
-// describe the device itself, not the boat: they go out as B1S measurements
-// so they do not appear among a display's environment temperatures. Air and
-// humidity use the standard PGNs (instances 2 and 0 from their channel
-// configs). Locations stay empty (unassigned) until configured.
+// The channels on B1S (src/lib/b1s/README.md), all sent as B1S messages
+// unless configured otherwise. Should one be switched to its standard PGN,
+// its source is "inside" (never "sea": Signal K would file it as the boat's
+// sea temperature). Locations stay empty (unassigned) until configured.
+constexpr auto inside = static_cast<std::uint8_t>(n2k::TemperatureSource::inside);
 const b1s::ChannelConfig b1sChannels[]{
-    {&boardChannel, 0u, b1s::Publish::b1s, 0u, "", "LT1 board"},
-    {&mcuChannel, 1u, b1s::Publish::b1s, 0u, "", "LT1 MCU die"},
-    {&airChannel, 2u, b1s::Publish::automatic, static_cast<std::uint8_t>(n2k::TemperatureSource::inside), "",
-     "LT1 air"},
+    {&boardChannel, 0u, b1s::Publish::b1s, inside, "", "LT1 board"},
+    {&mcuChannel, 1u, b1s::Publish::b1s, inside, "", "LT1 MCU die"},
+    {&airChannel, 2u, b1s::Publish::automatic, inside, "", "LT1 air"},
     {&airHumidityChannel, 3u, b1s::Publish::automatic, static_cast<std::uint8_t>(n2k::HumiditySource::inside), "",
      "LT1 air humidity"},
 };

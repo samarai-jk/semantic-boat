@@ -213,3 +213,17 @@ test('a channel switched off shows no value', () => {
   const channel = b1s.snapshot()[0].channels[0];
   assert.deepStrictEqual([channel.encoding, channel.value, channel.ageMs], ['off', null, null]);
 });
+
+test('a custom path is used as written, or below the prefixes with *', () => {
+  const paths = { 0: 'electrical.lab.voltage', 1: '*environment.cabin.temperature' };
+  const deltas = [];
+  const b1s = new B1sState(registry, { onDelta: delta => deltas.push(delta), request: () => {}, pathPrefix: 'sb',
+    devicePrefix: () => 'lab', channelPath: (id, channel) => paths[channel] ?? '' });
+  b1s.handle(claim);
+  b1s.handle(description(0, 'inside', 'A'));
+  b1s.handle(description(1, 'inside', 'B'));
+  b1s.handle(measurement(0, 1));
+  b1s.handle(measurement(1, 1));
+  assert.deepStrictEqual(deltas.map(delta => delta.updates[0].values[0].path),
+    ['electrical.lab.voltage', 'sb.lab.environment.cabin.temperature']);
+});

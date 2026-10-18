@@ -13,9 +13,10 @@
 namespace b1s {
 
 // Requested encoding of a channel (README "Standard PGNs"). automatic: the
-// standard PGN if the registry lists it as "display", otherwise the B1S
-// message. standard falls back to the B1S message if the quantity has no
-// standard PGN. The values are those of the channelEncoding parameter.
+// B1S message (standard PGNs only when chosen explicitly: Signal K files
+// them by their source field, next to the boat's NMEA 2000 data). standard
+// falls back to the B1S message if the quantity has no standard PGN. The
+// values are those of the channelEncoding parameter.
 enum class Publish : std::uint8_t { automatic, standard, b1s, off };
 
 // One measurement channel of the device on B1S: the compiled-in defaults.
@@ -23,7 +24,7 @@ struct ChannelConfig {
     const slstm32::sensors::Measurement* measurement{};
     std::uint8_t channel{};        // B1S channel number, unique on the device, 0..252
     Publish publish{Publish::automatic};
-    std::uint8_t standardSource{}; // NMEA 2000 source lookup of the standard PGN (n2k::TemperatureSource, ...)
+    std::uint8_t standardSource{}; // source field of the standard PGN (n2k::TemperatureSource, ...); never sea/outside by accident
     const char* location{""};      // Signal K path fragment; "" = unassigned
     const char* label{""};         // for people
 };
@@ -65,6 +66,7 @@ public:
     // Effective configuration (defaults and stored overrides).
     Publish publish(const ChannelConfig& channel) const;
     std::uint8_t standardInstance(const ChannelConfig& channel) const;
+    std::uint8_t standardSource(const ChannelConfig& channel) const;
     // How the channel is sent after resolving Publish::automatic.
     Encoding encoding(const ChannelConfig& channel) const;
     // Sends the channel's description again (after a configuration change).

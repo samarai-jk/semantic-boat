@@ -27,10 +27,12 @@ function field(fields, id, name) {
 class B1sState {
   // pathPrefix: Signal K namespace of all B1S paths (plugin setting);
   // devicePrefix(id): the namespace of one device (Pi-side device setting).
+  // channelPath(id, channel): a custom path set for a channel ('' = none).
   constructor(registry, { onDelta, request, now = Date.now, requestIntervalMs = 10000, pathPrefix = '',
-    devicePrefix = () => '' }) {
+    devicePrefix = () => '', channelPath = () => '' }) {
     this.pathPrefix = pathPrefix;
     this.devicePrefix = devicePrefix;
+    this.channelPath = channelPath;
     this.registry = registry;
     this.onDelta = onDelta;
     this.request = request;
@@ -122,16 +124,22 @@ class B1sState {
     device.channels.set(channel, description);
   }
 
-  // Path of a channel sent as a B1S message: the quantity's template with the
-  // channel's location (or the unassigned path), below the plugin's and the
-  // device's prefixes if set.
+  // Path of a channel sent as a B1S message. A custom path is used as it is;
+  // one starting with * goes below the prefixes. Otherwise the quantity's
+  // template with the channel's location (or the unassigned path), below the
+  // plugin's and the device's prefixes if set.
   pathOf(device, description, quantityCode) {
+    const prefixes = [this.pathPrefix, this.devicePrefix(device.id)];
+    const custom = this.channelPath(device.id, description?.channel);
+    if (custom) {
+      return custom.startsWith('*') ? [...prefixes, custom.replace(/^\*\.?/, '')].filter(Boolean).join('.') : custom;
+    }
     const quantity = this.registry.quantities.get(quantityCode);
     const name = quantity ? quantity.id : `quantity${quantityCode}`;
     const base = description?.location && quantity?.signalk
       ? quantity.signalk.replace('{location}', description.location)
       : `b1s.unassigned.${device.id}.${description?.channel ?? '?'}.${name}`;
-    return [this.pathPrefix, this.devicePrefix(device.id), base].filter(Boolean).join('.');
+    return [...prefixes, base].filter(Boolean).join('.');
   }
 
   // A value Signal K mapped from a standard PGN of a B1S device (its own
@@ -217,6 +225,7 @@ class B1sState {
           quantity: quantity?.id ?? null,
           unit: quantity?.unit ?? null,
           standardPgn,
+          customPath: this.channelPath(device.id, channel.channel),
           value: latest?.value ?? null,
           ageMs: latest?.at ? Math.max(0, this.now() - latest.at) : null,
           path

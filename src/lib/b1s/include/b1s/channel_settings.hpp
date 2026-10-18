@@ -11,7 +11,7 @@ namespace b1s {
 // B1S configuration of a device set over CAN (CONFIGURATION.md), stored in
 // EEPROM on top of the compiled-in defaults: the device role and, per B1S
 // channel number below the slot count, location, label, encoding, and
-// standard PGN instance. Each item is its own RedundantBlobStore (128 bytes
+// standard PGN instance and source. Each item is its own RedundantBlobStore (128 bytes
 // of EEPROM), so a write never risks another item. RAM: two bytes per slot
 // (encoding and instance, needed every cycle); the texts are read from
 // EEPROM when needed.
@@ -24,6 +24,7 @@ public:
     struct Override {
         std::uint8_t publish{notSet};          // Publish value
         std::uint8_t standardInstance{notSet}; // instance of the standard PGN
+        std::uint8_t standardSource{notSet};   // source field of the standard PGN
     };
 
     template <std::size_t Slots>

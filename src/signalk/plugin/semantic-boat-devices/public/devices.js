@@ -198,7 +198,16 @@
     let original;
     let read;
     let unit = '';
-    if (entry.values) {
+    if (options.choices) {
+      // Numeric parameter with named values, e.g. the source of a standard PGN.
+      element = document.createElement('select');
+      for (const [value, label] of options.choices) element.append(Object.assign(text('option', label), { value: String(value) }));
+      original = String(entry.value);
+      if (!options.choices.some(([value]) => String(value) === original)) {
+        element.append(Object.assign(text('option', `${original} (unknown)`), { value: original }));
+      }
+      read = () => element.value === original ? null : { value: Number(element.value) };
+    } else if (entry.values) {
       element = document.createElement('select');
       for (const name of entry.values) element.append(Object.assign(text('option', options.labels?.[name] ?? name), { value: name }));
       original = entry.values[entry.value] ?? '';
@@ -301,14 +310,28 @@
     const label = editor(parameter(card, 'channelLabel', channel.channel), { placeholder: 'name for people' });
     const location = editor(parameter(card, 'channelLocation', channel.channel), { placeholder: 'unassigned' });
     const rows = [fieldRow('Label', label, 'Name shown for this channel'),
-      fieldRow('Location', location, 'Signal K path fragment, e.g. inside.refrigerator; empty = unassigned')];
+      fieldRow('Location', location, 'Signal K path fragment for the automatic path, e.g. inside.refrigerator; empty = unassigned')];
     const edits = [label, location];
+    // Custom Signal K path: Pi-side, used instead of anything automatic.
+    const pathInput = Object.assign(document.createElement('input'), { value: channel.customPath ?? '', placeholder: 'automatic' });
+    pathInput.setAttribute('aria-label', 'Custom Signal K path');
+    const customPath = { element: pathInput, unit: '', entry: { access: 'rw', name: 'path' },
+      change: () => pathInput.value.trim() === (channel.customPath ?? '') ? null : { path: pathInput.value.trim() },
+      save: body => api(`b1s/devices/${device.id}/channels/${channel.channel}/settings`, 'PUT', body).then(() => ({ status: 'done' })) };
+    rows.push(fieldRow('Signal K path', customPath,
+      'Empty: automatic (template + location, below the prefixes). A path is used exactly as written; ' +
+      'starting with * it goes below the prefixes (*environment.cabin.temperature). Stored on the Pi. Not for standard PGN.'));
+    edits.push(customPath);
     if (!channel.noStandard) {
       const encoding = editor(parameter(card, 'channelEncoding', channel.channel), { labels: encodingLabels });
+      const sources = Object.entries(channel.standardSources ?? {}).map(([value, name]) => [Number(value), `${value} ${name}`]);
+      const source = editor(parameter(card, 'channelStandardSource', channel.channel), sources.length ? { choices: sources } : {});
       const instance = editor(parameter(card, 'channelStandardInstance', channel.channel));
-      rows.push(fieldRow('Sent as', encoding, `automatic: standard PGN ${channel.standardPgn ?? ''} where the registry lists it for display, otherwise B1S message`),
-        fieldRow('Standard PGN instance', instance, 'Instance in the standard PGN; 255 = firmware default'));
-      edits.push(encoding, instance);
+      rows.push(fieldRow('Sent as', encoding, 'automatic = B1S message. Standard PGN only if this value should look exactly ' +
+          `like NMEA 2000 data: Signal K then files it by source and instance (PGN ${channel.standardPgn ?? ''}), next to the boat's data`),
+        fieldRow('Standard PGN source', source, 'Only for standard PGN. Decides the Signal K path: sea or outside would be filed as the boat\'s own values'),
+        fieldRow('Standard PGN instance', instance, 'Only for standard PGN; 255 = firmware default'));
+      edits.push(encoding, source, instance);
     } else {
       rows.push(fieldRow('Sent as', null, 'B1S message (no standard PGN for this quantity)'));
     }
@@ -401,6 +424,10 @@
     summary.append(text('span', `${channel.channel}`, 'channel-number'), text('span', channel.label || `Channel ${channel.channel}`, 'channel-name'),
       text('span', channel.quantity ?? '', 'muted'), text('span', state.via, `channel-via${channel.encoding === 'off' ? ' off' : ''}`),
       live, when, text('span', state.path, `channel-path${channel.encoding === 'off' ? ' off' : ''}`));
+    if (channel.conflicts?.length) {
+      summary.append(text('span', `⚠ This Signal K path also receives values from ${channel.conflicts.join(', ')}: ` +
+        'the channel mixes with or overwrites them. Choose another path or location.', 'channel-conflict'));
+    }
     panel.append(summary);
     if (!card.parameters) {
       panel.append(text('p', 'Reading the device’s settings …', 'empty'));
@@ -556,7 +583,8 @@
     // inputs keep what is being typed.
     const structure = device.kind === 'b1s'
       ? [device.detail.address, device.detail.product, device.detail.pathPrefix, device.detail.channels.map(channel =>
-        [channel.channel, channel.label, channel.location, channel.encoding, channel.path]), b1sCard(device.id).version]
+        [channel.channel, channel.label, channel.location, channel.encoding, channel.path, channel.customPath, channel.conflicts]),
+        b1sCard(device.id).version]
       : [device.status, (device.detail?.subscriptions ?? []).map(source => source.sourceIndex), catalogNames,
         device.detail?.lastTransfer, device.detail?.error];
     const key = JSON.stringify([keyOf(device), structure]);

@@ -27,13 +27,16 @@ const defaults = {
   pathPrefix: ''
 };
 const prefixPattern = /^([A-Za-z0-9]+(\.[A-Za-z0-9]+)*)?$/;
+// A custom channel path: Signal K path segments, optionally after * (below the prefixes).
+const customPathPattern = /^(\*\.?)?[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/;
 
 function hex(byte) {
   return byte.toString(16).padStart(2, '0');
 }
 
 class B1sAdapter {
-  constructor({ app, options = {}, directory, onDelta, onError = () => {} }) {
+  constructor({ app, options = {}, directory, onDelta, onError = () => {}, pluginId = 'semantic-boat-devices' }) {
+    this.pluginId = pluginId;
     this.app = app;
     this.options = { ...defaults, ...options };
     this.directory = path.join(directory, 'b1s-backups');
@@ -56,7 +59,8 @@ class B1sAdapter {
     const request = (destination, pgn) => this.app.emit(this.options.jsonOutEvent,
       { pgn: isoRequest, dst: destination, prio: 6, fields: { pgn } });
     this.state = new B1sState(registry, { onDelta: this.onDelta, request, pathPrefix: this.options.pathPrefix ?? '',
-      devicePrefix: id => this.deviceSettings[id]?.pathPrefix ?? '' });
+      devicePrefix: id => this.deviceSettings[id]?.pathPrefix ?? '',
+      channelPath: (id, channel) => this.deviceSettings[id]?.channels?.[channel]?.path ?? '' });
     // Standard PGNs of B1S devices: Signal K maps them itself; their paths,
     // values, and times are learned from its stream.
     const standardPgns = new Set([...registry.quantities.values()].map(entry => entry.standard_pgn).filter(Boolean));
@@ -111,10 +115,42 @@ class B1sAdapter {
     const prefix = String(pathPrefix ?? '').trim();
     if (!prefixPattern.test(prefix)) throw new Error('Path prefix: letters and digits, separated by dots');
     this.deviceSettings[device.id] = { ...this.deviceSettings[device.id], pathPrefix: prefix };
+    await this.saveDeviceSettings();
+    return { pathPrefix: prefix, pluginPrefix: this.options.pathPrefix ?? '' };
+  }
+
+  // Custom Signal K path of a channel ('' = automatic); Pi-side.
+  async setChannelSettings(id, channel, { path: wanted } = {}) {
+    const device = this.device(id);
+    const number = Number(channel);
+    if (!device.channels.has(number)) throw new Error(`Unknown channel ${channel}`);
+    const path = String(wanted ?? '').trim();
+    if (path && !customPathPattern.test(path)) {
+      throw new Error('Path: Signal K path segments separated by dots, optionally after * (below the prefixes)');
+    }
+    const settings = this.deviceSettings[device.id] ??= {};
+    settings.channels ??= {};
+    if (path) settings.channels[number] = { path };
+    else delete settings.channels[number];
+    await this.saveDeviceSettings();
+    return { channel: number, path };
+  }
+
+  async saveDeviceSettings() {
     await fs.writeFile(`${this.settingsFile}.tmp`, JSON.stringify(this.deviceSettings, null, 2));
     await fs.rename(`${this.settingsFile}.tmp`, this.settingsFile);
     this.state.metaSent.clear(); // new paths get their metadata
-    return { pathPrefix: prefix, pluginPrefix: this.options.pathPrefix ?? '' };
+  }
+
+  // Other sources writing a channel's Signal K path (e.g. the boat's NMEA 2000
+  // network): the channel would overwrite or mix with their values.
+  conflicts(device, channel) {
+    if (!channel.path || !this.app.getSelfPath) return [];
+    const node = this.app.getSelfPath(channel.path);
+    if (!node) return [];
+    const sources = node.values ? Object.keys(node.values) : node.$source ? [node.$source] : [];
+    const own = new Set([`${this.pluginId}.${device.address}`, `${this.options.providerId}.${device.address}`]);
+    return sources.filter(source => !own.has(source));
   }
 
   // B1S devices in the form of the hub's transport contract.
@@ -126,7 +162,9 @@ class B1sAdapter {
       online: device.online,
       status: device.online ? 'online' : 'silent',
       address: `address ${device.address}`,
-      detail: { ...device, pluginPrefix: this.options.pathPrefix ?? '' }
+      detail: { ...device, pluginPrefix: this.options.pathPrefix ?? '',
+        channels: device.channels.map(channel => ({ ...channel, conflicts: this.conflicts(device, channel),
+          standardSources: this.registry.standardSources[channel.standardPgn] ?? {} })) }
     }));
   }
 
@@ -320,6 +358,11 @@ class B1sAdapter {
     if (backup.piSettings?.pathPrefix !== undefined) {
       await this.setDeviceSettings(device.id, { pathPrefix: backup.piSettings.pathPrefix });
       results.push({ name: 'pathPrefix (Pi)', channel: null, value: backup.piSettings.pathPrefix, status: 'done' });
+    }
+    for (const [channel, settings] of Object.entries(backup.piSettings?.channels ?? {})) {
+      if (!device.channels.has(Number(channel))) continue;
+      await this.setChannelSettings(device.id, channel, settings);
+      results.push({ name: 'path (Pi)', channel: Number(channel), value: settings.path, status: 'done' });
     }
     for (const parameter of backup.parameters) {
       if (!copyCalibration && parameter.name.startsWith('calibration')) continue;

@@ -42,6 +42,12 @@ std::uint8_t MeasurementPublisher::standardInstance(const ChannelConfig& channel
     return channel.measurement->config().instance;
 }
 
+std::uint8_t MeasurementPublisher::standardSource(const ChannelConfig& channel) const {
+    const auto* stored = settings_ ? settings_->overrideOf(channel.channel) : nullptr;
+    if (stored && stored->standardSource <= 252u) return stored->standardSource;
+    return channel.standardSource;
+}
+
 void MeasurementPublisher::text(ChannelSettings::Text which, const ChannelConfig& channel,
                                 char (&out)[maxTextLength + 1u]) const {
     if (settings_ && settings_->readText(which, channel.channel, out)) return;
@@ -64,8 +70,7 @@ Encoding MeasurementPublisher::encoding(const ChannelConfig& channel) const {
     case Publish::standard: return pgn != 0u ? Encoding::standard : Encoding::b1s;
     case Publish::automatic: break;
     }
-    if (pgn == 0u) return Encoding::b1s;
-    return standardCategory(pgn) == StandardCategory::display ? Encoding::standard : Encoding::b1s;
+    return Encoding::b1s;
 }
 
 bool MeasurementPublisher::init() {
@@ -116,7 +121,7 @@ bool MeasurementPublisher::send(const ChannelConfig& channel) {
     case Encoding::off:
         return true;
     case Encoding::standard:
-        number = n2k::encodeStandardMeasurement(measurement, standardInstance(channel), channel.standardSource,
+        number = n2k::encodeStandardMeasurement(measurement, standardInstance(channel), standardSource(channel),
                                                 sequenceId_, data);
         break;
     case Encoding::b1s:

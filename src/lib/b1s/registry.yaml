@@ -51,6 +51,17 @@ standard_pgns:
   - {pgn: 129029, name: GNSS Position Data,              category: navigation}
   - {pgn: 130306, name: Wind Data,                       category: navigation}
 
+# Values of the source field of standard PGNs (canboat lookups
+# TEMPERATURE_SOURCE, HUMIDITY_SOURCE, PRESSURE_SOURCE). Signal K builds the
+# path of a standard PGN from it: 130316 source 0 (sea) is
+# environment.water.temperature, the boat's sea temperature.
+standard_sources:
+  130316: {0: sea, 1: outside, 2: inside, 3: engineRoom, 4: mainCabin, 5: liveWell, 6: baitWell, 7: refrigeration,
+           8: heatingSystem, 9: dewPoint, 10: apparentWindChill, 11: theoreticalWindChill, 12: heatIndex, 13: freezer,
+           14: exhaustGas, 15: shaftSeal}
+  130313: {0: inside, 1: outside}
+  130314: {0: atmospheric, 1: water, 2: steam, 3: compressedAir, 4: hydraulic, 5: filter, 6: altimeterSetting, 7: oil, 8: fuel}
+
 # Quantities of the Measurement messages. Physical value = raw x scale, in
 # the SI unit (as Signal K). signalk: path template; {location} is the
 # channel's location from its Channel Description. standard_pgn: the
@@ -133,8 +144,9 @@ parameters:
   - {code: 3,  id: preferredAddress,        scope: device,  type: uint8,  access: rw, restart: true, description: "Address the device claims first"}
   - {code: 16, id: channelLocation,         scope: channel, type: string, access: rw, description: "Signal K path fragment of the channel; empty = unassigned"}
   - {code: 17, id: channelLabel,            scope: channel, type: string, access: rw, description: "Channel name for people"}
-  - {code: 18, id: channelEncoding,         scope: channel, type: enum,   access: rw, values: [automatic, standard, b1s, "off"], description: "Encoding switch (README, Standard PGNs)"}
+  - {code: 18, id: channelEncoding,         scope: channel, type: enum,   access: rw, values: [automatic, standard, b1s, "off"], description: "Encoding switch (README, Standard PGNs); automatic = the channel's firmware default, a B1S message unless the firmware chose otherwise"}
   - {code: 19, id: channelStandardInstance, scope: channel, type: uint8,  access: rw, description: "Instance of the standard PGN; 255 = the firmware default"}
+  - {code: 20, id: channelStandardSource,   scope: channel, type: uint8,  access: rw, description: "Source field of the standard PGN (standard_sources); 255 = the firmware default"}
   - {code: 32, id: calibrationOffset,       scope: channel, type: int32,  access: rw, unit: quantityDelta, description: "value = raw x gain + offset"}
   - {code: 33, id: calibrationGain,         scope: channel, type: int32,  access: rw, unit: ppm, description: "Gain in millionths (1000000 = 1)"}
   - {code: 40, id: alarmThreshold0,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 0; absolute (quantity) for high/low, quantityDelta per minute for rise rate, quantityDelta for trends"}

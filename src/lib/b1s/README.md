@@ -60,9 +60,9 @@ marked *planned* is specified here but not implemented yet.
 2. **Separate from NMEA 2000.** B1S and the boat's NMEA 2000 network are not
    wired together. Signal K reads B1S and forwards only what is chosen, in a
    chosen form, to NMEA 2000.
-3. **Standard where it fits, configurable always.** A signal uses a standard
-   PGN where one fits; every signal can be switched to its B1S message or off,
-   because standard PGNs from additional devices can confuse chartplotters
+3. **B1S messages by default, standard PGNs by choice.** A signal goes out
+   as its B1S message unless it is explicitly set to its standard PGN: in
+   Signal K, standard PGNs land next to (or on) the boat's NMEA 2000 data
    (see [Standard PGNs](#standard-pgns)).
 4. **Few generic messages, many signals.** Scalar values travel in one
    generic measurement message that carries a quantity code. A new kind of
@@ -164,28 +164,36 @@ and a configured unique number can override the derived one.
 
 ## Standard PGNs
 
-A signal is sent as a standard PGN where one fits, so that Signal K and other
-NMEA 2000 tools understand it without extra definitions. Standard PGNs used
-by B1S devices are listed in the registry (`standard_pgns`) with a category.
+A signal can also be sent as a standard PGN, so that NMEA 2000 tools
+understand it without B1S definitions. Standard PGNs used by B1S devices are
+listed in the registry (`standard_pgns`) with a category.
 
 **Encoding switch.** Every signal that has a standard PGN has a configurable
 encoding:
 
 | Mode | Sent as |
 | --- | --- |
-| `standard` | The standard PGN |
+| `automatic` | The channel's firmware default: the B1S message unless the firmware chose otherwise |
+| `standard` | The standard PGN, with a configured source field and instance |
 | `b1s` | The B1S message (measurement, output status, ...) |
 | `off` | Not sent |
 
-The default follows the category of the standard PGN:
+**Default: the B1S message** (decision 2026-10-18; it replaces "standard PGN
+for display data"). In Signal K, standard PGNs from B1S devices are mapped
+by Signal K's own NMEA 2000 rules, from the PGN's source field and instance,
+into the same tree as the boat's NMEA 2000 data: a temperature with source 0
+("sea") becomes `environment.water.temperature`, the boat's sea
+temperature, and mixes with or overwrites it. B1S messages get paths of
+their own (prefixes, custom paths; [Signal K](#signal-k)). A standard PGN is
+chosen explicitly, for a value that should look exactly like NMEA 2000 data,
+with a deliberate source (`channelStandardSource`; names in the registry,
+`standard_sources`) and instance. Firmware never defaults a source to sea or
+outside. The registry categories still matter for forwarding to NMEA 2000:
 
-| Category | Examples | Default | Why |
-| --- | --- | --- | --- |
-| `display` | Temperature, humidity, pressure, battery, engine, tanks, switch status | `standard` | Displays only show these values; extra sources are harmless |
-| `navigation` | Position, time, heading, rate of turn, attitude, speed, depth, wind, rudder, magnetic variation | `b1s` | Chartplotters select a source per navigation function; an extra source can make them switch, merge, or drop the function |
-
-Until configuration over CAN exists, a device sets each signal's mode in its
-code, following these defaults.
+| Category | Examples | Note |
+| --- | --- | --- |
+| `display` | Temperature, humidity, pressure, battery, engine, tanks, switch status | Displays only show these values |
+| `navigation` | Position, time, heading, rate of turn, attitude, speed, depth, wind, rudder, magnetic variation | Chartplotters select a source per navigation function; never forwarded or sent by default |
 
 Rules for standard PGNs:
 
@@ -415,7 +423,9 @@ address 150):
 - Standard PGNs are decoded by Signal K itself.
 - B1S messages are decoded with canboat definitions the plugin builds from
   `registry.yaml`, so canboat-based analyzers decode B1S too.
-- Paths of channels sent as B1S messages come from the quantity's Signal K
+- Paths of channels sent as B1S messages come from a custom path set for
+  the channel on the Pi (used as written; starting with `*`, below the
+  prefixes), or else from the quantity's Signal K
   template and the channel's location, for example quantity `temperature`
   (`environment.{location}.temperature`) with location `inside.refrigerator`.
   Unassigned channels appear under `b1s.unassigned.<device ID>.<channel>.<quantity>`.
@@ -424,8 +434,10 @@ address 150):
   `<plugin prefix>.<device prefix>.<path>`.
 - Channels sent as standard PGNs get the path Signal K's own NMEA 2000
   mapping gives them (from PGN, source, and instance, e.g.
-  `environment.inside.2.temperature`); prefixes do not apply. The plugin
-  learns these paths from Signal K's data to show them.
+  `environment.inside.2.temperature`); prefixes and custom paths do not
+  apply. The plugin learns these paths from Signal K's data to show them.
+- The page warns when a channel's path also receives values from another
+  source (the boat's NMEA 2000 network, another device).
 - Devices are bound by their device ID, never by address.
 - *Planned:* the plugin is the bridge to NMEA 2000: it forwards chosen
   signals in a chosen form, never everything.

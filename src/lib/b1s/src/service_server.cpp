@@ -27,7 +27,8 @@ constexpr char droppedMarker[] = "[log stream: lines dropped]\r\n";
 
 constexpr Parameter deviceTextParameters[]{Parameter::deviceRole};
 constexpr Parameter channelParameters[]{Parameter::channelLocation, Parameter::channelLabel,
-                                        Parameter::channelEncoding, Parameter::channelStandardInstance};
+                                        Parameter::channelEncoding, Parameter::channelStandardInstance,
+                                        Parameter::channelStandardSource};
 constexpr Parameter measurementParameters[]{
     Parameter::calibrationOffset, Parameter::calibrationGain, Parameter::alarmThreshold0, Parameter::alarmThreshold1,
     Parameter::alarmThreshold2,   Parameter::alarmThreshold3, Parameter::alarmRule0,      Parameter::alarmRule1,
@@ -301,6 +302,9 @@ ParameterStatus ServiceServer::read(Parameter parameter, std::uint8_t channel, V
     case Parameter::channelStandardInstance:
         value.number = config_.publisher->standardInstance(*config);
         return ParameterStatus::done;
+    case Parameter::channelStandardSource:
+        value.number = config_.publisher->standardSource(*config);
+        return ParameterStatus::done;
     default:
         break;
     }
@@ -379,7 +383,8 @@ ParameterStatus ServiceServer::write(Parameter parameter, std::uint8_t channel, 
         return ParameterStatus::done;
     }
     case Parameter::channelEncoding:
-    case Parameter::channelStandardInstance: {
+    case Parameter::channelStandardInstance:
+    case Parameter::channelStandardSource: {
         if (!settings || !settings->overrideOf(channel)) return ParameterStatus::readOnly;
         auto stored = *settings->overrideOf(channel);
         if (parameter == Parameter::channelEncoding) {
@@ -387,7 +392,8 @@ ParameterStatus ServiceServer::write(Parameter parameter, std::uint8_t channel, 
             stored.publish = static_cast<std::uint8_t>(value.number);
         } else {
             if (value.number < 0 || (value.number > 252 && value.number != 255)) return ParameterStatus::invalidValue;
-            stored.standardInstance = static_cast<std::uint8_t>(value.number);
+            (parameter == Parameter::channelStandardInstance ? stored.standardInstance : stored.standardSource) =
+                static_cast<std::uint8_t>(value.number);
         }
         if (!settings->writeOverride(channel, stored)) return ParameterStatus::busy;
         config_.publisher->describe(*config);

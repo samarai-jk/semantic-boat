@@ -69,5 +69,6 @@ node.onAddressChange(&storeAddress, context);
   application.
 - No commanded address (65240), configuration information (126998), or group
   function handling (126208).
-- Manufacturer code 2046 is used for development. A released product needs a
-  code assigned by NMEA.
+- All Semantic Boat devices use manufacturer code 2046
+  (`n2k::manufacturerCode`), which NMEA has not assigned to anyone; it will
+  not be registered.

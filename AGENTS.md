@@ -97,11 +97,12 @@ sb_firmware_profile(${TARGET} LAB            # or PRODUCTION
 A firmware built with development tools must be recognizable at runtime:
 
 - the startup log contains `DEV BUILD: development and test tools compiled in`;
-- the NMEA 2000 product information software version ends in `-dev`;
-- the development NMEA 2000 manufacturer code
-  (`n2k::developmentManufacturerCode`, 2046) is allowed only when
-  `!slstm32::production`; product firmware guards this with `static_assert`
-  and uses the code assigned by NMEA.
+- the NMEA 2000 product information software version ends in `-dev`.
+
+All Semantic Boat firmware, lab and product alike, uses NMEA 2000
+manufacturer code 2046 (`n2k::manufacturerCode`). It is not assigned by NMEA
+and will not be registered; the project's CAN network is kept separate from
+NMEA 2000 networks. Never hard-code the number elsewhere.
 
 ### 6. Temporary aids
 
@@ -114,8 +115,8 @@ was removed.
 
 When a new device starts from lab-test-01 (or any other device), copy only
 product and service code, create its own seam and stand-in, declare its
-profile (`PRODUCTION` for a product), and replace development identities (NMEA
-2000 manufacturer code, product code, model strings).
+profile (`PRODUCTION` for a product), and replace the lab identity (NMEA 2000
+product code, model strings, device class and function).
 
 ### 8. Verify before you finish
 

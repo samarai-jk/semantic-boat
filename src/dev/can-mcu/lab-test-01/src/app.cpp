@@ -64,11 +64,7 @@ constexpr std::size_t canReceiveFrames = 16u;
 constexpr std::size_t canTransmitFrames = 8u;
 constexpr std::uint32_t watchdogTimeoutMs = 4000u;
 
-// NMEA 2000 identity. LT1 is a lab device and uses the development
-// manufacturer code; product firmware must use the code assigned by NMEA.
-constexpr std::uint16_t n2kManufacturerCode = n2k::developmentManufacturerCode;
-static_assert(!slstm32::production || n2kManufacturerCode != n2k::developmentManufacturerCode,
-              "Product firmware needs the NMEA 2000 manufacturer code assigned by NMEA (AGENTS.md)");
+// NMEA 2000 identity.
 constexpr std::uint8_t n2kDeviceClassSensors = 75u;     // Sensor Communication Interface
 constexpr std::uint8_t n2kDeviceFunctionTemperature = 130u;
 
@@ -122,7 +118,7 @@ char serialCode[25]{};
 constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
                                            n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
-    n2k::Name{0u, n2kManufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
+    n2k::Name{0u, n2k::manufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
               n2kDeviceClassSensors, 0u, 4u, true},
     lab_test_01::DeviceSettings{}.n2kAddress,
     // Builds with development tools say so in the software version, visible

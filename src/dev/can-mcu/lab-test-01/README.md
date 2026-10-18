@@ -276,8 +276,9 @@ editor or by other tools at the same time.
   second. A 100 ms window below 3.15 V is logged as a supply dip.
 - NMEA 2000 (see [`src/lib/n2k`](../../../lib/n2k/README.md)): the node claims
   its stored address (default 35) with a NAME whose unique number is derived
-  from the MCU unique ID (manufacturer code 2046 for development, device class
-  75 "sensor communication interface", function 130 "temperature"). A changed
+  from the MCU unique ID (manufacturer code 2046 like all Semantic Boat
+  devices, device class 75 "sensor communication interface", function 130
+  "temperature"). A changed
   address after a conflict is stored in EEPROM. It answers requests for the
   address claim, product information, PGN list, and heartbeat, NACKs other
   requests addressed to it, sends a heartbeat every 60 s, and publishes the

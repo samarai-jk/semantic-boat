@@ -5,15 +5,16 @@
 
 namespace n2k {
 
-// Manufacturer code commonly used for development; it is not assigned to any
-// manufacturer. Product firmware must use the code assigned by NMEA (see
-// AGENTS.md, build profiles).
-inline constexpr std::uint16_t developmentManufacturerCode = 2046u;
+// The manufacturer code of all Semantic Boat devices. NMEA has not assigned
+// 2046 to any manufacturer; DIY NMEA 2000 devices commonly use it. It will not
+// be registered: the project's CAN network is kept separate from NMEA 2000
+// networks. Use this constant, never the number.
+inline constexpr std::uint16_t manufacturerCode = 2046u;
 
 // ISO 11783 / NMEA 2000 NAME. A lower 64-bit value wins address contention.
 struct Name {
     std::uint32_t uniqueNumber{};       // 21 bits, unique per manufacturer
-    std::uint16_t manufacturerCode{};   // 11 bits, assigned by NMEA
+    std::uint16_t manufacturerCode{};   // 11 bits, n2k::manufacturerCode
     std::uint8_t deviceInstanceLower{}; // 3 bits
     std::uint8_t deviceInstanceUpper{}; // 5 bits
     std::uint8_t deviceFunction{};      // 8 bits, meaning depends on the class

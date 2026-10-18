@@ -9,7 +9,7 @@
 // leaves out. Use them only for markers and compile-time guards, for example:
 //
 //   if constexpr (slstm32::devTools) log.write(LogLevel::warning, "DEV BUILD");
-//   static_assert(!slstm32::production || manufacturerCode != 2046, "...");
+//   static_assert(!slstm32::production || !simulatedInputs, "...");
 
 #if !defined(SB_DEV_TOOLS) || !defined(SB_PRODUCTION)
 #error "Firmware build profile missing: call sb_firmware_profile() for this target (see AGENTS.md)"

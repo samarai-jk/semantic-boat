@@ -18,7 +18,7 @@ replacement device.
 ## Overview
 
 ```text
- browser: B1S tab of the Semantic Boat Devices page
+ browser: Devices page of Semantic Boat Devices
                     ──HTTP──▶ Semantic Boat Devices plugin (Signal K)
                                                │  parameters, commands, backups,
                                                │  console sessions
@@ -39,7 +39,7 @@ replacement device.
 - **Semantic Boat Devices plugin**
   ([B1S Devices](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices)):
   B1S measurements to Signal K, the configuration client, backups, and the
-  B1S tab of its page: devices, channels with live values, editable
+  B1S devices on its Devices page: channels with live values, editable
   parameters, calibration, backup and restore, and a console.
 
 ## Parameters
@@ -192,7 +192,7 @@ bytes per channel slot.
    restart commands, the console with its log mirror; a location change moves
    the Signal K path at once.
 2. Done: the Semantic Boat Devices plugin took over the B1S plugin;
-   configuration client, API, backups, B1S tab. Verified against LT1 through
+   configuration client, API, backups, page. Verified against LT1 through
    the adapter (parameters with SI values, writes, calibration, commands,
    backup, restore, console).
 3. Planned: replacement offered automatically; daily backups.

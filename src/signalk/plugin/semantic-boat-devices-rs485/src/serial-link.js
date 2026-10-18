@@ -7,7 +7,9 @@ class SerialLink {
   constructor({ app, bus, device, protocol, catalog, mappings, onError, Port = SerialPort }) {
     this.bus = bus;
     this.protocol = protocol;
-    this.catalog = catalog;
+    // The display configuration catalog of the Semantic Boat Devices hub, or
+    // a function returning it (null while the hub is not running).
+    this.catalog = typeof catalog === 'function' ? catalog : () => catalog;
     this.onError = onError;
     this.port = new Port({ path: bus.path, baudRate: bus.baudRate, autoOpen: false });
     this.decoder = new protocol.FrameDecoder();
@@ -141,9 +143,11 @@ class SerialLink {
 
   handleCatalog(message) {
     const { MessageType } = this.protocol;
+    const catalog = this.catalog();
+    if (!catalog) return; // no hub: the display keeps its installed configuration
     if (message.type === MessageType.CONFIG_LIST_REQUEST && message.payload.length === 0 && !this.listActive) {
       this.listActive = true;
-      void this.catalog.sendList((...args) => this.send(...args), this.protocol, ++this.listId & 65535)
+      void catalog.sendList((...args) => this.send(...args), this.protocol, ++this.listId & 65535)
         .catch(this.onError).finally(() => { this.listActive = false; });
     } else if (message.type === MessageType.CONFIG_REQUEST && message.payload.length > 1 &&
                message.payload[0] === message.payload.length - 1) {
@@ -152,12 +156,14 @@ class SerialLink {
   }
 
   async install(name) {
+    const catalog = this.catalog();
+    if (!catalog) throw new Error('Semantic Boat Devices (configuration catalog) is not running');
     if (this.transferActive) throw new Error('A configuration transfer is already active');
     if (!this.session.ready) throw new Error('Device has not completed its subscription snapshot');
     this.transferActive = true;
     this.lastTransfer = { name, state: 'sending', startedAt: Date.now() };
     try {
-      await this.catalog.transfer(name, (...args) => this.send(...args), this.protocol, ++this.transferId & 65535);
+      await catalog.transfer(name, (...args) => this.send(...args), this.protocol, ++this.transferId & 65535);
       this.lastTransfer.state = 'sent-awaiting-device-restart';
     } catch (error) {
       this.lastTransfer.state = 'failed';

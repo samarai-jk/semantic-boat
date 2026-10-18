@@ -6,7 +6,6 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { Catalog } = require('../src/catalog');
-const { validateOptions } = require('../src/runtime');
 const document = { schema: 'semantic-display/v1', name: 'Test', sections: [{
   id: 'test', title: 'TEST', pages: [{ id: 'test', title: 'TEST', grid: { columns: 1, rows: 1 },
     widgets: [{ type: 'text', text: 'Test', cell: { column: 0, row: 0 } }] }]
@@ -90,13 +89,4 @@ test('configuration transfer uses contiguous bounded chunks and complete CRC', a
   assert.deepEqual(JSON.parse(bytes), document);
   await catalog.sendList(send, protocol, 8);
   assert.equal(sent.at(-1).type, protocol.MessageType.CONFIG_LIST_END);
-});
-
-test('options reject unsupported CAN and unsafe shared legacy serial buses', () => {
-  const options = { buses: [{ id: 'rs485', type: 'serial-point-to-point', path: '/dev/example' }],
-    devices: [{ id: 'display-2', bus: 'rs485', address: 2 }] };
-  assert.equal(validateOptions(options).devices[0].address, 2);
-  assert.throws(() => validateOptions({ buses: [{ id: 'can', type: 'semantic-can' }] }));
-  assert.throws(() => validateOptions({ ...options, devices: [...options.devices,
-    { id: 'display-1', bus: 'rs485', address: 1 }] }));
 });

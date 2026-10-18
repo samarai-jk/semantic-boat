@@ -8,12 +8,14 @@
 </head>
 <body>
   <header><div><span class="eyebrow">SEMANTIC BOAT</span><h1>Devices</h1></div><span id="connection">Connecting</span></header>
-  <nav aria-label="Views"><button class="tab active" data-view="devices" aria-selected="true">Devices</button><button class="tab" data-view="configurations" aria-selected="false">Configurations</button><button class="tab" data-view="b1s" aria-selected="false">B1S</button></nav>
+  <nav aria-label="Views"><button class="tab active" data-view="devices" aria-selected="true">Devices</button><button class="tab" data-view="designer" aria-selected="false">Display designer</button></nav>
   <main>
     <p id="notice" role="status" hidden></p>
-    <section id="devices-view"><div id="device-list"></div></section>
-    <section id="b1s-view" hidden><p id="b1s-status" class="b1s-status"></p><div id="b1s-devices"></div></section>
-    <section id="configurations-view" hidden>
+    <section id="devices-view" class="devices-layout">
+      <aside aria-label="Devices"><div id="device-list"></div></aside>
+      <div id="device-detail"><p class="empty">Select a device</p></div>
+    </section>
+    <section id="designer-view" hidden>
       <div class="catalog-layout">
         <aside><div class="property-heading"><h2>Configurations</h2><button id="new" class="icon" title="New configuration" aria-label="New configuration"><i data-lucide="file-plus"></i></button></div><div id="catalog-list"></div></aside>
         <div class="editor"><div class="editor-toolbar"><input id="filename" value="new-display.json" aria-label="Configuration filename" spellcheck="false"><button id="save" class="icon" title="Validate and save" aria-label="Validate and save"><i data-lucide="save"></i></button><button id="delete" class="icon" title="Delete configuration" aria-label="Delete configuration"><i data-lucide="trash-2"></i></button><button id="download" class="icon" title="Download JSON" aria-label="Download JSON"><i data-lucide="download"></i></button></div>
@@ -31,6 +33,6 @@
     </form>
   </dialog>
   <datalist id="signal-paths"></datalist>
-  <script src="/plugins/semantic-boat-devices/ui/lucide.js"></script><script src="app.js"></script><script src="b1s.js"></script>
+  <script src="/plugins/semantic-boat-devices/ui/lucide.js"></script><script src="app.js"></script><script src="devices.js"></script>
 </body>
 </html>

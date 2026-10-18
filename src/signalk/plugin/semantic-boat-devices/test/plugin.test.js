@@ -21,7 +21,7 @@ test('web app and direct UI use the same plugin API and icon routes', async () =
       document: { getElementById: () => ({}), querySelectorAll: () => [] },
       fetch: async (url, options) => { requests.push({ url: url.href, options }); return response; }
     });
-    for (const route of ['state', 'configurations', 'templates']) {
+    for (const route of ['devices', 'configurations', 'templates']) {
       await api(route);
       assert.equal(requests.at(-1).url, `http://navigator/plugins/semantic-boat-devices/${route}`);
     }
@@ -29,9 +29,9 @@ test('web app and direct UI use the same plugin API and icon routes', async () =
     assert.equal(requests.at(-1).url, 'http://navigator/plugins/semantic-boat-devices/configurations/new.json');
     assert.equal(requests.at(-1).options.body, '{"name":"New"}');
     response = { ok: false, status: 404, headers: { get: () => 'text/html' } };
-    await assert.rejects(api('state'), /API state: expected JSON, received HTTP 404/);
+    await assert.rejects(api('devices'), /API devices: expected JSON, received HTTP 404/);
     response.status = 401;
-    await assert.rejects(api('state'), /Sign in to Signal K/);
+    await assert.rejects(api('devices'), /Sign in to Signal K/);
   }
 });
 
@@ -242,6 +242,6 @@ test('plugin lifecycle and catalog routes work with the server API', async conte
   const crossOrigin = await call('delete', '/configurations/:name', undefined, { name: 'engine.json' }, 'https://other.example');
   assert.equal(crossOrigin.status, 403);
   await plugin.stop();
-  assert.equal((await call('get', '/state')).status, 503);
+  assert.equal((await call('get', '/devices')).status, 503);
   assert.deepEqual(errors, []);
 });

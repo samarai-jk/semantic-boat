@@ -150,8 +150,12 @@ for off-boat hardware and alarm testing. Use a separate development server,
 never live navigation data. Its [roadmap](src/signalk/plugin/n2k-simulator/PLAN.md)
 tracks the planned helm UI, scenarios, and hardware transports. The
 [Semantic Boat Devices](src/signalk/plugin/semantic-boat-devices/README.md)
-plugin also brings the devices on the B1S CAN network into Signal K and
-configures, calibrates, and backs them up over CAN (its B1S tab).
+plugin is the place for all Semantic Boat devices: one device list across
+transports, the display designer, and the B1S CAN devices (measurements in
+Signal K; configuration, calibration, console, and backups over CAN). The
+legacy RS485 displays come from the
+[Semantic Boat Devices RS485](src/signalk/plugin/semantic-boat-devices-rs485/README.md)
+plugin, a transport of the hub.
 
 ## Debugging remote-a
 

@@ -81,6 +81,19 @@ class B1sAdapter {
     return this.state.snapshot();
   }
 
+  // B1S devices in the form of the hub's transport contract.
+  transportDevices() {
+    return this.state.snapshot().map(device => ({
+      id: String(device.id),
+      label: device.product?.model || `B1S device ${device.id}`,
+      kind: 'b1s',
+      online: device.online,
+      status: device.online ? 'online' : 'silent',
+      address: `address ${device.address}`,
+      detail: device
+    }));
+  }
+
   device(id) {
     const device = this.state.deviceById(id);
     if (!device) throw new Error(`Unknown B1S device ${id}`);

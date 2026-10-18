@@ -1,11 +1,12 @@
 'use strict';
 
+// The legacy RS485 / serial display gateway: one SerialLink per display, on a
+// point-to-point serial port or a shared, master-polled RS485 bus.
+
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { Catalog } = require('./catalog');
 const { SerialLink } = require('./serial-link');
 const { AddressedBus } = require('./addressed-bus');
-const { B1sAdapter } = require('./b1s/adapter');
 
 function validateOptions(options) {
   const buses = options.buses ?? [];
@@ -18,7 +19,7 @@ function validateOptions(options) {
   const paths = new Set();
   for (const bus of buses) {
     if (!bus.id || busIds.has(bus.id)) throw new Error('Bus IDs must be unique');
-    if (!['serial-point-to-point', 'rs485-addressed'].includes(bus.type)) throw new Error(`Bus ${bus.id}: unknown type (B1S is configured under b1s, not as a bus)`);
+    if (!['serial-point-to-point', 'rs485-addressed'].includes(bus.type)) throw new Error(`Bus ${bus.id}: unknown type`);
     if (!bus.path || paths.has(bus.path)) throw new Error('Each serial port may belong to only one bus');
     bus.baudRate ??= 115200;
     if (!Number.isInteger(bus.baudRate) || bus.baudRate < 1200 || bus.baudRate > 1000000) throw new Error('Invalid baud rate');
@@ -38,35 +39,21 @@ function validateOptions(options) {
     addresses.add(address);
     occupied.add(device.bus); ids.add(device.id);
   }
-  const b1s = options.b1s ?? {};
-  for (const name of ['analyzerEvent', 'outEvent', 'jsonOutEvent']) {
-    if (b1s[name] !== undefined && (typeof b1s[name] !== 'string' || !/^[\w:-]+$/.test(b1s[name]))) {
-      throw new Error(`B1S ${name} must be an event name`);
-    }
-  }
-  return { buses, devices, mappings, b1s };
+  return { buses, devices, mappings };
 }
 
-class DevicesRuntime {
-  constructor(app, directory, onError, pluginId = 'semantic-boat-devices') {
+class Rs485Runtime {
+  // catalog: function returning the hub's display configuration catalog (or null).
+  constructor(app, catalog, onError) {
     this.app = app;
-    this.directory = directory;
-    this.catalog = new Catalog(path.join(directory, 'configurations'));
+    this.catalog = catalog;
     this.onError = onError;
-    this.pluginId = pluginId;
     this.links = [];
     this.buses = [];
-    this.b1s = null;
   }
 
   async start(options) {
-    const { buses, devices, mappings, b1s } = validateOptions(structuredClone(options));
-    await this.catalog.init();
-    if (b1s.enabled) {
-      this.b1s = new B1sAdapter({ app: this.app, options: b1s, directory: this.directory, onError: this.onError,
-        onDelta: delta => this.app.handleMessage(this.pluginId, delta) });
-      await this.b1s.start();
-    }
+    const { buses, devices, mappings } = validateOptions(structuredClone(options));
     const protocol = await import(pathToFileURL(path.join(__dirname, '../../../../tools/disp-sim/src/protocol.js')));
     const masters = new Map();
     for (const bus of buses.filter(entry => entry.type === 'rs485-addressed')) {
@@ -85,21 +72,34 @@ class DevicesRuntime {
   }
 
   async stop() {
-    this.b1s?.stop();
-    this.b1s = null;
     await Promise.all(this.links.map(link => link.stop()));
     await Promise.all(this.buses.map(bus => bus.stop()));
     this.links = []; this.buses = [];
   }
-  snapshot() { return { devices: this.links.map(link => link.snapshot()), buses: this.buses.map(bus => bus.snapshot()),
-    adapters: [{ id: 'serial-point-to-point', available: true },
-      { id: 'rs485-addressed', available: true }, { id: 'b1s', available: Boolean(this.b1s) }],
-    b1s: this.b1s ? { status: this.b1s.status() } : null }; }
+
+  // Displays in the form of the hub's transport contract.
+  devices() {
+    return this.links.map(link => {
+      const detail = link.snapshot();
+      return {
+        id: detail.id,
+        label: detail.label || detail.id,
+        kind: 'display',
+        online: detail.ready,
+        status: detail.ready ? 'online' : detail.open ? 'waiting for display' : 'disconnected',
+        address: `${detail.bus} · ${String(detail.address).padStart(3, '0')}`,
+        detail
+      };
+    });
+  }
+
+  busStates() { return this.buses.map(bus => bus.snapshot()); }
+
   install(id, name) {
     const link = this.links.find(entry => entry.session.device.id === id);
-    if (!link) throw new Error('Unknown device');
+    if (!link) throw new Error(`Unknown display ${id}`);
     return link.install(name);
   }
 }
 
-module.exports = { DevicesRuntime, validateOptions };
+module.exports = { Rs485Runtime, validateOptions };

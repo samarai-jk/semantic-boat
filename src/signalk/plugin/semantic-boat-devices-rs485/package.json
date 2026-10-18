@@ -1,0 +1,11 @@
+{
+  "name": "@semantic-boat/devices-rs485",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Legacy Semantic Boat displays on RS485 or a serial line, a transport of Semantic Boat Devices",
+  "main": "index.js",
+  "keywords": ["signalk-node-server-plugin"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test" },
+  "dependencies": { "serialport": "^13.0.0" }
+}

@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { AddressedBus } = require('../src/addressed-bus');
 const { SerialLink } = require('../src/serial-link');
-const { Catalog } = require('../src/catalog');
+const { Catalog } = require('../../semantic-boat-devices/src/catalog');
 const { validateOptions } = require('../src/runtime');
 
 function until(condition) {

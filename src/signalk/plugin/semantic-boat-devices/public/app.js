@@ -2,12 +2,10 @@
 
 const base = new URL('/plugins/semantic-boat-devices/', window.location.origin);
 const element = id => document.getElementById(id);
-let state = { devices: [] };
 let names = [];
 let templates = {};
 let savedText = '';
 let selectedName = null;
-let renderingKey = '';
 let signalPaths = [];
 let editorSection = 0;
 let editorPage = 0;
@@ -44,68 +42,6 @@ function icon(name, label, action) {
   button.title = label; button.setAttribute('aria-label', label);
   const symbol = document.createElement('i'); symbol.dataset.lucide = name;
   button.append(symbol); button.onclick = action; return button;
-}
-
-function renderDevices() {
-  const key = JSON.stringify({ devices: state.devices.map(device => ({ id: device.id, ready: device.ready,
-    open: device.open, subscriptions: device.subscriptions.map(source => source.sourceIndex) })), names });
-  if (key === renderingKey) {
-    for (const device of state.devices) {
-      const section = element(`device-${device.id}`);
-      for (const source of device.subscriptions) {
-        section.querySelector(`[data-value="${source.sourceIndex}"]`).textContent =
-          source.value === null ? 'Unavailable' : typeof source.value === 'number' ? String(Number(source.value.toPrecision(7))) : String(source.value);
-        section.querySelector(`[data-source="${source.sourceIndex}"]`).textContent = source.source ?? '';
-      }
-      section.querySelector('.stats').textContent = `${device.receivedFrames} RX · ${device.sentFrames} TX · ${device.valuesSent} values · ${device.decodeErrors} decode errors · ${device.queuedFrames} queued`;
-      section.querySelector('.error-text').textContent = device.error ?? '';
-      section.querySelector('.transfer').textContent = device.lastTransfer ? `${device.lastTransfer.name}: ${device.lastTransfer.state}` : '';
-    }
-    return;
-  }
-  renderingKey = key;
-  const container = element('device-list'); container.replaceChildren();
-  if (!state.devices.length) container.append(text('p', 'No configured devices', 'empty'));
-  for (const device of state.devices) {
-    const section = document.createElement('article'); section.id = `device-${device.id}`; section.className = 'device';
-    const header = text('div', '', 'device-header');
-    const heading = text('div', ''); heading.append(text('h2', device.label || device.id));
-    heading.append(text('span', device.ready ? 'Online' : device.open ? 'Waiting for display' : 'Disconnected', `badge ${device.ready ? '' : 'offline'}`));
-    header.append(heading);
-    const controls = text('div', '', 'install-controls');
-    const select = document.createElement('select'); select.setAttribute('aria-label', `Configuration for ${device.id}`);
-    for (const name of names) { const option = text('option', name); option.value = name; select.append(option); }
-    if (!names.length) select.append(text('option', 'No configurations'));
-    const install = icon('upload', 'Install configuration on display', async () => {
-      if (!confirm(`Install ${select.value} on ${device.label || device.id}?`)) return;
-      install.disabled = true;
-      try { const result = await api(`devices/${encodeURIComponent(device.id)}/install`, 'POST', { name: select.value }); notice(result.status); }
-      catch (error) { notice(error.message, true); }
-      finally { install.disabled = !device.ready || !names.length; }
-    });
-    install.disabled = !device.ready || !names.length;
-    controls.append(select, install); header.append(controls); section.append(header);
-    section.append(text('p', `${device.id} · ${device.bus} · Address ${String(device.address).padStart(3, '0')} · ${device.transport}`, 'device-meta'));
-    const scroll = text('div', '', 'table-scroll'); const table = document.createElement('table');
-    const head = document.createElement('thead'); const headRow = document.createElement('tr');
-    for (const label of ['Index', 'Signal K path', 'Value (SI)', 'Source']) headRow.append(text('th', label));
-    head.append(headRow); table.append(head);
-    const body = document.createElement('tbody');
-    for (const source of device.subscriptions) {
-      const row = document.createElement('tr'); row.append(text('td', source.sourceIndex));
-      const pathCell = text('td', source.path, 'path');
-      if (source.path !== source.resolvedPath) pathCell.append(text('span', source.resolvedPath, 'mapped'));
-      row.append(pathCell);
-      const value = text('td', source.value === null ? 'Unavailable' : String(source.value), 'value'); value.dataset.value = source.sourceIndex;
-      const sourceCell = text('td', source.source ?? ''); sourceCell.dataset.source = source.sourceIndex;
-      row.append(value, sourceCell); body.append(row);
-    }
-    table.append(body); scroll.append(table); section.append(scroll,
-      text('div', '', 'stats'), text('div', device.error ?? '', 'error-text'), text('div', '', 'transfer'));
-    container.append(section);
-  }
-  if (typeof lucide !== 'undefined') lucide.createIcons();
-  renderDevices();
 }
 
 function updateEditorStatus() {
@@ -555,15 +491,12 @@ async function refreshCatalog() {
   if (JSON.stringify(replacement) === JSON.stringify(names)) return;
   names = replacement;
   renderCatalog();
-  renderingKey = '';
-  renderDevices();
 }
 
 for (const button of document.querySelectorAll('nav .tab')) button.onclick = () => {
   for (const tab of document.querySelectorAll('nav .tab')) { tab.classList.toggle('active', tab === button); tab.setAttribute('aria-selected', String(tab === button)); }
   element('devices-view').hidden = button.dataset.view !== 'devices';
-  element('configurations-view').hidden = button.dataset.view !== 'configurations';
-  element('b1s-view').hidden = button.dataset.view !== 'b1s';
+  element('designer-view').hidden = button.dataset.view !== 'designer';
 };
 
 element('json').oninput = updateEditorStatus;
@@ -613,14 +546,8 @@ element('download').onclick = () => {
 };
 window.addEventListener('beforeunload', event => { if (element('json').value && element('editor-status').textContent !== 'Saved') { event.preventDefault(); event.returnValue = ''; } });
 
-async function poll() {
-  try { state = await api('state'); element('connection').textContent = `${state.devices.filter(device => device.ready).length}/${state.devices.length} online`; renderDevices(); }
-  catch (error) { element('connection').textContent = 'Gateway unavailable'; notice(error.message, true); }
-}
-
 async function init() {
   if (typeof lucide !== 'undefined') lucide.createIcons();
-  await poll();
   try { await refreshCatalog(); }
   catch (error) { notice(error.message, true); }
   try {
@@ -634,9 +561,8 @@ async function init() {
   try { await refreshPaths(); }
   catch (error) { element('path-count').textContent = 'Paths unavailable'; notice(error.message, true); }
   setInterval(async () => {
-    await poll();
     try { await refreshCatalog(); }
     catch (error) { notice(error.message, true); }
-  }, 1500);
+  }, 5000);
 }
 void init();

@@ -47,6 +47,7 @@ class B1sState {
     if (field(fields, 'manufacturerCode', 'Manufacturer Code') !== this.registry.manufacturerCode) return;
     this.lastMessageAt = this.now();
     const device = this.deviceAt(n2k.src);
+    if (device) device.lastSeen = this.lastMessageAt;
     if (!device) {
       this.ask(n2k.src, isoAddressClaim);
       return;
@@ -177,6 +178,7 @@ class B1sState {
       id: device.id,
       address: device.address,
       product: device.product,
+      online: device.lastSeen !== undefined && this.now() - device.lastSeen < 10000,
       channels: [...device.channels.values()].sort((a, b) => a.channel - b.channel).map(channel => {
         const quantity = this.registry.quantities.get(channel.kind);
         const latest = device.values.get(channel.channel);

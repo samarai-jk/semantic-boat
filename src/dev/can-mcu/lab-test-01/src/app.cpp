@@ -119,6 +119,9 @@ char serialCode[25]{};
 constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
                                            b1s::pgn::measurement,           b1s::pgn::channelDescription,
                                            n2k::pgn::batteryStatus,         n2k::pgn::binarySwitchBankStatus};
+// Fast packets LT1 receives: B1S service requests (configuration over CAN).
+constexpr std::uint32_t n2kFastReceivePgns[]{b1s::pgn::service};
+std::uint8_t n2kFastReceiveBuffer[96]{};
 n2k::NodeConfig n2kConfig{
     n2k::Name{0u, n2k::manufacturerCode, 0u, 0u, product.deviceFunction, product.deviceClass, 0u, 4u, true},
     lab_test_01::DeviceSettings{}.n2kAddress,
@@ -132,6 +135,10 @@ n2k::NodeConfig n2kConfig{
     nullptr,
     0u,
     60000u,
+    n2kFastReceivePgns,
+    sizeof n2kFastReceivePgns / sizeof n2kFastReceivePgns[0],
+    n2kFastReceiveBuffer,
+    sizeof n2kFastReceiveBuffer,
 };
 n2k::Node n2kNode{runtime, can, n2kConfig, logger};
 

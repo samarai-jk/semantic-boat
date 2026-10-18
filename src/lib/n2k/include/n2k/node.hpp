@@ -34,10 +34,19 @@ struct NodeConfig {
     const std::uint32_t* receivePgns{};
     std::size_t receivePgnCount{};
     std::uint32_t heartbeatIntervalMs{60000u};
+    // Fast-packet reception: PGNs to reassemble (addressed to this node or
+    // broadcast) and the buffer for one message at a time. Without a buffer,
+    // fast packets are not received. Messages longer than the buffer are
+    // dropped and counted.
+    const std::uint32_t* fastReceivePgns{};
+    std::size_t fastReceivePgnCount{};
+    std::uint8_t* fastReceiveBuffer{};
+    std::size_t fastReceiveCapacity{};
 };
 
-// Single-frame message for the application: a frame addressed to this node
-// or broadcast that the stack does not handle itself.
+// Message for the application, addressed to this node or broadcast, that
+// the stack does not handle itself: a single frame, or a reassembled fast
+// packet of one of NodeConfig::fastReceivePgns (length up to 223).
 using MessageHandler = void (*)(void* context, const CanId& id, const std::uint8_t* data,
                                 std::uint8_t length);
 using AddressHandler = void (*)(void* context, std::uint8_t address);
@@ -60,7 +69,10 @@ using RequestHandler = bool (*)(void* context, std::uint32_t pgn, std::uint8_t r
 // - Heartbeat (126993) at the configured interval with the CAN controller
 //   state.
 // - Fast-packet transmission from a single 223-byte buffer, paced by the free
-//   space of the CAN transmit queue. Fast-packet reception is not supported.
+//   space of the CAN transmit queue.
+// - Fast-packet reception of the configured PGNs into the application's
+//   buffer, one message at a time; a message whose frames stop for 750 ms
+//   is abandoned.
 //
 // The node owns the receive side of the CAN driver: run() drains it and
 // forwards unhandled single frames to the message handler.
@@ -76,6 +88,8 @@ public:
         std::uint32_t conflictsLost{};
         std::uint32_t framesNotSent{};
         std::uint32_t fastPacketsAborted{};
+        std::uint32_t fastPacketsReceived{};
+        std::uint32_t fastPacketsDropped{}; // incomplete, too long, or while another was in progress
     };
 
     Node(slstm32::Runtime runtime, slstm32::drivers::CanBusDriver& can, const NodeConfig& config,
@@ -127,6 +141,8 @@ private:
     void handleAddressClaim(const CanId& id, const std::uint8_t* data, std::uint8_t length,
                             std::uint32_t now);
     void handleRequest(const CanId& id, const std::uint8_t* data, std::uint8_t length);
+    bool isFastReceivePgn(std::uint32_t pgn) const;
+    void receiveFastFrame(const CanId& id, const std::uint8_t* data, std::uint8_t length, std::uint32_t now);
     void startClaim(std::uint32_t now);
     void servePending();
     bool sendClaim();
@@ -173,6 +189,13 @@ private:
     std::uint8_t fastSequence_{};
     CanId fastId_{};
     std::uint32_t fastProgressAt_{};
+
+    CanId rxId_{};
+    std::size_t rxLength_{}; // 0 = idle
+    std::size_t rxOffset_{};
+    std::uint32_t rxProgressAt_{};
+    std::uint8_t rxSequence_{};
+    std::uint8_t rxNextFrame_{};
 
     Counters counters_{};
 };

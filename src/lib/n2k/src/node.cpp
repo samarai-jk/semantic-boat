@@ -12,6 +12,7 @@ using slstm32::drivers::CanState;
 
 constexpr std::uint32_t claimSettleMs = 250u;
 constexpr std::uint32_t fastPacketStallMs = 1000u;
+constexpr std::uint32_t fastPacketReceiveTimeoutMs = 750u;
 constexpr std::uint8_t networkPriority = 6u;
 constexpr std::uint8_t heartbeatPriority = 7u;
 constexpr std::uint8_t heartbeatSequenceLimit = 253u;
@@ -81,9 +82,65 @@ void Node::handleFrame(const CanFrame& frame, std::uint32_t now) {
     if (id.destination != broadcastAddress && id.destination != address_) return;
     if (id.pgn == pgn::isoRequest) {
         handleRequest(id, frame.data.data(), frame.length);
+    } else if (isFastReceivePgn(id.pgn)) {
+        receiveFastFrame(id, frame.data.data(), frame.length, now);
     } else if (messageHandler_) {
         messageHandler_(messageContext_, id, frame.data.data(), frame.length);
     }
+}
+
+bool Node::isFastReceivePgn(std::uint32_t pgn) const {
+    if (!config_.fastReceiveBuffer) return false;
+    for (std::size_t index = 0u; index < config_.fastReceivePgnCount; ++index) {
+        if (config_.fastReceivePgns[index] == pgn) return true;
+    }
+    return false;
+}
+
+void Node::receiveFastFrame(const CanId& id, const std::uint8_t* data, std::uint8_t length, std::uint32_t now) {
+    if (length < 2u) return;
+    const auto sequence = static_cast<std::uint8_t>(data[0] >> 5u);
+    const auto frame = static_cast<std::uint8_t>(data[0] & 0x1Fu);
+    const bool busy = rxLength_ != 0u && !reached(now, rxProgressAt_ + fastPacketReceiveTimeoutMs);
+    const bool same = rxLength_ != 0u && id.pgn == rxId_.pgn && id.source == rxId_.source;
+    if (frame == 0u) {
+        if (busy && !same) {
+            ++counters_.fastPacketsDropped; // another message is being received
+            return;
+        }
+        if (rxLength_ != 0u) ++counters_.fastPacketsDropped; // the previous one never completed
+        rxLength_ = 0u;
+        if (data[1] == 0u || data[1] > config_.fastReceiveCapacity) {
+            ++counters_.fastPacketsDropped;
+            return;
+        }
+        rxId_ = id;
+        rxLength_ = data[1];
+        rxOffset_ = 0u;
+        rxSequence_ = sequence;
+        rxNextFrame_ = 1u;
+        rxProgressAt_ = now;
+        for (std::uint8_t index = 2u; index < length && rxOffset_ < rxLength_; ++index) {
+            config_.fastReceiveBuffer[rxOffset_++] = data[index];
+        }
+    } else {
+        if (!same) return; // a continuation without its first frame
+        if (sequence != rxSequence_ || frame != rxNextFrame_) {
+            ++counters_.fastPacketsDropped;
+            rxLength_ = 0u;
+            return;
+        }
+        ++rxNextFrame_;
+        rxProgressAt_ = now;
+        for (std::uint8_t index = 1u; index < length && rxOffset_ < rxLength_; ++index) {
+            config_.fastReceiveBuffer[rxOffset_++] = data[index];
+        }
+    }
+    if (rxOffset_ < rxLength_) return;
+    const auto complete = static_cast<std::uint8_t>(rxLength_);
+    rxLength_ = 0u;
+    ++counters_.fastPacketsReceived;
+    if (messageHandler_) messageHandler_(messageContext_, rxId_, config_.fastReceiveBuffer, complete);
 }
 
 void Node::handleAddressClaim(const CanId& id, const std::uint8_t* data, std::uint8_t length,

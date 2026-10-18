@@ -18,7 +18,7 @@ RAM, of which 223 bytes are the fast-packet transmit buffer.
 | `n2k/name.hpp` | 64-bit NAME, and `uniqueNumberFrom()` to derive the 21-bit unique number from an MCU serial |
 | `n2k/bytes.hpp` | Little-endian field and fixed-length string helpers |
 | `n2k/pgn.hpp` | PGN constants |
-| `n2k/node.hpp` | The node: address claim, requests, heartbeat, product information, PGN list, fast-packet transmission |
+| `n2k/node.hpp` | The node: address claim, requests, heartbeat, product information, PGN list, fast-packet transmission and reception |
 | `n2k/temperature.hpp`, `humidity.hpp`, `pressure.hpp`, `engine.hpp`, `electrical.hpp`, `navigation.hpp` | Encoders of standard PGNs |
 | `n2k/measurement_publisher.hpp` | `standardPgn()` and `encodeStandardMeasurement()` for slstm32 measurement channels, and a plain NMEA 2000 publisher (B1S devices use `b1s::MeasurementPublisher`) |
 
@@ -46,6 +46,14 @@ RAM, of which 223 bytes are the fast-packet transmit buffer.
   so the CAN driver's queue can stay small. A fast packet that cannot make
   progress for 1 s (for example without any acknowledging node on the bus) is
   dropped and counted.
+- **Fast-packet reception** of the PGNs in `NodeConfig::fastReceivePgns`
+  into the application's buffer (`fastReceiveBuffer`, sized for the longest
+  message the device accepts), one message at a time. The reassembled
+  message goes to the message handler like a single frame. Messages longer
+  than the buffer, with missing or reordered frames, or arriving while
+  another one is being received are dropped and counted; frames that stop
+  for 750 ms abandon the message. Cost: about 460 bytes of flash and 24
+  bytes of RAM besides the buffer.
 - The node owns the receive side of the CAN driver. Single frames that are
   broadcast or addressed to the node and not handled by the stack go to the
   message handler.
@@ -72,8 +80,6 @@ node.onAddressChange(&storeAddress, context);
 
 ## Limitations
 
-- No fast-packet reception yet; only single-frame messages reach the
-  application.
 - No commanded address (65240), configuration information (126998), or group
   function handling (126208).
 - All Semantic Boat devices use manufacturer code 2046

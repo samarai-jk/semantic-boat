@@ -5,6 +5,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CMAKE_CXX_STANDARD 17)
     add_subdirectory(../../../lib/slstm32 ${CMAKE_CURRENT_BINARY_DIR}/slstm32)
     add_subdirectory(../../../lib/n2k ${CMAKE_CURRENT_BINARY_DIR}/n2k)
+    add_subdirectory(../../../lib/b1s ${CMAKE_CURRENT_BINARY_DIR}/b1s)
     add_subdirectory(../../../lib/semantic-modules ${CMAKE_CURRENT_BINARY_DIR}/semantic-modules)
 endif()
 
@@ -43,7 +44,7 @@ sb_firmware_profile(${LAB_TEST_01_TARGET} LAB
         src/dev_tools_disabled.cpp
 )
 target_include_directories(${LAB_TEST_01_TARGET} PRIVATE include src)
-target_link_libraries(${LAB_TEST_01_TARGET} n2k semantic_modules slstm32 stm32cubemx)
+target_link_libraries(${LAB_TEST_01_TARGET} b1s n2k semantic_modules slstm32 stm32cubemx)
 target_link_options(${LAB_TEST_01_TARGET} PRIVATE
     -Wl,-Map=$<TARGET_FILE_DIR:${LAB_TEST_01_TARGET}>/lab-test-01.map)
 

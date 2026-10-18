@@ -3,7 +3,9 @@
 Prints every frame on the bus, decodes NMEA 2000 identifiers, reassembles
 fast packets, and decodes the PGNs used by the can-mcu firmware (address
 claim, ISO request/acknowledgement, heartbeat, product information, PGN list,
-temperature). It can also act on the bus from its own source address:
+temperature, humidity) and the B1S messages described in
+src/lib/b1s/registry.yaml. It can also act on the bus from its own source
+address:
 
     python can_bench.py                              # listen, auto-detect adapter
     python can_bench.py --duration 20 --request 126996 --request 126464
@@ -16,14 +18,25 @@ the nodes. Requests go to the node that claimed an address most recently
 """
 
 import argparse
+import pathlib
 import struct
 import sys
 import time
 
 import can
+import yaml
 
 BENCH_ADDRESS = 0x99
 FAST_PACKET_PGNS = {126464, 126996, 126998, 129029, 129540}
+
+# B1S, decoded from its registry (src/lib/b1s/README.md).
+B1S_REGISTRY = pathlib.Path(__file__).resolve().parents[2] / "lib" / "b1s" / "registry.yaml"
+with B1S_REGISTRY.open() as registry_file:
+    B1S = yaml.safe_load(registry_file)
+B1S_PGNS = {entry["pgn"]: entry["id"] for entry in B1S["pgns"]}
+B1S_QUANTITIES = {entry["code"]: entry for entry in B1S["quantities"]}
+B1S_ENCODINGS = {0: "b1s", 1: "standard", 2: "off", 3: "b1s (no standard PGN)"}
+FAST_PACKET_PGNS |= {entry["pgn"] for entry in B1S["pgns"] if entry["kind"] == "fast"}
 
 PGN_NAMES = {
     59392: "ISO Acknowledgement",
@@ -35,8 +48,10 @@ PGN_NAMES = {
     127501: "Binary Switch Bank Status",
     127508: "Battery Status",
     130312: "Temperature",
+    130313: "Humidity",
     130316: "Temperature, Extended Range",
 }
+PGN_NAMES.update({pgn: f"B1S {name}" for pgn, name in B1S_PGNS.items()})
 
 TEMPERATURE_SOURCES = {0: "sea", 1: "outside", 2: "inside", 3: "engine room", 4: "main cabin",
                        7: "refrigeration", 8: "heating", 13: "freezer", 14: "exhaust"}
@@ -77,7 +92,58 @@ def text(field):
     return field.rstrip(b"\xff\x00 @").decode("ascii", "replace")
 
 
+def b1s_value(quantity, raw):
+    special = {0x7FFFFFFF: "not available", 0x7FFFFFFE: "error", 0x7FFFFFFD: "out of range"}
+    if raw in special:
+        return special[raw]
+    entry = B1S_QUANTITIES.get(quantity)
+    if entry is None:
+        return f"raw {raw} (unknown quantity)"
+    value = raw * entry["scale"]
+    text = f"{value:.6g} {entry['unit']}"
+    if entry["unit"] == "K":
+        text += f" ({value - 273.15:.3f} C)"
+    elif entry["id"] == "relativeHumidity":
+        text += f" ({value * 100:.2f} %)"
+    elif entry["id"] == "co2":
+        text += f" ({value * 1e6:.1f} ppm)"
+    return text
+
+
+def lau(data, offset):
+    """NMEA 2000 STRING_LAU at offset: returns (text, next offset)."""
+    length = data[offset]
+    return data[offset + 2:offset + length].decode("ascii", "replace"), offset + length
+
+
+def decode_b1s(pgn, data):
+    if len(data) < 2 or data[0] | data[1] << 8 != B1S["proprietary_header"]:
+        manufacturer = (data[0] | (data[1] & 7) << 8) if len(data) >= 2 else "?"
+        return f"proprietary, manufacturer {manufacturer} (not B1S)"
+    name = B1S_PGNS[pgn]
+    if name == "measurement" and len(data) >= 8:
+        quantity, channel = data[2], data[3]
+        raw = struct.unpack_from("<i", data, 4)[0]
+        label = B1S_QUANTITIES.get(quantity, {}).get("id", f"quantity {quantity}")
+        return f"channel {channel}, {label} = {b1s_value(quantity, raw)}"
+    if name == "channelDescription" and len(data) >= 12:
+        channel, quantity, flags, instance = data[2], data[3], data[4], data[5]
+        period = struct.unpack_from("<H", data, 6)[0]
+        location, offset = lau(data, 8)
+        label, _ = lau(data, offset)
+        kind = B1S_QUANTITIES.get(quantity, {}).get("id", f"quantity {quantity}")
+        if flags & 0x04:
+            kind = f"output kind {quantity}"
+        standard = f", standard instance {instance}" if instance != 0xFF else ""
+        every = "on change" if period == 0xFFFF else f"every {period / 100:g} s"
+        return (f"channel {channel}: {kind}, sent as {B1S_ENCODINGS[flags & 3]}{standard}, {every}, "
+                f"location '{location or '(unassigned)'}', label '{label}'")
+    return f"{name}: {data[2:].hex(' ')}"
+
+
 def decode_payload(pgn, data):
+    if pgn in B1S_PGNS:
+        return decode_b1s(pgn, data)
     if pgn == 60928 and len(data) >= 8:
         return describe_name(struct.unpack_from("<Q", data)[0])
     if pgn == 59904 and len(data) >= 3:
@@ -109,6 +175,10 @@ def decode_payload(pgn, data):
             if value != 3:
                 states.append("1" if value == 1 else "0")
         return f"bank {data[0]}, states {''.join(states)}"
+    if pgn == 130313 and len(data) >= 5:
+        humidity = struct.unpack_from("<h", data, 3)[0] * 0.004
+        source = {0: "inside", 1: "outside"}.get(data[2], data[2])
+        return f"instance {data[1]}, source {source}, {humidity:.2f} %"
     if pgn == 130316 and len(data) >= 8:
         kelvin = int.from_bytes(data[3:6], "little") / 1000.0
         source = TEMPERATURE_SOURCES.get(data[2], data[2])

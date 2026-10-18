@@ -3,7 +3,9 @@
 Bench CAN / NMEA 2000 monitor for can-mcu firmware, built on python-can. It
 decodes NMEA 2000 identifiers, reassembles fast packets, and decodes the PGNs
 used by the firmware (address claim, ISO request and acknowledgement,
-heartbeat, product information, PGN list, temperature). From its own source
+heartbeat, product information, PGN list, temperature, humidity) and the
+[B1S](../../lib/b1s/README.md) messages, which it decodes from the B1S
+registry (`src/lib/b1s/registry.yaml`, needs PyYAML). From its own source
 address (153) it discovers the nodes with a global address-claim request and
 can send requests and contend for addresses.
 

@@ -13,8 +13,9 @@
 #include "events.hpp"
 #include "health_service.hpp"
 #include "i2c_scan_service.hpp"
+#include "b1s/measurement_publisher.hpp"
+#include "b1s/registry.hpp"
 #include "n2k/humidity.hpp"
-#include "n2k/measurement_publisher.hpp"
 #include "n2k/name.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
@@ -64,9 +65,9 @@ constexpr std::size_t canReceiveFrames = 16u;
 constexpr std::size_t canTransmitFrames = 8u;
 constexpr std::uint32_t watchdogTimeoutMs = 4000u;
 
-// NMEA 2000 identity.
-constexpr std::uint8_t n2kDeviceClassSensors = 75u;     // Sensor Communication Interface
-constexpr std::uint8_t n2kDeviceFunctionTemperature = 130u;
+// B1S / NMEA 2000 identity from the B1S registry (product code, class 75
+// "sensor communication interface", function 130 "temperature").
+constexpr b1s::Product product = b1s::product::labTest01;
 
 const slstm32::Runtime runtime = can_mcu::runtime();
 slstm32::EventBus events{runtime};
@@ -116,14 +117,14 @@ semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eepr
 // serial code of the product information.
 char serialCode[25]{};
 constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange, n2k::pgn::humidity,
-                                           n2k::pgn::batteryStatus, n2k::pgn::binarySwitchBankStatus};
+                                           b1s::pgn::measurement,           b1s::pgn::channelDescription,
+                                           n2k::pgn::batteryStatus,         n2k::pgn::binarySwitchBankStatus};
 n2k::NodeConfig n2kConfig{
-    n2k::Name{0u, n2k::manufacturerCode, 0u, 0u, n2kDeviceFunctionTemperature,
-              n2kDeviceClassSensors, 0u, 4u, true},
+    n2k::Name{0u, n2k::manufacturerCode, 0u, 0u, product.deviceFunction, product.deviceClass, 0u, 4u, true},
     lab_test_01::DeviceSettings{}.n2kAddress,
     // Builds with development tools say so in the software version, visible
     // to every NMEA 2000 tool (Signal K, can-bench).
-    n2k::ProductInfo{2100u, 1u, "Semantic Boat LT1",
+    n2k::ProductInfo{2100u, product.code, "Semantic Boat LT1",
                      slstm32::devTools ? "0.1.0-dev " __DATE__ : "0.1.0 " __DATE__,
                      "can-mcu V1.0 + host-dev", serialCode, 0u, 1u},
     n2kTransmitPgns,
@@ -181,14 +182,21 @@ sensors::MeasurementRegistry measurements{runtime, logger, channels, sizeof chan
                                           &sensorSettings, &events, lab_test_01::alarmChanged};
 sensors::MeasurementConsole measurementConsole{measurements, logger};
 sensors::MeasurementLog measurementLog{runtime, logger, measurements, 5000u};
-const n2k::MeasurementPublication publications[]{
-    {&boardChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
-    {&mcuChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
-    {&airChannel, static_cast<std::uint8_t>(n2k::TemperatureSource::inside)},
-    {&airHumidityChannel, static_cast<std::uint8_t>(n2k::HumiditySource::inside)},
+// The channels on B1S (src/lib/b1s/README.md). Board and MCU temperatures
+// describe the device itself, not the boat: they go out as B1S measurements
+// so they do not appear among a display's environment temperatures. Air and
+// humidity use the standard PGNs (instances 2 and 0 from their channel
+// configs). Locations stay empty (unassigned) until configured.
+const b1s::ChannelConfig b1sChannels[]{
+    {&boardChannel, 0u, b1s::Publish::b1s, 0u, "", "LT1 board"},
+    {&mcuChannel, 1u, b1s::Publish::b1s, 0u, "", "LT1 MCU die"},
+    {&airChannel, 2u, b1s::Publish::automatic, static_cast<std::uint8_t>(n2k::TemperatureSource::inside), "",
+     "LT1 air"},
+    {&airHumidityChannel, 3u, b1s::Publish::automatic, static_cast<std::uint8_t>(n2k::HumiditySource::inside), "",
+     "LT1 air humidity"},
 };
-n2k::MeasurementPublisher measurementPublisher{runtime, n2kNode, publications,
-                                               sizeof publications / sizeof publications[0]};
+b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels,
+                                               sizeof b1sChannels / sizeof b1sChannels[0], 2000u, logger};
 
 // Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
 // severity: a quiet "have a look" (the fridge is warm), firm beeps that ask
@@ -386,6 +394,7 @@ extern "C" void lab_test_01_app_init(void) {
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&lab_test_01::CanMonitorService::onMessage, &canMonitor);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
+    n2kNode.onRequest(&b1s::MeasurementPublisher::handleRequest, &measurementPublisher);
     inputModuleCalibrator.onAutoEvent(&onCalibrationEvent, nullptr);
     if (!events.subscribe(lab_test_01::buttonPressed, &onButton, nullptr)) {
         logger.write(LogLevel::error, "events: alarm acknowledge button not subscribed");

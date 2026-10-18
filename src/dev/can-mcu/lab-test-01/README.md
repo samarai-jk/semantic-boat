@@ -133,13 +133,18 @@ sensor its calibration.
 Channels (`sensors` lists them, `sensor <name>` shows the details, all values
 are logged every 5 s as `values: ...`):
 
-| Channel | Source | NMEA 2000 |
-| --- | --- | --- |
-| `board` | TMP75 on the can-mcu (case temperature) | 130316 instance 0, inside |
-| `mcu` | MCU die sensor | 130316 instance 1, inside |
-| `air`, `air-rh` | DFRobot DHT20 on the I2C connectors | 130316 instance 2 / 130313 instance 0, inside |
+| Channel | Source | B1S channel | Sent as |
+| --- | --- | --- | --- |
+| `board` | TMP75 on the can-mcu (case temperature) | 0 | B1S Measurement (temperature) |
+| `mcu` | MCU die sensor | 1 | B1S Measurement (temperature) |
+| `air` | DFRobot DHT20 on the I2C connectors | 2 | 130316 instance 2, inside |
+| `air-rh` | DFRobot DHT20 | 3 | 130313 instance 0, inside |
 
-All four are sent every 2 s. Alarm rules (bench values; a heat gun on the
+All four are sent every 2 s ([B1S](../../../lib/b1s/README.md)). Board and
+MCU temperatures describe the device, not the boat, so they are B1S messages
+and stay out of displays' environment temperatures. The Channel Descriptions
+(130819) follow every address claim and answer requests; locations are
+unassigned until configuration over CAN exists. Alarm rules (bench values; a heat gun on the
 board reaches all three severities):
 
 | Channel | Rules |
@@ -281,9 +286,8 @@ editor or by other tools at the same time.
   "temperature"). A changed
   address after a conflict is stored in EEPROM. It answers requests for the
   address claim, product information, PGN list, and heartbeat, NACKs other
-  requests addressed to it, sends a heartbeat every 60 s, and publishes the
-  board temperature (instance 0) and MCU temperature (instance 1) as PGN 130316
-  every 2 s.
+  requests addressed to it, sends a heartbeat every 60 s, and publishes its
+  measurement channels every 2 s (see [Measurements and alarms](#measurements-and-alarms)).
 - CAN monitoring: every controller state change is logged with its error
   counters, the yellow RJ45 LED flashes on traffic, messages passed to the
   application are logged (ten per second at most), and a CAN and N2K summary

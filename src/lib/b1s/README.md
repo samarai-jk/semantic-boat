@@ -11,15 +11,22 @@ The data on B1S is the sensory input of a semantic information system: every
 measurement is an observation of a described signal (device, channel,
 quantity, location), so it can become part of an information graph.
 
-**Status:** draft 0.1 (2026-10-18). Implemented on devices so far: NMEA 2000
-network management (`src/lib/n2k`) and the standard PGNs listed in
-[Standard PGNs](#standard-pgns). Everything marked *planned* is specified
-here but not implemented yet.
+**Status:** draft 0.1 (2026-10-18). Implemented: NMEA 2000 network
+management (`src/lib/n2k`), the standard PGNs listed in
+[Standard PGNs](#standard-pgns) with the per-channel encoding switch
+(compile-time), Measurement (65280), and Channel Description (130819),
+verified on LT1 with can-bench. Everything marked *planned* is specified here
+but not implemented yet.
 
 | File | Content |
 | --- | --- |
 | `README.md` (this file) | The rules and message layouts |
 | [`registry.yaml`](registry.yaml) | **Every number B1S assigns**: PGNs, quantities, events, output kinds, commands, products, standard PGN categories |
+| `include/b1s/registry.hpp` | Generated from the registry by `tools/generate_registry.py`; never edited by hand |
+| `include/b1s/messages.hpp` | Encoders: proprietary header, Measurement, Channel Description |
+| `include/b1s/quantity.hpp` | slstm32 measurement quantities -> B1S quantities and SI raw values |
+| `include/b1s/measurement_publisher.hpp` | `b1s::MeasurementPublisher`: sends a device's measurement channels and their descriptions |
+| `tests/b1s_tests.cpp` | Host tests of encoders and conversions (build command in the file) |
 
 > **Rules for anyone adding to B1S, human or AI:** read
 > [Adding to B1S](#adding-to-b1s) first. Never invent a PGN, quantity, event,
@@ -38,7 +45,8 @@ here but not implemented yet.
 8. [Timing, priorities, and bus load](#timing-priorities-and-bus-load)
 9. [Signal K](#signal-k)
 10. [Device lifecycle](#device-lifecycle)
-11. [Adding to B1S](#adding-to-b1s)
+11. [Firmware library](#firmware-library)
+12. [Adding to B1S](#adding-to-b1s)
 
 ## Principles
 
@@ -203,13 +211,13 @@ header and ignore proprietary messages of other manufacturers.
 
 | PGN | Range | Message | Status |
 | --- | --- | --- | --- |
-| 65280 | single frame, broadcast | [Measurement](#measurement-65280) | planned |
+| 65280 | single frame, broadcast | [Measurement](#measurement-65280) | implemented |
 | 65281 | single frame, broadcast | [Output Status](#output-status-65281) | planned |
 | 65282..65535 | single frame, broadcast | Reserved for B1S | |
 | 130816 | fast packet, broadcast | [Measurement Wide](#measurement-wide-130816) | planned |
 | 130817 | fast packet, broadcast | [Measurement Summary](#measurement-summary-130817) | planned |
 | 130818 | fast packet, broadcast | [Event](#event-130818) | planned |
-| 130819 | fast packet, broadcast | [Channel Description](#channel-description-130819) | planned |
+| 130819 | fast packet, broadcast | [Channel Description](#channel-description-130819) | implemented |
 | 130820..131071 | fast packet, broadcast | Reserved for B1S | |
 | 61184 | single frame, addressed | [Command](#command-61184) (multiplexed by command code) | planned |
 | 126720 | fast packet, addressed | [Service](#service-126720) (multiplexed by service code) | planned |
@@ -419,6 +427,30 @@ the sum over an installation must stay within the budget.
    missing device's configuration onto it. Signal K paths stay the same.
    Calibration belongs to the physical sensor and is not copied.
 
+## Firmware library
+
+`src/lib/b1s` is HAL-free like `n2k` and `slstm32` and builds on both. A
+device lists its measurement channels as `b1s::ChannelConfig` (channel
+number, requested encoding, NMEA 2000 source, location, label), runs a
+`b1s::MeasurementPublisher` as a service, and registers
+`MeasurementPublisher::handleRequest` with `n2k::Node::onRequest` so that
+requests for Channel Descriptions are answered. Identity values (product
+code, preferred address, device class and function) come from
+`b1s::product::<device>` in the generated registry header. Example:
+`src/dev/can-mcu/lab-test-01/src/app.cpp`.
+
+Cost on LT1 (product build without development tools, 4 channels): about
+1.3 KiB of flash and 16 bytes of RAM. The publisher has no buffers of its
+own; a Channel Description is built on the stack (76 bytes) and sent through
+the node's fast-packet buffer.
+
+After changing `registry.yaml`:
+
+```sh
+python3 src/lib/b1s/tools/generate_registry.py          # regenerate include/b1s/registry.hpp
+python3 src/lib/b1s/tools/generate_registry.py --check  # verify it is current
+```
+
 ## Adding to B1S
 
 These rules are binding (AGENTS.md). They keep B1S consistent over many
@@ -431,7 +463,9 @@ or command that means the same thing. Location and label say *where* and
 **A new quantity, event type, output kind, command, or service:**
 
 1. Append it to the matching list in `registry.yaml` with the next free code.
-   Codes are never reused, renumbered, or redefined.
+   Codes are never reused, renumbered, or redefined. Regenerate
+   `include/b1s/registry.hpp` (see [Firmware library](#firmware-library)) and
+   commit both.
 2. Give every field: identifier (lowerCamelCase), description, and for
    quantities the SI unit as in Signal K, scale, encoding, and Signal K path
    template.

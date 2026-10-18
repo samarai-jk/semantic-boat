@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "b1s/registry.hpp"
 #include "slstm32/storage/byte_storage.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
 #include "slstm32/storage/redundant_blob_store.hpp"
@@ -28,7 +29,7 @@ inline constexpr std::uint32_t sensorSettingsOffset =
 struct DeviceSettings {
     std::uint32_t bootCount{};
     // Last claimed NMEA 2000 source address, tried first at the next start.
-    std::uint8_t n2kAddress{35u};
+    std::uint8_t n2kAddress{b1s::product::labTest01.preferredAddress};
 };
 
 class DeviceSettingsStore {

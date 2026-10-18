@@ -35,6 +35,11 @@ services, product codes, standard PGN categories) is in
 - Standard PGNs of the `navigation` category are never sent by default.
 - B1S-specific code lives in `src/lib/b1s`; `src/lib/n2k` stays plain
   NMEA 2000.
+- After changing `registry.yaml`, regenerate `include/b1s/registry.hpp` with
+  `src/lib/b1s/tools/generate_registry.py` (never edit it by hand), check it
+  with `--check`, and run the B1S host tests (`src/lib/b1s/tests/`).
+- Flash and RAM are tight on every can-mcu device (a display device must fit
+  as well): report the size change of each B1S addition (product build).
 
 ## Firmware code categories and build profiles (mandatory)
 

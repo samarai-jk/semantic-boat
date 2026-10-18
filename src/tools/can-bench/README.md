@@ -80,8 +80,9 @@ checks the firmware's encoding independently of this tool:
 timeout 10 candump -L can1 | /usr/lib/node_modules/signalk-server/node_modules/.bin/analyzerjs
 ```
 
-Signal K itself listens on `can0` only (its `can1` connection is disabled),
-so it does not see the backbone.
+Signal K listens on both: `can0` as an NMEA 2000 connection, `can1` as the
+B1S connection with its own event names and address 150, read by the
+[B1S plugin](../../signalk/plugin/b1s/README.md).
 
 ### LT1 bench result (2026-10-18)
 

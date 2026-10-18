@@ -1,0 +1,22 @@
+{
+  "name": "@semantic-boat/b1s",
+  "version": "0.1.0",
+  "description": "B1S (Semantic Boat CAN network) devices and measurements in Signal K",
+  "main": "index.js",
+  "keywords": [
+    "signalk-node-server-plugin"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@canboat/canboatjs": "3.20.0"
+  },
+  "private": true
+}

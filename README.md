@@ -148,7 +148,9 @@ Signal K plugin development lives under `src/signalk/plugin/`. The
 encoded NMEA 2000 instrument feed and an alternative direct Signal K output
 for off-boat hardware and alarm testing. Use a separate development server,
 never live navigation data. Its [roadmap](src/signalk/plugin/n2k-simulator/PLAN.md)
-tracks the planned helm UI, scenarios, and hardware transports.
+tracks the planned helm UI, scenarios, and hardware transports. The
+[B1S plugin](src/signalk/plugin/b1s/README.md) brings the devices on the B1S
+CAN network into Signal K.
 
 ## Debugging remote-a
 

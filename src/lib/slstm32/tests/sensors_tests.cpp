@@ -90,6 +90,52 @@ void windowTests() {
     assert(change->result(value) && value == 1000);
 }
 
+void statisticsTests() {
+    StaticWindowPool<4, 8> pool;
+    std::int32_t value = 0;
+    // Range over 6 samples: range uses two values per bucket (4 buckets of 2 samples).
+    auto* range = pool.acquire();
+    assert(range->start(ValueFunction::range, {6u, true}, 0u));
+    for (int sample : {10, 40, 20, 25}) range->add(sample, 0u);
+    assert(range->result(value) && value == 30);
+    for (int sample : {21, 22, 23, 24, 25, 26}) range->add(sample, 0u);
+    assert(range->result(value) && value == 5);
+    // Median of 5: a single spike is dropped.
+    auto* median = pool.acquire();
+    assert(!median->start(ValueFunction::median, {5u, false}, 0u)); // samples only
+    assert(!median->start(ValueFunction::median, {9u, true}, 0u));  // at most the bucket count
+    assert(median->start(ValueFunction::median, {5u, true}, 0u));
+    for (int sample : {100, 101, 900, 102, 99}) median->add(sample, 0u);
+    assert(median->result(value) && value == 101);
+    median->add(103, 0u); // 101, 900, 102, 99, 103
+    assert(median->result(value) && value == 102);
+    // Directions average across 0/360: 359 and 1 give 0, not 180.
+    auto* heading = pool.acquire();
+    assert(heading->start(ValueFunction::average, {4u, true}, 0u, true));
+    heading->add(359000, 0u);
+    heading->add(1000, 0u);
+    assert(heading->result(value) && value == 0);
+    heading->add(3000, 0u);
+    heading->add(5000, 0u); // 359, 1, 3, 5 -> 2
+    assert(heading->result(value) && value == 2000);
+    auto* time = pool.acquire();
+    assert(time->start(ValueFunction::average, {8u, false}, 0u, true));
+    for (std::uint32_t at = 0u; at < 8000u; at += 500u) time->add(at < 4000u ? 350000 : 10000, at); // 350 and 10
+    assert(time->result(value) && value == 0);
+    // Channel rules: a circular channel allows last and average only; the output is a reading.
+    MeasurementConfig config{"heading", Quantity::angle};
+    config.circular = true;
+    Measurement channel{config};
+    StaticWindowPool<2, 8> windows;
+    AlarmRule rule{ValueFunction::maximum, Comparison::above, Severity::warning, false, {10u, false}, 0u, 0, 0, 0};
+    assert(channel.setAlarmRule(0u, rule, &windows, 0u) == Measurement::RuleResult::invalid);
+    rule.function = ValueFunction::average;
+    assert(channel.setAlarmRule(0u, rule, &windows, 0u) == Measurement::RuleResult::applied);
+    assert(channel.setOutputRule({ValueFunction::range, {10u, false}}, &windows, 0u) == Measurement::RuleResult::invalid);
+    assert(channel.setOutputRule({ValueFunction::median, {16u, true}}, &windows, 0u) == Measurement::RuleResult::invalid);
+    assert(windows.available() == 1u);
+}
+
 void ruleTests() {
     StaticWindowPool<4, 8> pool;
     const MeasurementConfig config{"t", Quantity::voltage};
@@ -206,6 +252,7 @@ void persistenceTests() {
 
 int main() {
     windowTests();
+    statisticsTests();
     ruleTests();
     persistenceTests();
     std::puts("sensors tests passed");

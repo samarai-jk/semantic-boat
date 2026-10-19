@@ -157,6 +157,8 @@ bool Measurement::functionValue(ValueFunction function, const Window* window, st
     case ValueFunction::minimum:
     case ValueFunction::maximum:
     case ValueFunction::change:
+    case ValueFunction::range:
+    case ValueFunction::median:
         return window && window->result(value);
     }
     return false;
@@ -350,21 +352,33 @@ void Measurement::clearSlot(std::size_t slot) {
 }
 
 bool Measurement::validRule(const AlarmRule& rule) {
-    if (rule.function > ValueFunction::rate || rule.comparison > Comparison::outside ||
+    if (rule.function > ValueFunction::median || rule.comparison > Comparison::outside ||
         rule.severity > Severity::emergency || rule.hysteresis < 0) {
         return false;
     }
     if (windowed(rule.function) && rule.window.length == 0u) return false;
+    if (rule.function == ValueFunction::median && (!rule.window.samples || rule.window.length > maxMedianSamples)) {
+        return false;
+    }
     const bool band = rule.comparison == Comparison::inside || rule.comparison == Comparison::outside;
     return !band || rule.upper >= rule.threshold;
 }
 
 bool Measurement::validRule(const OutputRule& rule) {
-    if (rule.function != ValueFunction::last && rule.function != ValueFunction::average &&
-        rule.function != ValueFunction::minimum && rule.function != ValueFunction::maximum) {
+    // The output is a reading: no differences (change, range, rate).
+    if (rule.function == ValueFunction::none || rule.function > ValueFunction::median ||
+        differenceFunction(rule.function)) {
+        return false;
+    }
+    if (rule.function == ValueFunction::median && (!rule.window.samples || rule.window.length > maxMedianSamples)) {
         return false;
     }
     return !windowed(rule.function) || rule.window.length != 0u;
+}
+
+bool Measurement::allows(ValueFunction function) const {
+    return !config_.circular || function == ValueFunction::none || function == ValueFunction::last ||
+           function == ValueFunction::average;
 }
 
 Measurement::RuleResult Measurement::setWindow(Window*& window, ValueFunction function, WindowLength length,
@@ -376,7 +390,7 @@ Measurement::RuleResult Measurement::setWindow(Window*& window, ValueFunction fu
     }
     auto* target = window ? window : pool ? pool->acquire() : nullptr;
     if (!target) return RuleResult::noWindow;
-    if (!target->start(function, length, now)) {
+    if (!target->start(function, length, now, config_.circular)) {
         if (!window) WindowPool::release(target);
         return RuleResult::invalid;
     }
@@ -386,22 +400,26 @@ Measurement::RuleResult Measurement::setWindow(Window*& window, ValueFunction fu
 
 Measurement::RuleResult Measurement::setAlarmRule(std::size_t slot, const AlarmRule& rule, WindowPool* pool,
                                                   std::uint32_t now) {
-    if (slot >= maxAlarms || !validRule(rule)) return RuleResult::invalid;
+    if (slot >= maxAlarms || !validRule(rule) || !allows(rule.function)) return RuleResult::invalid;
     const auto& old = rules_[slot];
     // A changed threshold keeps the window's history; a changed window restarts it.
     const bool sameWindow = windows_[slot] && old.function == rule.function &&
                             old.window.length == rule.window.length && old.window.samples == rule.window.samples;
     auto* window = windows_[slot];
-    if (!sameWindow && windowed(rule.function) && !window) {
+    const bool acquired = !sameWindow && windowed(rule.function) && !window;
+    if (acquired) {
         window = pool ? pool->acquire() : nullptr;
         if (!window) return RuleResult::noWindow;
     }
-    clearSlot(slot); // still with the old rule and window, for its log line
+    // Checked before anything changes (median: at most the bucket count).
+    if (!sameWindow && windowed(rule.function) && !window->start(rule.function, rule.window, now, config_.circular)) {
+        if (acquired) WindowPool::release(window);
+        return RuleResult::invalid;
+    }
+    clearSlot(slot); // still with the old rule, for its log line
     if (!sameWindow && !windowed(rule.function)) {
         WindowPool::release(window);
         window = nullptr;
-    } else if (!sameWindow) {
-        window->start(rule.function, rule.window, now);
     }
     windows_[slot] = window;
     rules_[slot] = rule;
@@ -416,7 +434,7 @@ Measurement::RuleResult Measurement::setFaultRule(const FaultRule& rule) {
 }
 
 Measurement::RuleResult Measurement::setOutputRule(const OutputRule& rule, WindowPool* pool, std::uint32_t now) {
-    if (!validRule(rule)) return RuleResult::invalid;
+    if (!validRule(rule) || !allows(rule.function)) return RuleResult::invalid;
     const bool sameWindow = outputWindow_ && output_.function == rule.function &&
                             output_.window.length == rule.window.length && output_.window.samples == rule.window.samples;
     if (!sameWindow) {
@@ -443,9 +461,9 @@ void Measurement::setCalibration(const Calibration& calibration) {
         resetTrend();
         // The windows hold values of the old calibration: start them again.
         for (std::size_t slot = 0u; slot < maxAlarms; ++slot) {
-            if (windows_[slot]) windows_[slot]->start(rules_[slot].function, rules_[slot].window, lastUpdateAt_);
+            if (windows_[slot]) windows_[slot]->start(rules_[slot].function, rules_[slot].window, lastUpdateAt_, config_.circular);
         }
-        if (outputWindow_) outputWindow_->start(output_.function, output_.window, lastUpdateAt_);
+        if (outputWindow_) outputWindow_->start(output_.function, output_.window, lastUpdateAt_, config_.circular);
     }
 }
 

@@ -15,12 +15,19 @@ enum class ValueFunction : std::uint8_t {
     maximum, // over the window
     change,  // over the window: newest minus oldest bucket mean (a trend)
     rate,    // change per minute over the last minute (smoothed value)
+    range,   // over the window: maximum minus minimum (half the buckets)
+    median,  // over a short sample window (at most maxMedianSamples): drops single spikes
 };
+
+inline constexpr std::uint16_t maxMedianSamples = 15u;
 
 const char* functionName(ValueFunction function);
 constexpr bool windowed(ValueFunction function) {
-    return function == ValueFunction::average || function == ValueFunction::minimum ||
-           function == ValueFunction::maximum || function == ValueFunction::change;
+    return function != ValueFunction::none && function != ValueFunction::last && function != ValueFunction::rate;
+}
+// Functions whose value is a difference (no zero offset), not a reading.
+constexpr bool differenceFunction(ValueFunction function) {
+    return function == ValueFunction::change || function == ValueFunction::rate || function == ValueFunction::range;
 }
 
 // Length of a window: seconds, or a number of samples.
@@ -32,15 +39,23 @@ struct WindowLength {
 // A sliding window over a channel's samples with constant memory: B buckets
 // (the pool's bucket count) of window / B each, plus the bucket being
 // filled. A bucket keeps one value (its mean, minimum, or maximum, as the
-// function needs) and its sample count, so 15 seconds and 6 hours cost the
-// same. The result covers the last B completed buckets and the current one:
-// the window plus at most one bucket (precision window / B). Sample windows
-// of at most B samples are exact. Time buckets start at multiples of their
-// length, so a value read at multiples of the window covers one window.
+// function needs; range keeps both in two buckets) and its sample count, so
+// 15 seconds and 6 hours cost the same. The result covers the last B
+// completed buckets and the current one: the window plus at most one bucket
+// (precision window / B). Sample windows of at most B samples are exact
+// (median needs that). Time buckets start at multiples of their length, so
+// a value read at multiples of the window covers one window.
+//
+// Circular windows (directions in thousandths of a degree, 0..360) average
+// across 0/360: 359 and 1 average to 0, not 180. Each sample is taken
+// within +-180 degrees of the bucket's first one, each bucket within +-180
+// of the newest; fine while the spread stays well below 180 degrees. Only
+// last and average make sense for directions.
 class Window {
 public:
-    // Starts empty; false if the length is 0.
-    bool start(ValueFunction function, WindowLength length, std::uint32_t now);
+    // Starts empty; false if the length is 0 or too long for the function
+    // (median: a sample window of at most the bucket count).
+    bool start(ValueFunction function, WindowLength length, std::uint32_t now, bool circular = false);
     void add(std::int32_t value, std::uint32_t now);
     // Closes the buckets whose time is over (time windows); call regularly.
     void advance(std::uint32_t now);
@@ -59,12 +74,15 @@ private:
     std::uint16_t filled_{}; // completed buckets
     ValueFunction function_{ValueFunction::none};
     bool samples_{};
+    bool circular_{};
     bool inUse_{};
     std::uint32_t span_{};      // bucket length: milliseconds or samples
     std::uint32_t openStart_{}; // time windows: start of the current bucket
     std::uint32_t openCount_{};
     std::int64_t openSum_{};
-    std::int32_t openExtreme_{};
+    std::int32_t openMinimum_{};
+    std::int32_t openMaximum_{};
+    std::int32_t openFirst_{}; // circular: the reference of the current bucket
 };
 
 // The windows a device can give its channels: Count windows of Buckets

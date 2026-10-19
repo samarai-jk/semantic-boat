@@ -54,15 +54,16 @@ plugins have their own.
       named button: **Setup** (label, location, a custom Signal K path, how
       it is sent, the standard PGN's source by name and instance; Save
       setup; then **Output**: the value sent, latest sample or average,
-      minimum, maximum over seconds or samples, how often it is sent, and how
+      minimum, maximum over seconds or samples, or the median of a few
+      samples, how often it is sent, and how
       often the raw value is sent; Save output), **Calibration** (calibrate
       against a reference entered in °C or %: one point for the offset, a
       second for the gain; the calibration values with Save calibration
       values; Reset calibration, set apart), and **Alarms** (the sensor fault
       alarm, off to emergency; up to four rules, each a sentence: "Warning
       when the average over 10 s is above 40 °C for 3 s; clears 2 °C back;
-      latching", with bands inside/outside, rates per minute, changes over a
-      window, its state; + Add alarm and Remove; the device's free windows;
+      latching", with bands inside/outside, median and range, rates per
+      minute, changes over a window, its state; + Add alarm and Remove; the device's free windows;
       Save alarms; Reset alarms and output to firmware defaults). A Save stores only the
       edited fields, then reads the device again.
     - **Log**: the device streams its log (debug lines included) only when

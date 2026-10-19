@@ -43,11 +43,10 @@ std::int32_t get32(const std::uint8_t* in) {
     return static_cast<std::int32_t>(in[0] | in[1] << 8u | in[2] << 16u | static_cast<std::uint32_t>(in[3]) << 24u);
 }
 
-// Alarm values on the wire (registry, unit alarmValue): absolute for last,
-// average, minimum, maximum; differences for change and rate (per minute).
-bool absoluteFunction(sensors::ValueFunction function) {
-    return function != sensors::ValueFunction::change && function != sensors::ValueFunction::rate;
-}
+// Alarm values on the wire (registry, unit alarmValue): absolute for
+// readings (last, average, minimum, maximum, median); differences for
+// change, range, and rate (per minute).
+bool absoluteFunction(sensors::ValueFunction function) { return !sensors::differenceFunction(function); }
 
 ParameterStatus statusOf(RuleResult result) {
     switch (result) {
@@ -568,7 +567,7 @@ ParameterStatus ServiceServer::writeMeasurement(Parameter parameter, const Chann
     case Parameter::alarm1:
     case Parameter::alarm2:
     case Parameter::alarm3: {
-        if (value.recordLength != record::alarmSize || in[0] > static_cast<std::uint8_t>(sensors::ValueFunction::rate) ||
+        if (value.recordLength != record::alarmSize || in[0] > static_cast<std::uint8_t>(sensors::ValueFunction::median) ||
             in[1] > static_cast<std::uint8_t>(sensors::Comparison::outside) ||
             in[2] > static_cast<std::uint8_t>(sensors::Severity::emergency)) {
             return ParameterStatus::invalidValue;

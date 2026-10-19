@@ -355,14 +355,26 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   value (`rawValue()`) is the latest calibrated sample unless the driver
   sets another (`setRawValue()`).
 - **Value functions** (`ValueFunction`): `last`, and over a window
-  `average`, `minimum`, `maximum`, `change` (newest minus oldest part of the
-  window, e.g. a 3-hour pressure tendency), plus `rate` (per minute).
-  Windows (`window.hpp`) slide over seconds or samples with constant memory:
-  a fixed number of buckets, so 15 s and 6 h cost the same; precision is
-  window / buckets, windows of at most `buckets` samples are exact. The
+  `average`, `minimum`, `maximum`, `range` (maximum minus minimum),
+  `median` (of at most 15 samples: drops single spikes), `change` (newest
+  minus oldest part of the window, e.g. a 3-hour pressure tendency), plus
+  `rate` (per minute). Windows (`window.hpp`) slide over seconds or samples
+  with constant memory: a fixed number of buckets, so 15 s and 6 h cost the
+  same; precision is window / buckets (range uses two buckets per step, so
+  half the precision), windows of at most `buckets` samples are exact. The
   firmware decides the budget with one `StaticWindowPool<windows, buckets>`
   (about 48 + 6 x buckets bytes per window): none on a display, many fine
   ones on a monitoring device.
+- **Directions** (`MeasurementConfig::circular`, e.g. heading, wind
+  direction; not pitch, roll, or rudder angle): averages are taken across
+  0/360 (359 and 1 average to 0); only `last` and `average` are allowed.
+- **Scope (decided 2026-10-19):** this is a generic helper that lets one
+  firmware serve many uses, not a signal-processing library. Keep it small.
+  Anything specific belongs in the sensor's driver (an engine vibration
+  sensor gets a driver that outputs a defined signal) or upstream (Signal K,
+  Node-RED, Grafana, semantic computations). Statistics for analysis
+  (standard deviation, summaries) go upstream with the planned B1S
+  Measurement Summary, not into the channel functions.
 - **Output** (`OutputRule`): the value published and shown, `output()`:
   `last`, or `average`, `minimum`, `maximum` over a window.
 - **Alarm rules** (`AlarmRule`, four slots): function (and window),

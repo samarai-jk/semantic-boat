@@ -20,7 +20,7 @@ const isoAddressClaim = 60928;
 const consoleLimit = 65536;
 const quantityUnits = new Set(['quantity', 'quantityDelta', 'alarmValue', 'alarmDelta']);
 // Alarm values are differences for these functions (registry, unit alarmValue).
-const deltaFunctions = new Set(['change', 'rate']);
+const deltaFunctions = new Set(['change', 'rate', 'range']);
 
 const defaults = {
   analyzerEvent: 'b1s-N2KAnalyzerOut',

@@ -311,7 +311,7 @@ def show(entry, value, quantity):
         fields = decode_record(entry["record"], value)
         if fields.get("function") == "none":
             return "unused"
-        absolute = fields.get("function") not in ("change", "rate")
+        absolute = fields.get("function") not in ("change", "rate", "range")
         parts = []
         for field in RECORDS[entry["record"]]:
             name, unit = field["name"], field.get("unit")

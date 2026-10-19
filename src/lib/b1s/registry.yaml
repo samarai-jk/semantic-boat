@@ -166,14 +166,14 @@ parameters:
 # Layouts of record parameters, field by field, little-endian, no gaps.
 # Field types: uint8, uint16, int32; enum (uint8 with named values); flags
 # (uint8, bit n = the n-th name). unit as for parameters, plus: alarmValue =
-# quantity for the functions last, average, minimum, maximum; quantityDelta
-# for change; quantityDelta per minute for rate. alarmDelta = quantityDelta
-# (per minute for rate).
+# quantity for the functions last, average, minimum, maximum, median;
+# quantityDelta for change and range; quantityDelta per minute for rate.
+# alarmDelta = quantityDelta (per minute for rate).
 records:
   output:
-    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum], description: "Value sent; none = last"}
+    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum, change, rate, range, median], description: "Value sent: last, average, minimum, maximum, median (a reading; change, rate, range are refused); none = last"}
     - {name: flags,      type: flags,  bits: [windowSamples], description: "windowSamples: the window counts samples, not seconds"}
-    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum"}
+    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum; median: 1..15 samples"}
     - {name: period,     type: uint16, unit: "0.1 s", description: "How often the value is sent; 0 = firmware default"}
     - {name: rawPeriod,  type: uint16, unit: "0.1 s", description: "How often the raw value (Measurement Raw) is sent; 0 = never"}
   faultAlarm:
@@ -181,11 +181,11 @@ records:
     - {name: flags,      type: flags,  bits: [latching]}
     - {name: delay,      type: uint16, unit: s, description: "How long the channel must lack a valid value"}
   alarm:
-    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum, change, rate], description: "Value the rule looks at; none = unused"}
+    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum, change, rate, range, median], description: "Value the rule looks at; none = unused. Directions (circular channels): last and average only"}
     - {name: comparison, type: enum,   values: [above, atLeast, below, atMost, inside, outside], description: "inside/outside: threshold..upper"}
     - {name: severity,   type: enum,   values: [warning, alarm, emergency]}
     - {name: flags,      type: flags,  bits: [latching, windowSamples], description: "latching: active until acknowledged; windowSamples: the window counts samples"}
-    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum, change"}
+    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum, change, range; median: 1..15 samples"}
     - {name: delay,      type: uint16, unit: s, description: "How long the condition must hold; 0 = at the first sample"}
     - {name: threshold,  type: int32,  unit: alarmValue, description: "Threshold; lower limit for inside/outside"}
     - {name: upper,      type: int32,  unit: alarmValue, description: "Upper limit for inside/outside"}

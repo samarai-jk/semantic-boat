@@ -96,9 +96,9 @@ is sent.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `function` | enum `none`, `last`, `average`, `minimum`, `maximum` | Value sent (`none` = `last`) |
+| `function` | enum `none`, `last`, `average`, `minimum`, `maximum`, `change`, `rate`, `range`, `median` | Value sent: a reading, so `last`, `average`, `minimum`, `maximum`, or `median` (`none` = `last`) |
 | `flags` | bit 0 `windowSamples` | The window counts samples, not seconds |
-| `window` | uint16 | Window length for average, minimum, maximum |
+| `window` | uint16 | Window length for average, minimum, maximum; median: 1..15 samples |
 | `period` | uint16, 0.1 s | How often the value is sent; 0 = firmware default |
 | `rawPeriod` | uint16, 0.1 s | How often the raw value is sent (Measurement Raw); 0 = never |
 
@@ -112,20 +112,25 @@ channel must lack a valid value).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `function` | enum `none`, `last`, `average`, `minimum`, `maximum`, `change`, `rate` | The value the rule looks at; `none` = unused slot |
+| `function` | enum `none`, `last`, `average`, `minimum`, `maximum`, `change`, `rate`, `range`, `median` | The value the rule looks at; `none` = unused slot |
 | `comparison` | enum `above`, `atLeast`, `below`, `atMost`, `inside`, `outside` | `inside`/`outside` use `threshold`..`upper` |
 | `severity` | enum `warning`, `alarm`, `emergency` | |
 | `flags` | bit 0 `latching`, bit 1 `windowSamples` | Latching: active until acknowledged |
-| `window` | uint16 | Window length (s or samples) for average, minimum, maximum, change |
+| `window` | uint16 | Window length (s or samples) for the windowed functions; median: 1..15 samples |
 | `delay` | uint16, s | How long the condition must hold; 0 = at the first sample |
 | `threshold` | int32, alarmValue | Threshold; lower limit of a band |
 | `upper` | int32, alarmValue | Upper limit of a band |
 | `hysteresis` | int32, alarmDelta | How far back on the safe side the value must be to clear |
 
 `alarmValue` is the quantity's raw unit (absolute) for `last`, `average`,
-`minimum`, `maximum`, a difference for `change` (newest minus oldest part
-of the window, e.g. the 3-hour pressure tendency), and a difference per
-minute for `rate`. `alarmDelta` is a difference (per minute for `rate`).
+`minimum`, `maximum`, `median`, a difference for `change` (newest minus
+oldest part of the window, e.g. the 3-hour pressure tendency) and `range`
+(maximum minus minimum), and a difference per minute for `rate`.
+`alarmDelta` is a difference (per minute for `rate`).
+
+Directions (channels the firmware marks circular: heading, wind
+direction) allow only `last` and `average`; their average is taken across
+0/360. Other functions are refused with "invalid value".
 
 **`windowPool`** (3 bytes, read-only): `windows`, `free`, `buckets`.
 
@@ -135,7 +140,8 @@ Average, minimum, maximum, and change look at a sliding window. A window
 has a fixed number of buckets (the firmware decides: `slstm32`
 `StaticWindowPool<windows, buckets>`), so 15 seconds and 6 hours cost the
 same memory; the precision is window / buckets (the value covers the
-window plus at most one bucket). Windows of at most `buckets` samples are
+window plus at most one bucket; range stores two values per step and has
+half the precision). Windows of at most `buckets` samples are
 exact. Every output or rule that needs a window takes one from the
 device's pool; a write that would need more than the pool has is refused
 with "no resources" and changes nothing. Time windows start at multiples of
@@ -260,7 +266,8 @@ Configurable alarms, outputs, and periods (2026-10-19, LT1 product build):
 their storage +3.0 KiB; B1S records, periods, Measurement Raw +1.8 KiB),
 +2.6 KiB of RAM, of which 2.4 KiB is LT1's window pool (16 windows of 16
 buckets, a device decision) and 64 bytes the send schedules. EEPROM: 640
-bytes per measurement channel (`MeasurementRegistry::processingBytes()`).
+bytes per measurement channel (`MeasurementRegistry::processingBytes()`). Range, median, and directions
+(the same day): +824 bytes of flash (79,584), +8 bytes of RAM per window.
 
 ## Firmware
 

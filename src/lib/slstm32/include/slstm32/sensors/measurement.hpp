@@ -69,8 +69,8 @@ const char* comparisonName(Comparison comparison);
 
 // An alarm on a value of the channel, e.g. "warning when the average over
 // 60 s is below 11.8 V for 30 s". Thresholds are in the unit of the value:
-// thousandths of the channel unit for last, average, minimum, maximum, and
-// change; thousandths per minute for rate.
+// thousandths of the channel unit (a difference for change and range);
+// thousandths per minute for rate.
 struct AlarmRule {
     ValueFunction function{ValueFunction::none}; // none: the slot is unused
     Comparison comparison{Comparison::above};
@@ -95,7 +95,7 @@ struct FaultRule {
 };
 
 // How the channel's output value (published, shown) is derived: last,
-// average, minimum, or maximum.
+// average, minimum, maximum, or median (readings, not differences).
 struct OutputRule {
     ValueFunction function{ValueFunction::last};
     WindowLength window{};
@@ -121,6 +121,10 @@ struct MeasurementConfig {
     // trendRapid "rising/falling rapidly" (0 = no rapid label).
     std::int32_t trendSteady{};
     std::int32_t trendRapid{};
+    // A direction that wraps at 360 degrees (heading, wind direction; not
+    // pitch, roll, or rudder): averages are taken across 0/360, and only the
+    // functions last and average are allowed.
+    bool circular{};
 };
 
 struct TrendPoint {
@@ -248,6 +252,8 @@ public:
     RuleResult setOutputRule(const OutputRule& rule, WindowPool* pool, std::uint32_t now);
     static bool validRule(const AlarmRule& rule);
     static bool validRule(const OutputRule& rule);
+    // Whether the channel allows the function (circular channels: last, average).
+    bool allows(ValueFunction function) const;
 
     // --- Settings (persisted by MeasurementRegistry) ---
     const Calibration& calibration() const { return calibration_; }

@@ -164,11 +164,10 @@
   // --- B1S device: settings grouped by device and channel --------------------
 
   const severityLabels = { off: 'Off', warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' };
-  const functionLabels = { none: 'latest value', last: 'latest value', average: 'average', minimum: 'minimum',
-    maximum: 'maximum', change: 'change', rate: 'rate of change' };
   const comparisonLabels = { above: 'above', atLeast: 'at least', below: 'below', atMost: 'at most',
     inside: 'inside', outside: 'outside' };
-  const windowed = name => ['average', 'minimum', 'maximum', 'change'].includes(name);
+  const windowed = name => ['average', 'minimum', 'maximum', 'change', 'range', 'median'].includes(name);
+  const differences = ['change', 'rate', 'range'];
   const encodingLabels = { automatic: 'automatic', standard: 'standard PGN', b1s: 'B1S message', off: 'off (not sent)' };
 
   function age(ms) {
@@ -383,8 +382,8 @@
     const entry = parameter(card, 'channelOutput', channel.channel);
     if (!entry || entry.status !== 'done') return null;
     const current = entry.value;
-    const fn = choice({ last: 'latest sample', average: 'average', minimum: 'minimum', maximum: 'maximum' },
-      current.function === 'none' ? 'last' : current.function, 'Value sent');
+    const fn = choice({ last: 'latest sample', average: 'average', minimum: 'minimum', maximum: 'maximum',
+      median: 'median (drops spikes)' }, current.function === 'none' ? 'last' : current.function, 'Value sent');
     const length = numberField(current.window || '', 'Window length', 'e.g. 10');
     const samples = current.flags.includes('windowSamples');
     const lengthUnit = choice({ s: 's', samples: 'samples' }, samples ? 'samples' : 's', 'Window unit');
@@ -392,7 +391,10 @@
     windowPart.append(text('span', 'over', 'muted'), length, lengthUnit);
     const period = numberField(current.period ? current.period / 10 : '', 'Send every', 'default');
     const rawPeriod = numberField(current.rawPeriod ? current.rawPeriod / 10 : '', 'Send the raw value every', 'never');
-    const show = () => { windowPart.hidden = !windowed(fn.value); };
+    const show = () => {
+      windowPart.hidden = !windowed(fn.value);
+      if (fn.value === 'median') lengthUnit.value = 'samples';
+    };
     fn.onchange = show;
     show();
     const read = () => ({
@@ -409,7 +411,8 @@
     const valueControls = text('span', '', 'field-value wrap');
     valueControls.append(fn, windowPart);
     valueRow.append(text('span', 'Value sent', 'field-label'), valueControls,
-      text('small', 'Latest sample, or the average, minimum, or maximum over the last seconds or samples.', 'field-hint'));
+      text('small', 'Latest sample, or the average, minimum, or maximum over the last seconds or samples; ' +
+        'median over 3..15 samples drops single spikes. Directions (heading) allow latest and average only.', 'field-hint'));
     const periodRow = text('div', '', 'field');
     const periodControls = text('span', '', 'field-value');
     periodControls.append(period, text('span', `s${channel.period ? ` (now ${channel.period} s)` : ''}`, 'field-unit'));
@@ -474,8 +477,9 @@
     const absolute = entry.absolute ?? {};
     const shown = name => fields[name] === undefined || draft ? '' : display(si[name], entry.siUnit, absolute[name]).value;
     const severity = choice({ warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' }, fields.severity ?? 'warning', 'Severity');
-    const fn = choice({ last: 'latest value', average: 'average', minimum: 'minimum', maximum: 'maximum', change: 'change',
-      rate: 'rate of change' }, draft ? 'last' : fields.function, 'Value');
+    const fn = choice({ last: 'latest value', average: 'average', minimum: 'minimum', maximum: 'maximum',
+      median: 'median', range: 'range (max − min)', change: 'change', rate: 'rate of change' },
+    draft ? 'last' : fields.function, 'Value');
     const length = numberField(fields.window || '', 'Window length', '10');
     const lengthUnit = choice({ s: 's', samples: 'samples' }, fields.flags?.includes('windowSamples') ? 'samples' : 's', 'Window unit');
     const comparison = choice(comparisonLabels, fields.comparison ?? 'above', 'Comparison');
@@ -494,6 +498,7 @@
     upperPart.append(text('span', 'and', 'muted'), upper, upperUnit);
     const update = () => {
       windowPart.hidden = !windowed(fn.value);
+      if (fn.value === 'median') lengthUnit.value = 'samples';
       upperPart.hidden = !['inside', 'outside'].includes(comparison.value);
       const perMinute = fn.value === 'rate';
       unit.textContent = upperUnit.textContent = hysteresisUnit.textContent = unitLabel(channel, perMinute);
@@ -516,7 +521,7 @@
     element.append(sentence, footer);
     const read = () => {
       const band = ['inside', 'outside'].includes(comparison.value);
-      const isAbsolute = !['change', 'rate'].includes(fn.value);
+      const isAbsolute = !differences.includes(fn.value);
       if (threshold.value.trim() === '') throw new Error('Alarm: enter a threshold');
       if (band && upper.value.trim() === '') throw new Error('Alarm: enter the upper limit of the band');
       const flags = [];

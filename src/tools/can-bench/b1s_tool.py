@@ -8,6 +8,7 @@ bench address (153). Values are raw B1S values (SI unit x quantity scale);
     python b1s_tool.py params 38
     python b1s_tool.py get 38 channelLocation 2
     python b1s_tool.py set 38 channelLocation 2 inside
+    python b1s_tool.py set 38 alarm1 0 function=average window=10 comparison=above threshold=323150
     python b1s_tool.py command 38 calibrate 2 295150      # air channel to 22.0 C
     python b1s_tool.py console 38 "sensor air"
     python b1s_tool.py console 38 --follow 20             # live device log for 20 s
@@ -32,7 +33,37 @@ COMMANDS = {entry["id"]: entry["code"] for entry in B1S["commands"]}
 PARAMETERS = {entry["id"]: entry for entry in B1S["parameters"]}
 PARAMETER_IDS = {entry["code"]: entry for entry in B1S["parameters"]}
 PARAMETER_STATUS = ["done", "unknown parameter", "unknown channel", "invalid value", "read-only", "busy",
-                    "not permitted"]
+                    "not permitted", "no resources"]
+RECORDS = B1S.get("records", {})
+FIELD_FORMATS = {"uint8": "B", "enum": "B", "flags": "B", "uint16": "H", "int32": "i"}
+
+
+def decode_record(name, data):
+    """Record bytes -> {field: value}; enums as names, flags as lists of names."""
+    fields, offset = {}, 0
+    for field in RECORDS[name]:
+        fmt = FIELD_FORMATS[field["type"]]
+        value = struct.unpack_from("<" + fmt, data, offset)[0]
+        offset += struct.calcsize(fmt)
+        if field["type"] == "enum":
+            values = field["values"]
+            value = values[value] if value < len(values) else value
+        elif field["type"] == "flags":
+            value = [bit for index, bit in enumerate(field["bits"]) if value >> index & 1]
+        fields[field["name"]] = value
+    return fields
+
+
+def encode_record(name, fields):
+    data = b""
+    for field in RECORDS[name]:
+        value = fields[field["name"]]
+        if field["type"] == "enum" and isinstance(value, str):
+            value = field["values"].index(value)
+        elif field["type"] == "flags":
+            value = sum(1 << field["bits"].index(bit) for bit in value)
+        data += struct.pack("<" + FIELD_FORMATS[field["type"]], int(value))
+    return data
 COMMAND_RESULTS = ["done", "unknown command", "unknown channel", "invalid argument", "refused", "busy"]
 REPLY = 0x80
 
@@ -140,7 +171,9 @@ class Client:
         return decode_value(reply)
 
     def write(self, address, parameter, channel, value):
-        if isinstance(value, str):
+        if isinstance(value, bytes):
+            encoded = bytes([2, len(value)]) + value
+        elif isinstance(value, str):
             text = value.encode("ascii")
             encoded = bytes([1, len(text) + 2, 1]) + text
         else:
@@ -258,29 +291,50 @@ def decode_value(reply):
     if kind == 1:
         length = reply[5]
         return "done", reply[7:5 + length].decode("ascii", "replace")
+    if kind == 2:
+        return "done", bytes(reply[6:6 + reply[5]])
     return "done", struct.unpack_from("<i", reply, 5)[0]
 
 
+def si_text(value, unit, quantity, absolute):
+    q = B1S_QUANTITIES.get(quantity)
+    if not q or unit not in ("quantity", "quantityDelta", "alarmValue", "alarmDelta"):
+        return str(value)
+    si = value * q["scale"]
+    if absolute and q["unit"] == "K":
+        return f"{value} ({si - 273.15:.3f} C)"
+    return f"{value} ({si:.6g} {q['unit']})"
+
+
 def show(entry, value, quantity):
+    if isinstance(value, bytes) and entry.get("record") in RECORDS:
+        fields = decode_record(entry["record"], value)
+        if fields.get("function") == "none":
+            return "unused"
+        absolute = fields.get("function") not in ("change", "rate")
+        parts = []
+        for field in RECORDS[entry["record"]]:
+            name, unit = field["name"], field.get("unit")
+            shown = fields[name]
+            if isinstance(shown, int):
+                shown = si_text(shown, unit, quantity, absolute and unit == "alarmValue")
+            elif isinstance(shown, list):
+                shown = ",".join(shown) or "-"
+            parts.append(f"{name}={shown}")
+        return " ".join(parts)
     if not isinstance(value, int):
         return repr(value)
     unit = entry.get("unit")
     if entry.get("type") == "enum":
         values = entry.get("values", [])
         return values[value] if 0 <= value < len(values) else str(value)
-    if unit in ("quantity", "quantityDelta", "alarmRule") and quantity in B1S_QUANTITIES:
-        q = B1S_QUANTITIES[quantity]
-        si = value * q["scale"]
-        if unit == "quantity" and q["unit"] == "K":
-            return f"{value}  ({si:.6g} K = {si - 273.15:.3f} C)"
-        return f"{value}  ({si:.6g} {q['unit']})"
-    if entry["id"].startswith("alarmRule"):
-        kinds = ["high", "low", "rise rate", "sensor fault", "trend fall", "trend rise"]
-        severities = ["warning", "alarm", "emergency"]
-        flags = [name for bit, name in ((16, "latching"), (17, "ACTIVE"), (18, "acknowledged")) if value >> bit & 1]
-        kind, severity = value & 0xFF, value >> 8 & 0xFF
-        return " ".join([kinds[kind] if kind < len(kinds) else str(kind),
-                         severities[severity] if severity < len(severities) else str(severity)] + flags)
+    if unit in ("quantity", "quantityDelta"):
+        return si_text(value, unit, quantity, unit == "quantity")
+    if entry["id"] == "alarmState":
+        names = [f"rule {slot}" if slot < 4 else "fault" for slot in range(5)]
+        states = [f"{names[slot]} {'acknowledged' if value >> (2 * slot + 1) & 1 else 'ACTIVE'}"
+                  for slot in range(5) if value >> (2 * slot) & 1]
+        return ", ".join(states) or "no active alarm"
     return f"{value}{' ' + unit if unit and unit not in ('quantity',) else ''}"
 
 
@@ -353,19 +407,37 @@ def main():
                     print(f"{entry['id'] + where:28s} {text}")
         elif args.action == "get":
             status, value = client.read(args.address, parameter_code(args.parameter), args.channel)
-            print(value if status == "done" else status)
+            shown = show(PARAMETERS[args.parameter], value, None) if isinstance(value, bytes) else value
+            print(shown if status == "done" else status)
         elif args.action == "set":
             entry = PARAMETERS.get(args.parameter) or sys.exit(f"unknown parameter {args.parameter}")
             channel = int(args.rest[0]) if entry["scope"] == "channel" else 0xFF
             raw = args.rest[1] if entry["scope"] == "channel" else args.rest[0]
-            if entry["type"] == "string":
+            if entry["type"] == "record":
+                # field=value pairs (raw values, enum names, flags as a,b) change the current record.
+                status, current = client.read(args.address, entry["code"], channel)
+                if status != "done":
+                    sys.exit(f"read {args.parameter}: {status}")
+                fields = decode_record(entry["record"], current)
+                pairs = args.rest[1:] if entry["scope"] == "channel" else args.rest
+                for pair in pairs:
+                    name, _, text = pair.partition("=")
+                    if name not in fields:
+                        sys.exit(f"{args.parameter} has no field {name}; fields: {', '.join(fields)}")
+                    if isinstance(fields[name], list):
+                        fields[name] = [bit for bit in text.split(",") if bit]
+                    else:
+                        fields[name] = text if not text.lstrip("-").isdigit() else int(text)
+                value = encode_record(entry["record"], fields)
+            elif entry["type"] == "string":
                 value = raw
             elif entry["type"] == "enum" and raw in entry.get("values", []):
                 value = entry["values"].index(raw)
             else:
                 value = int(raw)
             status, stored = client.write(args.address, entry["code"], channel, value)
-            print(f"{status}: {stored!r}" if status == "done" else status)
+            print(f"{status}: {show(entry, stored, client.channels(args.address).get(channel))}" if status == "done"
+                  else status)
         elif args.action == "command":
             argument = args.argument if args.argument != -1 else -1
             print(client.command(args.address, args.command, args.channel, argument))

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include "b1s/channel_settings.hpp"
 #include "b1s/registry.hpp"
+#include "slstm32/sensors/registry.hpp"
 #include "slstm32/storage/byte_storage.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
 #include "slstm32/storage/redundant_blob_store.hpp"
@@ -30,6 +31,11 @@ inline constexpr std::uint32_t sensorSettingsOffset =
 // instance of B1S channels 0..7) below the sensor settings.
 inline constexpr std::size_t b1sChannelSlots = 8u;
 inline constexpr std::uint32_t b1sSettingsOffset = sensorSettingsOffset - b1s::ChannelSettings::requiredBytes(b1sChannelSlots);
+// Alarm rules, fault alarm, and output function of the measurement channels
+// (five 128-byte records per channel) below the B1S configuration.
+inline constexpr std::size_t measurementChannels = 8u;
+inline constexpr std::uint32_t channelProcessingOffset =
+    b1sSettingsOffset - slstm32::sensors::MeasurementRegistry::processingBytes(measurementChannels);
 
 struct DeviceSettings {
     std::uint32_t bootCount{};

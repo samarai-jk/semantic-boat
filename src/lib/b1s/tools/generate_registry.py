@@ -103,6 +103,19 @@ def generate(registry):
     enum(lines, "Board", "Boards of firmware images (FIRMWARE.md).", registry["boards"], "std::uint16_t")
     enum(lines, "Parameter", "Parameters for configuration over CAN (scope, type, unit: registry).",
          registry["parameters"], "std::uint16_t")
+    sizes = {"uint8": 1, "enum": 1, "flags": 1, "uint16": 2, "int32": 4}
+    records = registry.get("records", {})
+    for entry in registry["parameters"]:
+        if entry["type"] == "record" and entry.get("record") not in records:
+            sys.exit(f"registry: parameter {entry['id']} names no record layout")
+    lines.append("// Sizes of record parameters (registry: records).")
+    lines.append("namespace record {")
+    for name, fields in records.items():
+        size = sum(sizes[field["type"]] for field in fields)
+        if size > 32:
+            sys.exit(f"registry: record {name} has more than 32 bytes")
+        lines.append(f"inline constexpr std::uint8_t {name}Size = {size}u;")
+    lines += ["} // namespace record", ""]
     lines.append("// True for parameters of a channel (addressed with a channel number).")
     lines.append("constexpr bool isChannelParameter(Parameter parameter) {")
     lines.append("    switch (parameter) {")

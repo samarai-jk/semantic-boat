@@ -6,18 +6,6 @@ namespace slstm32::sensors {
 
 namespace {
 
-const char* kindName(AlarmKind kind) {
-    switch (kind) {
-    case AlarmKind::high: return "high";
-    case AlarmKind::low: return "low";
-    case AlarmKind::riseRate: return "rise";
-    case AlarmKind::sensorFault: return "fault";
-    case AlarmKind::trendFall: return "fall";
-    case AlarmKind::trendRise: return "rise";
-    }
-    return "?";
-}
-
 const char* identityName(Identity::Kind kind) {
     switch (kind) {
     case Identity::Kind::none: return "none";
@@ -33,7 +21,7 @@ const char* identityName(Identity::Kind kind) {
 
 bool MeasurementConsole::registerCommands(CommandConsole& console) {
     return console.add({"sensors", "sensors  list measurement channels", &sensorsCommand, this}) &&
-           console.add({"sensor", "sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]",
+           console.add({"sensor", "sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset [alarms] | stats]",
                         &sensorCommand, this}) &&
            console.add({"ack", "ack  acknowledge all alarms", &ackCommand, this});
 }
@@ -45,7 +33,7 @@ void MeasurementConsole::list() const {
     for (std::size_t index = 0u; index < registry_.size(); ++index) {
         const auto& channel = registry_.at(index);
         unsigned active = 0u;
-        for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) active += channel.alarmActive(rule) ? 1u : 0u;
+        for (std::size_t rule = 0u; rule < Measurement::alarmSlots; ++rule) active += channel.alarmActive(rule) ? 1u : 0u;
         const auto unit = unitName(channel.quantity());
         if (channel.samples() == 0u) {
             log_.writef(LogLevel::info, "  %-10s %s %u  %s", channel.name(), quantityName(channel.quantity()),
@@ -90,21 +78,31 @@ void MeasurementConsole::detail(std::size_t index) const {
                     static_cast<unsigned long>(span / 60u), static_cast<unsigned long>(span % 60u),
                     static_cast<unsigned long>(channel.trendWindow() / 60000u), tendencyName(channel.tendency()));
     }
-    for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) {
-        const auto& alarm = channel.alarmRule(rule);
+    const auto& output = channel.outputRule();
+    std::int32_t outputValue = 0;
+    log_.writef(LogLevel::info, "  output %s%s%u%s: %s", functionName(output.function), windowed(output.function) ? " of " : "",
+                windowed(output.function) ? static_cast<unsigned>(output.window.length) : 0u,
+                windowed(output.function) ? (output.window.samples ? " samples" : " s") : "",
+                channel.output(outputValue) ? formatMilli(a, outputValue, 3u) : "-");
+    for (std::size_t rule = 0u; rule < Measurement::alarmSlots; ++rule) {
+        if (!channel.alarmUsed(rule)) continue;
         const char* state = !channel.alarmActive(rule) ? "ok" : channel.alarmAcknowledged(rule) ? "active, acknowledged" : "ACTIVE";
-        if (alarm.kind == AlarmKind::sensorFault) {
-            log_.writef(LogLevel::info, "  alarm %u: fault %s, delay %lu ms: %s", static_cast<unsigned>(rule),
-                        severityName(alarm.severity), static_cast<unsigned long>(alarm.delayMs), state);
-        } else {
-            const bool trend = alarm.kind == AlarmKind::trendFall || alarm.kind == AlarmKind::trendRise;
-            log_.writef(LogLevel::info, "  alarm %u: %s %s %s%s %s (hyst %s), delay %lu ms%s%s: %s",
-                        static_cast<unsigned>(rule), kindName(alarm.kind), formatMilli(a, alarm.threshold), unit,
-                        alarm.kind == AlarmKind::riseRate ? "/min" : trend ? " per window" : "",
-                        severityName(alarm.severity),
-                        formatMilli(b, alarm.hysteresis), static_cast<unsigned long>(alarm.delayMs),
-                        alarm.latching ? ", latching" : "", channel.thresholdOverridden(rule) ? ", changed" : "", state);
+        if (rule == Measurement::faultSlot) {
+            const auto& fault = channel.faultRule();
+            log_.writef(LogLevel::info, "  fault: %s, delay %u s%s: %s", severityName(fault.severity),
+                        static_cast<unsigned>(fault.delaySeconds), fault.latching ? ", latching" : "", state);
+            continue;
         }
+        const auto& alarm = channel.alarmRule(rule);
+        const bool band = alarm.comparison == Comparison::inside || alarm.comparison == Comparison::outside;
+        log_.writef(LogLevel::info, "  alarm %u: %s %s %u%s %s %s%s%s %s (hyst %s), delay %u s%s: %s",
+                    static_cast<unsigned>(rule), severityName(alarm.severity), functionName(alarm.function),
+                    windowed(alarm.function) ? static_cast<unsigned>(alarm.window.length) : 0u,
+                    windowed(alarm.function) ? (alarm.window.samples ? " samples" : " s") : "",
+                    comparisonName(alarm.comparison), formatMilli(a, alarm.threshold), band ? ".." : "",
+                    band ? formatMilli(c, alarm.upper) : "", alarm.function == ValueFunction::rate ? "/min" : unit,
+                    formatMilli(b, alarm.hysteresis), static_cast<unsigned>(alarm.delaySeconds),
+                    alarm.latching ? ", latching" : "", state);
     }
 }
 
@@ -168,18 +166,31 @@ void MeasurementConsole::sensorCommand(void* context, std::size_t argc, const ch
         parseMilli(argv[3], number)) {
         self.calibrate(index, number, action[3] == '2');
     } else if (std::strcmp(action, "alarm") == 0 && argc == 5u && parseMilli(argv[4], number)) {
+        // Changes the threshold of an existing rule; the full rule is set over CAN.
         char* end = nullptr;
         const auto rule = std::strtoul(argv[3], &end, 10);
-        if (*end != '\0' || !self.registry_.at(index).setThreshold(rule, number)) {
-            self.log_.writef(LogLevel::error, "sensor: no adjustable alarm rule %s", argv[3]);
+        if (*end != '\0' || rule >= Measurement::maxAlarms || !self.registry_.at(index).alarmUsed(rule)) {
+            self.log_.writef(LogLevel::error, "sensor: no alarm rule %s", argv[3]);
             return;
         }
-        self.reportSaved(index, self.registry_.setThreshold(index, rule, number));
+        auto changed = self.registry_.at(index).alarmRule(rule);
+        changed.threshold = number;
+        const auto result = self.registry_.setAlarmRule(index, rule, changed);
+        if (result == MeasurementRegistry::RuleResult::invalid || result == MeasurementRegistry::RuleResult::noWindow) {
+            self.log_.write(LogLevel::error, "sensor: threshold not valid for this rule");
+            return;
+        }
+        if (result == MeasurementRegistry::RuleResult::notStored) {
+            self.log_.writef(LogLevel::warning, "%s: applied, but not stored", self.registry_.at(index).name());
+        }
         self.detail(index);
     } else if (std::strcmp(action, "reset") == 0 && argc == 3u) {
-        const bool erased = self.registry_.resetSettings(index);
-        self.log_.writef(LogLevel::info, "%s: defaults%s", self.registry_.at(index).name(),
-                         erased ? ", stored settings erased" : "");
+        const bool erased = self.registry_.resetCalibration(index);
+        self.log_.writef(LogLevel::info, "%s: calibration reset%s", self.registry_.at(index).name(),
+                         erased ? ", stored calibration erased" : "");
+    } else if (std::strcmp(action, "reset") == 0 && argc == 4u && std::strcmp(argv[3], "alarms") == 0) {
+        self.registry_.resetProcessing(index);
+        self.log_.writef(LogLevel::info, "%s: alarms and output back to the firmware defaults", self.registry_.at(index).name());
     } else if (std::strcmp(action, "trend") == 0 && argc == 4u) {
         char* end = nullptr;
         const auto minutes = std::strtoul(argv[3], &end, 10);
@@ -195,7 +206,7 @@ void MeasurementConsole::sensorCommand(void* context, std::size_t argc, const ch
         self.log_.writef(LogLevel::info, "%s: statistics restarted", self.registry_.at(index).name());
     } else {
         self.log_.write(LogLevel::error,
-                        "usage: sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]");
+                        "usage: sensor <name> [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset [alarms] | stats]");
     }
 }
 

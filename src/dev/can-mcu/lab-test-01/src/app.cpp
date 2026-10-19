@@ -56,8 +56,9 @@ namespace {
 
 using slstm32::LogLevel;
 namespace sensors = slstm32::sensors;
-using sensors::AlarmKind;
+using sensors::Comparison;
 using sensors::Severity;
+using sensors::ValueFunction;
 using slstm32::drivers::ToneStep;
 
 constexpr std::size_t logBufferBytes = 1024u;
@@ -164,30 +165,30 @@ lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
 lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 
 // Measurement channels: the board and MCU probes and a DFRobot DHT20 on the
-// I2C connectors ("air", "air-rh"). The alarm rules of the board channel are
-// bench values: a heat gun on the board reaches all three severities.
-// (The other sensors tried on LT1 have drivers in slstm32; see
+// I2C connectors ("air", "air-rh"). The alarm rules are firmware defaults;
+// rules set over CAN replace them (stored per channel). The rules of the
+// board channel are bench values: a heat gun on the board reaches all three
+// severities. (The other sensors tried on LT1 have drivers in slstm32; see
 // slstm32/SENSORS.md for how to wire them up and what was measured.)
+// Fields: function, comparison, severity, latching, window, delay (s),
+// threshold, upper (bands), hysteresis; m°C.
 constexpr sensors::AlarmRule boardAlarms[]{
-    {AlarmKind::high, Severity::warning, 40000, 2000, 3000u, false, true},
-    {AlarmKind::high, Severity::alarm, 50000, 2000, 2000u, false, true},
-    {AlarmKind::high, Severity::emergency, 60000, 3000, 1000u, true, false},
-    {AlarmKind::sensorFault, Severity::alarm, 0, 0, 5000u, false, false},
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {10u, false}, 3u, 40000, 0, 2000},
+    {ValueFunction::average, Comparison::above, Severity::alarm, false, {10u, false}, 2u, 50000, 0, 2000},
+    {ValueFunction::last, Comparison::above, Severity::emergency, true, {}, 1u, 60000, 0, 3000},
 };
 constexpr sensors::AlarmRule mcuAlarms[]{
-    {AlarmKind::riseRate, Severity::warning, 10000, 3000, 0u, false, false},
-    {AlarmKind::high, Severity::alarm, 75000, 3000, 2000u, false, true},
+    {ValueFunction::rate, Comparison::above, Severity::warning, false, {}, 0u, 10000, 0, 3000},
+    {ValueFunction::average, Comparison::above, Severity::alarm, false, {10u, false}, 2u, 75000, 0, 3000},
 };
 // The DHT20: a missing or failing sensor is a warning after 10 s.
-constexpr sensors::AlarmRule airAlarms[]{
-    {AlarmKind::sensorFault, Severity::warning, 0, 0, 10000u, false, false},
-};
 constexpr sensors::MeasurementConfig boardChannelConfig{
-    "board", sensors::Quantity::temperature, 0u, 10000u, 4000u, boardAlarms, sizeof boardAlarms / sizeof boardAlarms[0]};
+    "board", sensors::Quantity::temperature, 0u, 10000u, 4000u, boardAlarms, sizeof boardAlarms / sizeof boardAlarms[0],
+    {true, Severity::alarm, 5u, false}};
 constexpr sensors::MeasurementConfig mcuChannelConfig{
     "mcu", sensors::Quantity::temperature, 1u, 10000u, 8000u, mcuAlarms, sizeof mcuAlarms / sizeof mcuAlarms[0]};
 constexpr sensors::MeasurementConfig airChannelConfig{
-    "air", sensors::Quantity::temperature, 2u, 10000u, 0u, airAlarms, sizeof airAlarms / sizeof airAlarms[0]};
+    "air", sensors::Quantity::temperature, 2u, 10000u, 0u, nullptr, 0u, {true, Severity::warning, 10u, false}};
 constexpr sensors::MeasurementConfig airHumidityChannelConfig{
     "air-rh", sensors::Quantity::relativeHumidity, 0u, 10000u, 0u, nullptr, 0u};
 sensors::Measurement boardChannel{boardChannelConfig};
@@ -201,8 +202,14 @@ slstm32::drivers::Dht20Driver dht20{runtime, i2c, logger, &airChannel, &airHumid
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[lab_test_01::sensorSettingsSlots]{};
 slstm32::storage::KeyedRecordStore sensorSettings{eeprom, lab_test_01::sensorSettingsOffset, sensorSettingsKeys};
+// Windows for averages, minima, and maxima of outputs and alarm rules: LT1
+// is a lab device and can afford many fine ones (16 windows of 16 buckets,
+// about 2.4 KiB of RAM).
+sensors::StaticWindowPool<16u, 16u> windows;
+static_assert(sizeof channels / sizeof channels[0] <= lab_test_01::measurementChannels, "EEPROM area for the channels");
 sensors::MeasurementRegistry measurements{runtime, logger, channels, sizeof channels / sizeof channels[0],
-                                          &sensorSettings, &events, lab_test_01::alarmChanged};
+                                          &sensorSettings, &events, lab_test_01::alarmChanged, &windows,
+                                          &eeprom, lab_test_01::channelProcessingOffset};
 sensors::MeasurementConsole measurementConsole{measurements, logger};
 sensors::MeasurementLog measurementLog{runtime, logger, measurements, 5000u};
 // The channels on B1S (src/lib/b1s/README.md), all sent as B1S messages
@@ -219,9 +226,8 @@ const b1s::ChannelConfig b1sChannels[]{
 };
 b1s::ChannelSettings::Override b1sOverrides[lab_test_01::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, lab_test_01::b1sSettingsOffset, b1sOverrides};
-b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels,
-                                               sizeof b1sChannels / sizeof b1sChannels[0], 2000u, logger,
-                                               &b1sSettings};
+b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
+b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels, b1sStates, 2000u, logger, &b1sSettings};
 
 // Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
 // severity: a quiet "have a look" (the fridge is warm), firm beeps that ask

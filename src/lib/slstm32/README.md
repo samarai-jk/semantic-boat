@@ -348,34 +348,55 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   `voltage`), in thousandths of its unit (m°C, 0.001 %, mV). A driver calls
   `update(raw, now)` or `fail(fault, now)`; the channel applies the
   calibration (`value = raw * gainPpm / 1e6 + offset`), an optional smoothing
-  filter, minimum and maximum, a rate of change per minute (internal ring of 8
-  points over one minute), staleness, and up to four alarm rules. A
-  combined sensor (temperature and humidity) feeds one channel per quantity.
+  filter (for the rate and trend), minimum and maximum, a rate of change per
+  minute (internal ring of 8 points over one minute), staleness, an output
+  value, up to four alarm rules, and a sensor-fault alarm. A combined
+  sensor (temperature and humidity) feeds one channel per quantity. Its raw
+  value (`rawValue()`) is the latest calibrated sample unless the driver
+  sets another (`setRawValue()`).
+- **Value functions** (`ValueFunction`): `last`, and over a window
+  `average`, `minimum`, `maximum`, `change` (newest minus oldest part of the
+  window, e.g. a 3-hour pressure tendency), plus `rate` (per minute).
+  Windows (`window.hpp`) slide over seconds or samples with constant memory:
+  a fixed number of buckets, so 15 s and 6 h cost the same; precision is
+  window / buckets, windows of at most `buckets` samples are exact. The
+  firmware decides the budget with one `StaticWindowPool<windows, buckets>`
+  (about 48 + 6 x buckets bytes per window): none on a display, many fine
+  ones on a monitoring device.
+- **Output** (`OutputRule`): the value published and shown, `output()`:
+  `last`, or `average`, `minimum`, `maximum` over a window.
+- **Alarm rules** (`AlarmRule`, four slots): function (and window),
+  comparison (`above`, `atLeast`, `below`, `atMost`, `inside` or `outside`
+  a band), threshold(s), hysteresis, delay in seconds (0 = at the first
+  sample), severity (`warning` "have a look", `alarm` "act", `emergency`
+  "act now"), optional latching (stays active until acknowledged). Value
+  rules keep their state while the channel has no valid value; the
+  **fault alarm** (`FaultRule`: off or a severity, delay, latching) covers
+  that case.
 - `MeasurementConfig` names the channel, sets its quantity and instance
-  (unique per quantity; it is also the NMEA 2000 instance), its stale timeout,
-  filter time constant, and `AlarmRule`s: `high`, `low`, `riseRate`, or
-  `sensorFault`, each with a severity (`warning` "have a look", `alarm` "act",
-  `emergency` "act now"), threshold, hysteresis, delay, optional latching
-  (stays active until acknowledged), and the choice of filtered or latest
-  value. Value rules keep their state while the channel has no valid value;
-  the `sensorFault` rule covers that case.
+  (unique per quantity; it is also the NMEA 2000 instance), stale timeout,
+  filter time constant, and the default rules, fault alarm, and output.
+  Rules set at run time (`MeasurementRegistry::setAlarmRule()`, over CAN
+  with B1S) replace the defaults and are stored per channel.
 - A slow trend (`MeasurementConfig::trendWindowMs`, buffer from
   `Measurement::setTrendBuffer()`): the change of the smoothed value over the
-  window, e.g. the 3-hour barometric tendency with 19 samples (152 bytes).
-  Alarm kinds `trendFall` and `trendRise` act on it, `tendency()` labels it
-  (steady, rising, falling, rising/falling rapidly) with the configured
-  thresholds. After a restart or a sensor gap the trend covers a shorter
-  span until the buffer has filled.
+  window, e.g. the 3-hour barometric tendency with 19 samples (152 bytes),
+  labelled by `tendency()` (steady, rising, falling, rising/falling rapidly)
+  for displays and logs. Alarms on a trend use the `change` function. After
+  a restart or a sensor gap the trend covers a shorter span until the
+  buffer has filled.
 - `Identity` names the physical sensor behind a channel (`internal`, `i2c`
   bus/mux/address, `oneWire` ROM code, `analog` input, plus a subchannel for
   multi-quantity sensors). It is the key of the persisted settings.
 - `MeasurementRegistry` (service) runs all channels of a device: it checks
   names and instances for duplicates, ticks every channel, applies and
-  persists calibration and changed thresholds per identity in a
-  `KeyedRecordStore` (adding or reordering sensors never touches the settings
-  of the others), logs every alarm transition, and publishes `AlarmEvent`s on
-  the event bus. `summary()` reports the most severe active and unacknowledged
-  alarm.
+  persists calibration per sensor identity in a `KeyedRecordStore` (adding
+  or reordering sensors never touches the settings of the others), applies
+  and persists alarm rules, fault alarm, and output per channel in their
+  own area (`processingBytes(channels)`: five 128-byte records per channel,
+  tagged with the channel's name), hands out the windows, logs every alarm
+  transition, and publishes `AlarmEvent`s on the event bus. `summary()`
+  reports the most severe active and unacknowledged alarm.
 - `AlarmAnnunciator` (service) plays one `TonePattern` per severity while an
   alarm waits for acknowledgement and reports summary changes to an indicator
   callback (LEDs, display). Patterns and the acknowledge input are device
@@ -385,8 +406,10 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
   and standard deviation, yaw rate mean and maximum. `n2k::AttitudePublisher`
   sends it as PGN 127250/127251/127257.
 - `MeasurementConsole` adds the service commands `sensors`, `sensor <name>
-  [cal|cal2 <ref> | alarm <rule> <value> | trend <min> | reset | stats]`, and
-  `ack`.
+  [cal|cal2 <ref> | alarm <rule> <threshold> | trend <min> | reset [alarms]
+  | stats]`, and `ack`. Full rules are set over CAN (B1S).
+- Host tests: `tests/sensors_tests.cpp` (windows, rules, persistence; build
+  command in the file).
 
 Publishing on NMEA 2000 lives in the `n2k` library (`n2k::MeasurementPublisher`:
 PGN 130316 for temperatures, 130313 for humidity, "not available" for failed

@@ -11,11 +11,12 @@ The data on B1S is the sensory input of a semantic information system: every
 measurement is an observation of a described signal (device, channel,
 quantity, location), so it can become part of an information graph.
 
-**Status:** draft 0.1 (2026-10-18). Implemented: NMEA 2000 network
+**Status:** draft 0.2 (2026-10-19). Implemented: NMEA 2000 network
 management (`src/lib/n2k`), the standard PGNs listed in
 [Standard PGNs](#standard-pgns) with the per-channel encoding switch
-(compile-time, or over CAN), Measurement (65280), Channel Description
-(130819), configuration over CAN (Service 126720, Command 61184,
+(compile-time, or over CAN), Measurement (65280), Measurement Raw (65282),
+Channel Description (130819), configuration over CAN (Service 126720,
+Command 61184, including alarm rules, output function, and send periods,
 [CONFIGURATION.md](CONFIGURATION.md)), verified on LT1 with can-bench, and the
 Signal K plugin
 (Semantic Boat Devices, [B1S Devices](../../signalk/plugin/semantic-boat-devices/README.md#b1s-devices)). Everything
@@ -225,7 +226,8 @@ header and ignore proprietary messages of other manufacturers.
 | --- | --- | --- | --- |
 | 65280 | single frame, broadcast | [Measurement](#measurement-65280) | implemented |
 | 65281 | single frame, broadcast | [Output Status](#output-status-65281) | planned |
-| 65282..65535 | single frame, broadcast | Reserved for B1S | |
+| 65282 | single frame, broadcast | [Measurement Raw](#measurement-raw-65282) | implemented |
+| 65283..65535 | single frame, broadcast | Reserved for B1S | |
 | 130816 | fast packet, broadcast | [Measurement Wide](#measurement-wide-130816) | planned |
 | 130817 | fast packet, broadcast | [Measurement Summary](#measurement-summary-130817) | planned |
 | 130818 | fast packet, broadcast | [Event](#event-130818) | planned |
@@ -269,10 +271,25 @@ One scalar value of one channel. 8 bytes, single frame.
 | 3 | Channel | uint8, local to the device, 0..252 |
 | 4..7 | Value | int32 or float32, per quantity |
 
-Sent at the channel's period (default per device; typically 1..2 s for
-environment values, faster for control values) and, optionally, early on a
-significant change. A channel whose sensor is missing keeps being sent with
-"not available", so consumers can tell "missing" from "device gone".
+The value is the channel's **output**: its latest sample, or the average,
+minimum, or maximum over a window of seconds or samples (configurable per
+channel, [CONFIGURATION.md](CONFIGURATION.md)). Sent at the channel's
+period (firmware default, typically 1..2 s for environment values, faster
+for control values; configurable per channel, 0.1 s at the shortest) at
+multiples of the period, so a period equal to the window gives one value
+per window and a shorter one a rolling value. A value goes out only if a
+new sample arrived since the last one. A channel whose sensor is missing
+keeps being sent with "not available" at every period, so consumers can
+tell "missing" from "device gone".
+
+### Measurement Raw (65282)
+
+The channel's raw value, next to its output, when configured for the
+channel (its own period, off by default). Same layout as
+[Measurement](#measurement-65280). What "raw" means is up to the device's
+driver; usually the latest calibrated sample before averaging. Signal K
+gets it on the channel's path with `Raw` appended
+(`environment.inside.temperatureRaw`).
 
 ### Measurement Wide (130816)
 
@@ -346,9 +363,9 @@ request it when they see a channel they do not know.
 | 0..1 | Proprietary header | |
 | 2 | Channel | uint8 |
 | 3 | Quantity or output kind | uint8 (quantity for measurement channels, output kind for outputs) |
-| 4 | Flags | bits 0..1 encoding mode (0 `b1s`, 1 `standard`, 2 `off`, 3 not available), bit 2 output channel, bit 3 the quantity has no standard PGN, bits 4..7 reserved (1) |
+| 4 | Flags | bits 0..1 encoding mode (0 `b1s`, 1 `standard`, 2 `off`, 3 not available), bit 2 output channel, bit 3 the quantity has no standard PGN, bit 4 the raw value is sent (Measurement Raw), bits 5..7 reserved (1) |
 | 5 | Standard PGN instance | uint8, `0xFF` = none |
-| 6..7 | Nominal period | uint16, 0.01 s, `0xFFFF` = on change only |
+| 6..7 | Nominal period | uint16, 0.01 s, the channel's period; `0xFFFF` = on change only |
 | 8.. | Location | NMEA 2000 STRING_LAU, ASCII, at most 32 characters |
 | .. | Label | STRING_LAU, ASCII, at most 32 characters |
 
@@ -382,9 +399,9 @@ add their own services.
 
 ## Alerts
 
-Measurement alarms (the warning / alarm / emergency rules of
-`slstm32::sensors`) are sent as the standard NMEA 2000 alert messages
-*(planned)*:
+Measurement alarms (up to four configurable rules and a sensor-fault alarm
+per channel, [CONFIGURATION.md](CONFIGURATION.md)) are sent as the standard
+NMEA 2000 alert messages *(planned)*:
 
 | PGN | Message | Use |
 | --- | --- | --- |
@@ -429,6 +446,8 @@ address 150):
   template and the channel's location, for example quantity `temperature`
   (`environment.{location}.temperature`) with location `inside.refrigerator`.
   Unassigned channels appear under `b1s.unassigned.<device ID>.<channel>.<quantity>`.
+  A raw value (Measurement Raw) goes to the channel's path with `Raw`
+  appended.
   Optional path prefixes, one for the plugin and one per device (a Pi-side
   device setting), put these paths into a namespace:
   `<plugin prefix>.<device prefix>.<path>`.
@@ -447,10 +466,10 @@ address 150):
 1. **First power-on:** the device ID is derived from the MCU; the device
    claims its product's preferred address and sends its channel descriptions
    with empty locations. Signal K shows it as unassigned.
-2. **Commissioning** *(planned, configuration over CAN)*: the device role,
-   channel locations and labels, standard-PGN instances and encoding modes,
-   and alarm thresholds are set from the Pi. The Pi keeps a copy of every
-   device's configuration.
+2. **Commissioning** (configuration over CAN): the device role, channel
+   locations and labels, standard-PGN instances and encoding modes, output
+   functions, send periods, and alarm rules are set from the Pi. The Pi
+   keeps a copy of every device's configuration.
 3. **Replacement** *(planned)*: a new, unassigned device of the same product
    appears while a configured one is missing; the tool offers to restore the
    missing device's configuration onto it. Signal K paths stay the same.
@@ -460,18 +479,20 @@ address 150):
 
 `src/lib/b1s` is HAL-free like `n2k` and `slstm32` and builds on both. A
 device lists its measurement channels as `b1s::ChannelConfig` (channel
-number, requested encoding, NMEA 2000 source, location, label), runs a
-`b1s::MeasurementPublisher` as a service, and registers
+number, requested encoding, NMEA 2000 source, location, label, periods of
+the value and the raw value), gives each a `b1s::ChannelState` (its send
+schedule), runs a `b1s::MeasurementPublisher` as a service, and registers
 `MeasurementPublisher::handleRequest` with `n2k::Node::onRequest` so that
 requests for Channel Descriptions are answered. Identity values (product
 code, preferred address, device class and function) come from
 `b1s::product::<device>` in the generated registry header. Example:
 `src/dev/can-mcu/lab-test-01/src/app.cpp`.
 
-Cost on LT1 (product build without development tools, 4 channels): about
-1.3 KiB of flash and 16 bytes of RAM. The publisher has no buffers of its
-own; a Channel Description is built on the stack (76 bytes) and sent through
-the node's fast-packet buffer.
+Cost on LT1 (product build without development tools, 4 channels,
+2026-10-19): publisher and channel settings about 2.1 KiB of flash, 16
+bytes of RAM per channel (`ChannelState`) plus 8 per settings slot. The
+publisher has no buffers of its own; a Channel Description is built on the
+stack (76 bytes) and sent through the node's fast-packet buffer.
 
 After changing `registry.yaml`:
 
@@ -484,6 +505,15 @@ python3 src/lib/b1s/tools/generate_registry.py --check  # verify it is current
 
 These rules are binding (AGENTS.md). They keep B1S consistent over many
 devices and years.
+
+> **Draft phase (decided 2026-10-19):** no product device runs B1S yet
+> (only LT1, a lab device), so there is no installed base to stay
+> compatible with. Until the first product device ships, codes and layouts
+> may still be redesigned: replaced, renumbered, or removed, with registry,
+> generated header, devices, tools, plugin, and documentation changed
+> together. Everything else below applies already (registry entries, no
+> numbers in device code, the PGN ranges). When a product device first
+> runs B1S, remove this note: from then on the freeze rules apply in full.
 
 **Before adding anything, reuse:** an existing quantity, event, output kind,
 or command that means the same thing. Location and label say *where* and

@@ -10,13 +10,14 @@ namespace slstm32::sensors {
 
 // Service commands for the measurement channels of a registry:
 //   sensors                          list all channels
-//   sensor <name>                    details, calibration, alarm rules
+//   sensor <name>                    details, calibration, output, alarm rules
 //   sensor <name> cal <reference>    offset calibration at a reference value
 //   sensor <name> cal2 <reference>   second point: offset and gain from the
 //                                    last "cal" point and this one
-//   sensor <name> alarm <rule> <threshold>
+//   sensor <name> alarm <rule> <threshold>   threshold of an existing rule
 //   sensor <name> trend <minutes>    trend window for tests (not stored)
-//   sensor <name> reset              calibration and thresholds to defaults
+//   sensor <name> reset              calibration to defaults
+//   sensor <name> reset alarms       alarms and output to the firmware defaults
 //   sensor <name> stats              restart minimum and maximum
 //   ack                              acknowledge all alarms
 // Values are in the channel's unit (C, %, V), e.g. "sensor board cal 21.5".

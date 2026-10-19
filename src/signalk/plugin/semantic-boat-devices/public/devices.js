@@ -163,7 +163,12 @@
 
   // --- B1S device: settings grouped by device and channel --------------------
 
-  const severities = ['Warning', 'Alarm', 'Emergency'];
+  const severityLabels = { off: 'Off', warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' };
+  const functionLabels = { none: 'latest value', last: 'latest value', average: 'average', minimum: 'minimum',
+    maximum: 'maximum', change: 'change', rate: 'rate of change' };
+  const comparisonLabels = { above: 'above', atLeast: 'at least', below: 'below', atMost: 'at most',
+    inside: 'inside', outside: 'outside' };
+  const windowed = name => ['average', 'minimum', 'maximum', 'change'].includes(name);
   const encodingLabels = { automatic: 'automatic', standard: 'standard PGN', b1s: 'B1S message', off: 'off (not sent)' };
 
   function age(ms) {
@@ -183,8 +188,6 @@
     const path = channel.path ?? (channel.encoding === 'standard' ? 'path appears with the first value Signal K maps' : '');
     return { via, value, age: channel.encoding === 'off' ? '' : age(channel.ageMs), stale, path };
   }
-  const ruleTexts = ['when above', 'when below', 'when rising faster than', 'when the sensor fails',
-    'when falling by more than', 'when rising by more than'];
 
   function parameter(card, name, channel = null) {
     return card.parameters?.find(entry => entry.name === name && entry.channel === channel);
@@ -335,7 +338,91 @@
     } else {
       rows.push(fieldRow('Sent as', null, 'B1S message (no standard PGN for this quantity)'));
     }
-    return [block('', '', rows, [saveButton(device, 'Save setup', edits)])];
+    return [block('', '', rows, [saveButton(device, 'Save setup', edits)]), outputBlock(device, channel, card)].filter(Boolean);
+  }
+
+  // --- small form controls ------------------------------------------------------
+
+  function choice(options, value, label) {
+    const element = document.createElement('select');
+    for (const [name, text_] of Object.entries(options)) element.append(Object.assign(text('option', text_), { value: name }));
+    element.value = value;
+    element.setAttribute('aria-label', label);
+    return element;
+  }
+
+  function numberField(value, label, placeholder = '') {
+    const element = Object.assign(document.createElement('input'), { value: String(value ?? ''), placeholder, inputMode: 'decimal' });
+    element.className = 'short';
+    element.setAttribute('aria-label', label);
+    return element;
+  }
+
+  function wholeNumber(input, name, maximum = 65535) {
+    const number = input.value.trim() === '' ? 0 : Number(input.value);
+    if (!Number.isInteger(number) || number < 0 || number > maximum) throw new Error(`${name}: a whole number 0..${maximum}`);
+    return number;
+  }
+
+  // Seconds with one decimal -> tenths of a second (0 = empty).
+  function tenths(input, name) {
+    const number = input.value.trim() === '' ? 0 : Number(input.value);
+    if (!Number.isFinite(number) || number < 0 || number > 6553.5) throw new Error(`${name}: 0.1..6553.5 s`);
+    if (number !== 0 && number < 0.1) throw new Error(`${name}: at least 0.1 s`);
+    return Math.round(number * 10);
+  }
+
+  // Unit people read for a value of a channel; differences of temperatures in °C too.
+  function unitLabel(channel, perMinute = false) {
+    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit ?? '';
+    return perMinute ? `${unit}/min` : unit;
+  }
+
+  // Output: the function of the value that is sent, and how often it and its raw value go out.
+  function outputBlock(device, channel, card) {
+    const entry = parameter(card, 'channelOutput', channel.channel);
+    if (!entry || entry.status !== 'done') return null;
+    const current = entry.value;
+    const fn = choice({ last: 'latest sample', average: 'average', minimum: 'minimum', maximum: 'maximum' },
+      current.function === 'none' ? 'last' : current.function, 'Value sent');
+    const length = numberField(current.window || '', 'Window length', 'e.g. 10');
+    const samples = current.flags.includes('windowSamples');
+    const lengthUnit = choice({ s: 's', samples: 'samples' }, samples ? 'samples' : 's', 'Window unit');
+    const windowPart = text('span', '', 'inline-group');
+    windowPart.append(text('span', 'over', 'muted'), length, lengthUnit);
+    const period = numberField(current.period ? current.period / 10 : '', 'Send every', 'default');
+    const rawPeriod = numberField(current.rawPeriod ? current.rawPeriod / 10 : '', 'Send the raw value every', 'never');
+    const show = () => { windowPart.hidden = !windowed(fn.value); };
+    fn.onchange = show;
+    show();
+    const read = () => ({
+      function: fn.value,
+      flags: lengthUnit.value === 'samples' ? ['windowSamples'] : [],
+      window: windowed(fn.value) ? wholeNumber(length, 'Window') : 0,
+      period: tenths(period, 'Send every'),
+      rawPeriod: tenths(rawPeriod, 'Raw value')
+    });
+    const original = JSON.stringify(read());
+    const edit = { element: text('span'), unit: '', entry,
+      change: () => { const fields = read(); return JSON.stringify(fields) === original ? null : { value: fields }; } };
+    const valueRow = text('div', '', 'field');
+    const valueControls = text('span', '', 'field-value wrap');
+    valueControls.append(fn, windowPart);
+    valueRow.append(text('span', 'Value sent', 'field-label'), valueControls,
+      text('small', 'Latest sample, or the average, minimum, or maximum over the last seconds or samples.', 'field-hint'));
+    const periodRow = text('div', '', 'field');
+    const periodControls = text('span', '', 'field-value');
+    periodControls.append(period, text('span', `s${channel.period ? ` (now ${channel.period} s)` : ''}`, 'field-unit'));
+    periodRow.append(text('span', 'Send every', 'field-label'), periodControls,
+      text('small', 'Empty = firmware default. Shorter than the window: a rolling value (e.g. the 10 s average every second); ' +
+        'equal to the window: one value per window. Only new samples are sent.', 'field-hint'));
+    const rawRow = text('div', '', 'field');
+    const rawControls = text('span', '', 'field-value');
+    rawControls.append(rawPeriod, text('span', 's', 'field-unit'));
+    rawRow.append(text('span', 'Raw value every', 'field-label'), rawControls,
+      text('small', `Empty = not sent. The raw value as the device defines it, usually the latest sample, on ${channel.rawPath ?? 'the channel path + "Raw"'}.`, 'field-hint'));
+    return block('Output', 'What the channel sends, and how often.', [valueRow, periodRow, rawRow],
+      [saveButton(device, 'Save output', [edit])]);
   }
 
   function calibrationPane(device, channel, card) {
@@ -357,13 +444,13 @@
       await loadParameters(device.id);
       render();
     }, title);
-    const reset = button('Reset channel to defaults', async () => {
-      if (!confirm(`Reset calibration AND alarm thresholds of ${channel.label || `channel ${channel.channel}`} to the defaults?`)) return;
-      const result = await api(`b1s/devices/${device.id}/commands/resetChannel`, 'POST', { channel: channel.channel });
+    const reset = button('Reset calibration', async () => {
+      if (!confirm(`Reset the calibration of ${channel.label || `channel ${channel.channel}`} (offset 0, gain 1)?`)) return;
+      const result = await api(`b1s/devices/${device.id}/commands/resetCalibration`, 'POST', { channel: channel.channel });
       notice(`Reset: ${result.result}`, result.result !== 'done');
       await loadParameters(device.id);
       render();
-    }, 'Calibration and alarm thresholds back to the firmware defaults');
+    }, 'Offset 0, gain 1');
     reset.classList?.add('danger');
     return [
       block('Calibrate against a reference',
@@ -378,34 +465,155 @@
     ];
   }
 
+  // One alarm rule as a sentence: "[Warning] when the [average] over [10] [s]
+  // is [above] [40] °C for [3] s; clears [2] °C back; [ ] latching".
+  function alarmRow(channel, entry, state, onRemove) {
+    const fields = entry.value;
+    const draft = fields.function === 'none';
+    const si = entry.si ?? {};
+    const absolute = entry.absolute ?? {};
+    const shown = name => fields[name] === undefined || draft ? '' : display(si[name], entry.siUnit, absolute[name]).value;
+    const severity = choice({ warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' }, fields.severity ?? 'warning', 'Severity');
+    const fn = choice({ last: 'latest value', average: 'average', minimum: 'minimum', maximum: 'maximum', change: 'change',
+      rate: 'rate of change' }, draft ? 'last' : fields.function, 'Value');
+    const length = numberField(fields.window || '', 'Window length', '10');
+    const lengthUnit = choice({ s: 's', samples: 'samples' }, fields.flags?.includes('windowSamples') ? 'samples' : 's', 'Window unit');
+    const comparison = choice(comparisonLabels, fields.comparison ?? 'above', 'Comparison');
+    const threshold = numberField(shown('threshold'), 'Threshold');
+    const upper = numberField(shown('upper'), 'Upper limit');
+    const delay = numberField(draft ? '0' : String(fields.delay ?? 0), 'Delay in seconds');
+    const hysteresis = numberField(draft ? '' : shown('hysteresis'), 'Hysteresis', '0');
+    const latching = Object.assign(document.createElement('input'), { type: 'checkbox', checked: fields.flags?.includes('latching') ?? false });
+    latching.setAttribute('aria-label', 'Latching');
+    const unit = text('span', '', 'field-unit');
+    const upperUnit = text('span', '', 'field-unit');
+    const hysteresisUnit = text('span', '', 'field-unit');
+    const windowPart = text('span', '', 'inline-group');
+    windowPart.append(text('span', 'over', 'muted'), length, lengthUnit);
+    const upperPart = text('span', '', 'inline-group');
+    upperPart.append(text('span', 'and', 'muted'), upper, upperUnit);
+    const update = () => {
+      windowPart.hidden = !windowed(fn.value);
+      upperPart.hidden = !['inside', 'outside'].includes(comparison.value);
+      const perMinute = fn.value === 'rate';
+      unit.textContent = upperUnit.textContent = hysteresisUnit.textContent = unitLabel(channel, perMinute);
+    };
+    fn.onchange = update;
+    comparison.onchange = update;
+    update();
+    const sentence = text('div', '', 'alarm-sentence');
+    sentence.append(severity, text('span', 'when the', 'muted'), fn, windowPart, text('span', 'is', 'muted'), comparison,
+      threshold, unit, upperPart, text('span', 'for', 'muted'), delay, text('span', 's; clears', 'muted'), hysteresis,
+      hysteresisUnit, text('span', 'back;', 'muted'));
+    const latchLabel = text('label', '', 'inline-group');
+    latchLabel.append(latching, ' latching');
+    sentence.append(latchLabel);
+    const footer = text('div', '', 'alarm-footer');
+    footer.append(text('span', draft ? 'new, not saved yet' : state, `alarm-state${state === 'ACTIVE' ? ' active' : ''}`));
+    if (onRemove) footer.append(button(draft ? 'Discard' : 'Remove', onRemove, draft ? 'Discard this new rule' : 'Remove this rule from the device'));
+    const element = text('div', '', `alarm-row ${severity.value}`);
+    severity.onchange = () => { element.className = `alarm-row ${severity.value}`; };
+    element.append(sentence, footer);
+    const read = () => {
+      const band = ['inside', 'outside'].includes(comparison.value);
+      const isAbsolute = !['change', 'rate'].includes(fn.value);
+      if (threshold.value.trim() === '') throw new Error('Alarm: enter a threshold');
+      if (band && upper.value.trim() === '') throw new Error('Alarm: enter the upper limit of the band');
+      const flags = [];
+      if (latching.checked) flags.push('latching');
+      if (lengthUnit.value === 'samples') flags.push('windowSamples');
+      return {
+        value: { function: fn.value, comparison: comparison.value, severity: severity.value, flags,
+          window: windowed(fn.value) ? wholeNumber(length, 'Window') : 0, delay: wholeNumber(delay, 'Delay'),
+          threshold: 0, upper: 0, hysteresis: 0 },
+        si: { threshold: fromDisplay(threshold.value, channel.unit, isAbsolute),
+          upper: fromDisplay(band ? upper.value : threshold.value, channel.unit, isAbsolute),
+          hysteresis: hysteresis.value.trim() === '' ? 0 : fromDisplay(hysteresis.value, channel.unit, false) }
+      };
+    };
+    const snapshot = () => [severity, fn, length, lengthUnit, comparison, threshold, upper, delay, hysteresis]
+      .map(control => control.value).concat(latching.checked).join('|');
+    const original = draft ? null : snapshot();
+    return { element, edit: { element, unit: '', entry, change: () => (snapshot() === original ? null : read()) } };
+  }
+
   function alarmsPane(device, channel, card) {
-    const rows = [];
+    const fault = parameter(card, 'faultAlarm', channel.channel);
+    if (!fault || fault.status !== 'done') return [text('p', 'This channel has no alarms.', 'empty')];
+    const stateBits = parameter(card, 'alarmState', channel.channel)?.value ?? 0;
+    const stateOf = slot => (stateBits >> (2 * slot) & 1 ? (stateBits >> (2 * slot + 1) & 1 ? 'active, acknowledged' : 'ACTIVE') : 'ok');
     const edits = [];
-    for (let rule = 0; rule < 4; rule += 1) {
-      const definition = parameter(card, `alarmRule${rule}`, channel.channel);
-      if (!definition || definition.status !== 'done') continue;
-      const value = definition.value;
-      const kind = value & 0xff;
-      const severity = severities[(value >> 8) & 0xff] ?? 'Alarm';
-      const state = value & (1 << 17) ? (value & (1 << 18) ? 'active, acknowledged' : 'ACTIVE') : 'ok';
-      const row = text('div', '', 'alarm');
-      row.append(text('span', severity, `severity ${severity.toLowerCase()}`), text('span', ruleTexts[kind] ?? `rule ${kind}`, 'alarm-rule'));
-      const threshold = text('span', '', 'field-value');
-      if (kind !== 3) {
-        const edit = editor(parameter(card, `alarmThreshold${rule}`, channel.channel), { label: `${severity} threshold` });
-        if (edit) {
-          const perMinute = kind === 2 ? '/min' : kind >= 4 ? ' over the trend window' : '';
-          threshold.append(edit.element, text('span', `${edit.unit}${perMinute}`, 'field-unit'));
-          edits.push(edit);
-        }
-      }
-      row.append(threshold, text('span', `${state}${value & (1 << 16) ? ' · latching' : ''}`,
-        `alarm-state${state === 'ACTIVE' ? ' active' : ''}`));
-      rows.push(row);
+    // Fault alarm: always there, from off to emergency.
+    const faultSeverity = choice(severityLabels, fault.value.severity, 'Sensor fault alarm');
+    const faultDelay = numberField(String(fault.value.delay), 'Sensor fault delay in seconds');
+    const faultLatching = Object.assign(document.createElement('input'), { type: 'checkbox', checked: fault.value.flags.includes('latching') });
+    faultLatching.setAttribute('aria-label', 'Sensor fault alarm latching');
+    const faultSnapshot = () => [faultSeverity.value, faultDelay.value, faultLatching.checked].join('|');
+    const faultOriginal = faultSnapshot();
+    edits.push({ element: faultSeverity, unit: '', entry: fault, change: () => (faultSnapshot() === faultOriginal ? null
+      : { value: { severity: faultSeverity.value, flags: faultLatching.checked ? ['latching'] : [], delay: wholeNumber(faultDelay, 'Delay') } }) });
+    const faultSentence = text('div', '', 'alarm-sentence');
+    const faultLatch = text('label', '', 'inline-group');
+    faultLatch.append(faultLatching, ' latching');
+    faultSentence.append(faultSeverity, text('span', 'when the sensor gives no valid value for', 'muted'), faultDelay,
+      text('span', 's;', 'muted'), faultLatch);
+    const faultFooter = text('div', '', 'alarm-footer');
+    const faultState = stateOf(4);
+    faultFooter.append(text('span', fault.value.severity === 'off' ? 'off' : faultState, `alarm-state${faultState === 'ACTIVE' ? ' active' : ''}`));
+    const faultRow = text('div', '', `alarm-row ${fault.value.severity}`);
+    faultRow.append(faultSentence, faultFooter);
+    // Rules: the used slots and drafts added on the page.
+    card.alarmDrafts ??= new Map(); // channel -> Set of slots being added
+    const drafts = card.alarmDrafts.get(channel.channel) ?? new Set();
+    card.alarmDrafts.set(channel.channel, drafts);
+    const rows = [];
+    const draftRows = []; // new rules come last
+    const free = [];
+    for (let slot = 0; slot < 4; slot += 1) {
+      const entry = parameter(card, `alarm${slot}`, channel.channel);
+      if (!entry || entry.status !== 'done') continue;
+      const used = entry.value.function !== 'none';
+      if (!used && !drafts.has(slot)) { free.push(slot); continue; }
+      const remove = async () => {
+        if (!used) { drafts.delete(slot); card.version += 1; render(); return; }
+        if (!confirm('Remove this alarm rule from the device?')) return;
+        const result = await api(`b1s/devices/${device.id}/parameters/alarm${slot}`, 'PUT',
+          { channel: channel.channel, value: { ...entry.value, function: 'none' } });
+        if (result.status !== 'done') throw new Error(`Remove: ${result.status}`);
+        notice('Alarm rule removed');
+        await loadParameters(device.id);
+        render();
+      };
+      const row = alarmRow(channel, entry, stateOf(slot), remove);
+      (used ? rows : draftRows).push(row.element);
+      edits.push(row.edit);
     }
-    if (!rows.length) return [text('p', 'This channel has no alarm rules.', 'empty')];
-    return [block('', 'Thresholds are stored per sensor; Reset on the Calibration tab restores the defaults.', rows,
-      [saveButton(device, 'Save thresholds', edits)])];
+    const add = free.length ? button('+ Add alarm', async () => { drafts.add(free[0]); card.version += 1; render(); },
+      'A new rule; it is stored with Save alarms') : null;
+    const pool = parameter(card, 'windowPool')?.value;
+    const poolText = pool ? `Average, minimum, maximum, and change use a window each: ${pool.free} of ${pool.windows} free on this device, ` +
+      `${pool.buckets} buckets per window (a window of 60 s is accurate to ${Math.round(60 / pool.buckets * 10) / 10} s).` : '';
+    const reset = button('Reset alarms and output to firmware defaults', async () => {
+      if (!confirm(`Put the alarms and output of ${channel.label || `channel ${channel.channel}`} back to the firmware defaults?`)) return;
+      const result = await api(`b1s/devices/${device.id}/commands/resetAlarmsAndOutput`, 'POST', { channel: channel.channel });
+      notice(`Reset: ${result.result}`, result.result !== 'done');
+      drafts.clear();
+      await loadParameters(device.id);
+      render();
+    }, 'Alarm rules, sensor fault alarm, output function, and send periods as compiled into the firmware');
+    reset.classList?.add('danger');
+    // Saved drafts come back as used rules.
+    const save = saveButton(device, 'Save alarms', edits);
+    if (save) {
+      const store = save.onclick;
+      save.onclick = async () => { drafts.clear(); await store(); };
+    }
+    return [
+      block('Sensor fault', '', [faultRow], []),
+      block('Alarm rules', rows.length + draftRows.length ? `Up to 4 rules. ${poolText}` : `No rules yet. ${poolText}`,
+        [...rows, ...draftRows], [add]),
+      block('', '', [], [save, reset])
+    ];
   }
 
   const channelTabs = [['setup', 'Setup', setupPane], ['calibration', 'Calibration', calibrationPane], ['alarms', 'Alarms', alarmsPane]];

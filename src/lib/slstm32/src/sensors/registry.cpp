@@ -6,8 +6,32 @@ namespace slstm32::sensors {
 
 namespace {
 
-constexpr std::uint8_t settingsVersion = 1u;
-constexpr std::size_t settingsBytes = 1u + 4u + 4u + 1u + 4u * Measurement::maxAlarms;
+// Sensor settings: version, calibration offset and gain (version 1 records
+// carried alarm thresholds after them, which are ignored now).
+constexpr std::uint8_t settingsVersion = 2u;
+constexpr std::size_t settingsBytes = 1u + 4u + 4u;
+// Processing records: version, name hash, the rule structs as they are in
+// memory (record 0: output and fault alarm; records 1..4: alarm rules
+// 0..3). Only this firmware's own code reads them; a record of another size
+// is ignored. Bump the version when a struct keeps its size but changes its
+// layout. Version 0 = not set.
+constexpr std::uint8_t processingVersion = 1u;
+constexpr std::size_t processingHeader = 1u + 4u;
+struct OutputAndFault {
+    OutputRule output;
+    FaultRule fault;
+};
+constexpr std::size_t processingCapacity =
+    processingHeader + (sizeof(AlarmRule) > sizeof(OutputAndFault) ? sizeof(AlarmRule) : sizeof(OutputAndFault));
+static_assert(processingCapacity <= storage::RedundantBlobStore::maxPayloadBytes, "rules fit a record");
+
+// FNV-1a: ties a processing record to its channel's name, so a firmware
+// that reorders its channels never applies one channel's alarms to another.
+std::uint32_t nameHash(const char* name) {
+    std::uint32_t hash = 2166136261u;
+    for (; name && *name != '\0'; ++name) hash = (hash ^ static_cast<std::uint8_t>(*name)) * 16777619u;
+    return hash;
+}
 
 void put32(std::uint8_t*& out, std::int32_t value) {
     const auto bits = static_cast<std::uint32_t>(value);
@@ -30,18 +54,6 @@ const char* transitionName(AlarmTransition transition) {
     case AlarmTransition::activated: return "ACTIVE";
     case AlarmTransition::cleared: return "cleared";
     case AlarmTransition::acknowledged: return "acknowledged";
-    }
-    return "?";
-}
-
-const char* ruleText(AlarmKind kind) {
-    switch (kind) {
-    case AlarmKind::high: return "above";
-    case AlarmKind::low: return "below";
-    case AlarmKind::riseRate: return "rising faster than";
-    case AlarmKind::sensorFault: return "sensor fault";
-    case AlarmKind::trendFall: return "falling by more than";
-    case AlarmKind::trendRise: return "rising by more than";
     }
     return "?";
 }
@@ -116,9 +128,15 @@ bool MeasurementRegistry::init() {
     }
     storeReady_ = store_ && store_->scan();
     if (store_ && !storeReady_) log_.write(LogLevel::error, "sensors: settings store not readable");
-    for (std::size_t index = 0u; index < count_ && index < maxChannels; ++index) loadSettings(index);
-    log_.writef(LogLevel::info, "sensors: %u channel(s), settings slots %u of %u used", static_cast<unsigned>(count_),
-                static_cast<unsigned>(store_ ? store_->used() : 0u), static_cast<unsigned>(store_ ? store_->slots() : 0u));
+    for (std::size_t index = 0u; index < count_ && index < maxChannels; ++index) {
+        loadSettings(index);
+        loadProcessing(index);
+    }
+    log_.writef(LogLevel::info, "sensors: %u channel(s), settings slots %u of %u used, windows %u of %u free",
+                static_cast<unsigned>(count_), static_cast<unsigned>(store_ ? store_->used() : 0u),
+                static_cast<unsigned>(store_ ? store_->slots() : 0u),
+                static_cast<unsigned>(windows_ ? windows_->available() : 0u),
+                static_cast<unsigned>(windows_ ? windows_->size() : 0u));
     return ok;
 }
 
@@ -148,23 +166,18 @@ void MeasurementRegistry::loadSettings(std::size_t index) {
     auto& channel = *channels_[index];
     loadedRevision_[index] = channel.identityRevision();
     if (!channel.identity().known() || !storeReady_) return;
-    std::uint8_t data[settingsBytes]{};
+    std::uint8_t data[storage::KeyedRecordStore::maxPayloadBytes]{};
     std::size_t size = 0u;
     if (!store_->load(keyOf(channel.identity()), data, sizeof data, size) || size < settingsBytes ||
-        data[0] != settingsVersion) {
+        (data[0] != settingsVersion && data[0] != 1u)) {
         return;
     }
     const std::uint8_t* in = data + 1;
     Calibration calibration{};
     calibration.offset = get32(in);
     calibration.gainPpm = get32(in);
-    const auto mask = *in++;
     channel.setCalibration(calibration);
-    for (std::size_t rule = 0u; rule < Measurement::maxAlarms; ++rule) {
-        const auto threshold = get32(in);
-        if (mask & (1u << rule)) channel.setThreshold(rule, threshold);
-    }
-    log_.writef(LogLevel::info, "sensors: '%s' stored settings applied", channel.name());
+    log_.writef(LogLevel::info, "sensors: '%s' stored calibration applied", channel.name());
 }
 
 bool MeasurementRegistry::saveSettings(std::size_t index) {
@@ -174,17 +187,112 @@ bool MeasurementRegistry::saveSettings(std::size_t index) {
     std::uint8_t* out = data + 1;
     put32(out, channel.calibration().offset);
     put32(out, channel.calibration().gainPpm);
-    std::uint8_t mask = 0u;
-    for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) {
-        if (channel.thresholdOverridden(rule)) mask = static_cast<std::uint8_t>(mask | (1u << rule));
-    }
-    *out++ = mask;
-    for (std::size_t rule = 0u; rule < Measurement::maxAlarms; ++rule) {
-        put32(out, rule < channel.alarmCount() ? channel.alarmRule(rule).threshold : 0);
-    }
     const bool saved = store_->save(keyOf(channel.identity()), data, sizeof data);
     if (!saved) log_.writef(LogLevel::error, "sensors: '%s' settings not saved", channel.name());
     return saved;
+}
+
+storage::RedundantBlobStore MeasurementRegistry::processingRecord(std::size_t index, std::size_t record) const {
+    const auto offset = processingOffset_ + static_cast<std::uint32_t>((index * processingRecords + record) *
+                                                                       storage::RedundantBlobStore::requiredBytes);
+    return storage::RedundantBlobStore{*processing_, offset, storage::RedundantBlobStore::requiredBytes};
+}
+
+void MeasurementRegistry::loadProcessing(std::size_t index) {
+    auto& channel = *channels_[index];
+    const auto& config = channel.config();
+    const auto now = runtime_.millis();
+    const auto hash = nameHash(channel.name());
+    bool stored = false;
+    for (std::size_t record = 0u; record < processingRecords; ++record) {
+        const std::size_t content = record == 0u ? sizeof(OutputAndFault) : sizeof(AlarmRule);
+        std::uint8_t data[processingCapacity]{};
+        std::size_t size = 0u;
+        std::uint32_t storedHash = 0u;
+        if (processing_ && processingRecord(index, record).load(data, sizeof data, size) &&
+            size == processingHeader + content && data[0] == processingVersion) {
+            std::memcpy(&storedHash, data + 1, sizeof storedHash);
+        }
+        const bool found = storedHash == hash && size == processingHeader + content;
+        stored = stored || found;
+        Measurement::RuleResult applied{};
+        if (record == 0u) {
+            OutputAndFault rules{config.output, config.fault};
+            if (found) std::memcpy(&rules, data + processingHeader, sizeof rules);
+            applied = channel.setOutputRule(rules.output, windows_, now);
+            if (applied == Measurement::RuleResult::applied) applied = channel.setFaultRule(rules.fault);
+        } else {
+            const auto slot = record - 1u;
+            AlarmRule rule = slot < config.alarmCount && config.alarms ? config.alarms[slot] : AlarmRule{};
+            if (found) std::memcpy(&rule, data + processingHeader, sizeof rule);
+            applied = channel.setAlarmRule(slot, rule, windows_, now);
+        }
+        if (applied != Measurement::RuleResult::applied) {
+            log_.writef(LogLevel::error, "sensors: '%s' %s %u not applied (%s)", channel.name(),
+                        record == 0u ? "output/fault" : "alarm", static_cast<unsigned>(record == 0u ? 0u : record - 1u),
+                        applied == Measurement::RuleResult::noWindow ? "no window left" : "invalid");
+        }
+    }
+    if (stored) log_.writef(LogLevel::info, "sensors: '%s' stored alarms/output applied", channel.name());
+}
+
+bool MeasurementRegistry::saveProcessing(std::size_t index, std::size_t record) {
+    if (!processing_) return false;
+    const auto& channel = *channels_[index];
+    std::uint8_t data[processingCapacity]{processingVersion};
+    const auto hash = nameHash(channel.name());
+    std::memcpy(data + 1, &hash, sizeof hash);
+    std::size_t size = processingHeader;
+    if (record == 0u) {
+        const OutputAndFault rules{channel.outputRule(), channel.faultRule()};
+        std::memcpy(data + size, &rules, sizeof rules);
+        size += sizeof rules;
+    } else {
+        std::memcpy(data + size, &channel.alarmRule(record - 1u), sizeof(AlarmRule));
+        size += sizeof(AlarmRule);
+    }
+    const bool saved = processingRecord(index, record).commit(data, size);
+    if (!saved) log_.writef(LogLevel::error, "sensors: '%s' alarms/output not saved", channel.name());
+    return saved;
+}
+
+MeasurementRegistry::RuleResult MeasurementRegistry::result(Measurement::RuleResult applied, bool saved) {
+    switch (applied) {
+    case Measurement::RuleResult::applied: return saved ? RuleResult::stored : RuleResult::notStored;
+    case Measurement::RuleResult::invalid: return RuleResult::invalid;
+    case Measurement::RuleResult::noWindow: return RuleResult::noWindow;
+    }
+    return RuleResult::invalid;
+}
+
+MeasurementRegistry::RuleResult MeasurementRegistry::setAlarmRule(std::size_t index, std::size_t slot,
+                                                                  const AlarmRule& rule) {
+    if (index >= count_ || slot >= Measurement::maxAlarms) return RuleResult::invalid;
+    const auto applied = channels_[index]->setAlarmRule(slot, rule, windows_, runtime_.millis());
+    return result(applied, applied == Measurement::RuleResult::applied && saveProcessing(index, 1u + slot));
+}
+
+MeasurementRegistry::RuleResult MeasurementRegistry::setFaultRule(std::size_t index, const FaultRule& rule) {
+    if (index >= count_) return RuleResult::invalid;
+    const auto applied = channels_[index]->setFaultRule(rule);
+    return result(applied, applied == Measurement::RuleResult::applied && saveProcessing(index, 0u));
+}
+
+MeasurementRegistry::RuleResult MeasurementRegistry::setOutputRule(std::size_t index, const OutputRule& rule) {
+    if (index >= count_) return RuleResult::invalid;
+    const auto applied = channels_[index]->setOutputRule(rule, windows_, runtime_.millis());
+    return result(applied, applied == Measurement::RuleResult::applied && saveProcessing(index, 0u));
+}
+
+bool MeasurementRegistry::resetProcessing(std::size_t index) {
+    if (index >= count_) return false;
+    bool erased = processing_ != nullptr;
+    for (std::size_t record = 0u; record < processingRecords && processing_; ++record) {
+        const std::uint8_t unset[1]{0u};
+        erased = processingRecord(index, record).commit(unset, sizeof unset) && erased;
+    }
+    loadProcessing(index);
+    return erased;
 }
 
 bool MeasurementRegistry::settingsPersisted(std::size_t index) const {
@@ -220,18 +328,10 @@ MeasurementRegistry::CalibrationResult MeasurementRegistry::calibrate(std::size_
     return setCalibration(index, calibration) ? CalibrationResult::stored : CalibrationResult::notStored;
 }
 
-bool MeasurementRegistry::setThreshold(std::size_t index, std::size_t rule, std::int32_t threshold) {
-    if (index >= count_ || !channels_[index]->setThreshold(rule, threshold)) return false;
-    return saveSettings(index);
-}
-
-bool MeasurementRegistry::resetSettings(std::size_t index) {
+bool MeasurementRegistry::resetCalibration(std::size_t index) {
     if (index >= count_) return false;
     auto& channel = *channels_[index];
     channel.setCalibration({});
-    for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) {
-        channel.setThreshold(rule, channel.config().alarms[rule].threshold);
-    }
     if (!storeReady_ || !channel.identity().known()) return false;
     return store_->erase(keyOf(channel.identity()));
 }
@@ -244,9 +344,9 @@ AlarmSummary MeasurementRegistry::summary() const {
     AlarmSummary result{};
     for (std::size_t index = 0u; index < count_; ++index) {
         const auto& channel = *channels_[index];
-        for (std::size_t rule = 0u; rule < channel.alarmCount(); ++rule) {
+        for (std::size_t rule = 0u; rule < Measurement::alarmSlots; ++rule) {
             if (!channel.alarmActive(rule)) continue;
-            const auto severity = channel.alarmRule(rule).severity;
+            const auto severity = channel.alarmSeverity(rule);
             if (!result.active || severity > result.highest) result.highest = severity;
             result.active = true;
             if (!channel.alarmAcknowledged(rule)) {
@@ -262,34 +362,33 @@ AlarmSummary MeasurementRegistry::summary() const {
 
 void MeasurementRegistry::onAlarm(void* context, Measurement& channel, std::size_t rule, AlarmTransition transition) {
     auto& self = *static_cast<MeasurementRegistry*>(context);
-    const auto& alarm = channel.alarmRule(rule);
-    char value[20];
-    char threshold[20];
-    const auto unit = unitName(channel.quantity());
+    const auto severity = channel.alarmSeverity(rule);
     const auto level = transition == AlarmTransition::activated
-        ? (alarm.severity == Severity::warning ? LogLevel::warning : LogLevel::error)
+        ? (severity == Severity::warning ? LogLevel::warning : LogLevel::error)
         : LogLevel::info;
-    if (alarm.kind == AlarmKind::sensorFault) {
-        self.log_.writef(level, "alarm: %s %s %s %s (%s)", channel.name(), ruleText(alarm.kind),
-                         severityName(alarm.severity), transitionName(transition),
+    if (rule == Measurement::faultSlot) {
+        self.log_.writef(level, "alarm: %s sensor fault %s %s (%s)", channel.name(), severityName(severity),
+                         transitionName(transition),
                          channel.status() == Status::fault ? faultName(channel.fault()) : statusName(channel.status()));
-    } else if (alarm.kind == AlarmKind::trendFall || alarm.kind == AlarmKind::trendRise) {
-        self.log_.writef(level, "alarm: %s %s %s %s in %lu min %s %s, now %s %s in %lu min (%s)", channel.name(),
-                         ruleText(alarm.kind), formatMilli(threshold, alarm.threshold), unit,
-                         static_cast<unsigned long>(channel.trendWindow() / 60000u), severityName(alarm.severity),
-                         transitionName(transition), formatMilli(value, channel.trend()), unit,
-                         static_cast<unsigned long>(channel.trendSpanMs() / 60000u), tendencyName(channel.tendency()));
     } else {
-        const bool rate = alarm.kind == AlarmKind::riseRate;
-        self.log_.writef(level, "alarm: %s %s %s %s%s %s %s, now %s %s%s", channel.name(), ruleText(alarm.kind),
-                         formatMilli(threshold, alarm.threshold), unit, rate ? "/min" : "",
-                         severityName(alarm.severity), transitionName(transition),
-                         formatMilli(value, rate ? channel.ratePerMinute() : channel.value()), unit,
-                         rate ? "/min" : "");
+        const auto& alarm = channel.alarmRule(rule);
+        char value[20];
+        char threshold[20];
+        char upper[20];
+        std::int32_t now = 0;
+        const bool known = channel.functionValue(alarm.function, channel.alarmWindow(rule), now);
+        const bool band = alarm.comparison == Comparison::inside || alarm.comparison == Comparison::outside;
+        const auto unit = unitName(channel.quantity());
+        const char* perMinute = alarm.function == ValueFunction::rate ? "/min" : "";
+        self.log_.writef(level, "alarm: %s %u %s %s %s%s%s %s%s %s %s, now %s", channel.name(), static_cast<unsigned>(rule),
+                         functionName(alarm.function), comparisonName(alarm.comparison),
+                         formatMilli(threshold, alarm.threshold), band ? ".." : "", band ? formatMilli(upper, alarm.upper) : "",
+                         unit, perMinute, severityName(severity), transitionName(transition),
+                         known ? formatMilli(value, now) : "-");
     }
     if (self.events_) {
         const AlarmEvent event{static_cast<std::uint8_t>(self.indexOf(channel)), static_cast<std::uint8_t>(rule),
-                               alarm.severity, transition, channel.value()};
+                               severity, transition, channel.value()};
         (void)self.events_->publish(self.alarmEvent_, event);
     }
 }

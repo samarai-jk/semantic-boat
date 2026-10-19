@@ -121,11 +121,12 @@ def decode_b1s(pgn, data):
         manufacturer = (data[0] | (data[1] & 7) << 8) if len(data) >= 2 else "?"
         return f"proprietary, manufacturer {manufacturer} (not B1S)"
     name = B1S_PGNS[pgn]
-    if name == "measurement" and len(data) >= 8:
+    if name in ("measurement", "measurementRaw") and len(data) >= 8:
         quantity, channel = data[2], data[3]
         raw = struct.unpack_from("<i", data, 4)[0]
         label = B1S_QUANTITIES.get(quantity, {}).get("id", f"quantity {quantity}")
-        return f"channel {channel}, {label} = {b1s_value(quantity, raw)}"
+        kind = " raw" if name == "measurementRaw" else ""
+        return f"channel {channel},{kind} {label} = {b1s_value(quantity, raw)}"
     if name == "channelDescription" and len(data) >= 12:
         channel, quantity, flags, instance = data[2], data[3], data[4], data[5]
         period = struct.unpack_from("<H", data, 6)[0]
@@ -136,7 +137,8 @@ def decode_b1s(pgn, data):
             kind = f"output kind {quantity}"
         standard = f", standard instance {instance}" if instance != 0xFF else ""
         every = "on change" if period == 0xFFFF else f"every {period / 100:g} s"
-        encoding = B1S_ENCODINGS[flags & 3] + (" (no standard PGN)" if flags & 0x08 else "")
+        encoding = (B1S_ENCODINGS[flags & 3] + (" (no standard PGN)" if flags & 0x08 else "") +
+                    (" + raw value" if flags & 0x10 else ""))
         return (f"channel {channel}: {kind}, sent as {encoding}{standard}, {every}, "
                 f"location '{location or '(unassigned)'}', label '{label}'")
     return f"{name}: {data[2:].hex(' ')}"

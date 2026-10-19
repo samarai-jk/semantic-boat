@@ -3,7 +3,8 @@
 # Rules: README.md in this directory, section "Adding to B1S". In short:
 # reuse before adding; append with the next free code; never reuse,
 # renumber, or redefine a code; deprecate instead of changing a quantity's
-# unit, scale, or encoding. Generated code (firmware headers, can-bench and
+# unit, scale, or encoding. DRAFT until the first product device runs B1S
+# (README, "Adding to B1S"): until then codes may still be redesigned. Generated code (firmware headers, can-bench and
 # canboat definitions, the Signal K plugin) will be produced from this file;
 # it is the single source of truth.
 
@@ -15,6 +16,7 @@ proprietary_header: 0x9FFE  # sent as FE 9F
 pgns:
   - {pgn: 65280,  id: measurement,         kind: single,  addressing: broadcast}
   - {pgn: 65281,  id: outputStatus,        kind: single,  addressing: broadcast}
+  - {pgn: 65282,  id: measurementRaw,      kind: single,  addressing: broadcast}
   - {pgn: 130816, id: measurementWide,     kind: fast,    addressing: broadcast}
   - {pgn: 130817, id: measurementSummary,  kind: fast,    addressing: broadcast}
   - {pgn: 130818, id: event,               kind: fast,    addressing: broadcast}
@@ -117,10 +119,11 @@ commands:
   - {code: 3, id: setLevel,  argument: "uint16 level 0.01 % (bytes 4..5), uint16 fade time 0.01 s (bytes 6..7)", description: "Set an output channel's level"}
   - {code: 4, id: calibrate, argument: "int32 reference, channel quantity units", description: "Offset calibration of a measurement channel against a reference at its current reading"}
   - {code: 5, id: calibrateSecondPoint, argument: "int32 reference, channel quantity units", description: "Second point after calibrate: gain and offset from both points (at least one unit apart)"}
-  - {code: 6, id: resetChannel, argument: "none (0xFF)", description: "Calibration and alarm thresholds of a measurement channel back to defaults"}
+  - {code: 6, id: resetCalibration, argument: "none (0xFF)", description: "Calibration of a measurement channel back to the defaults"}
   - {code: 7, id: acknowledgeAlarms, argument: "none (0xFF), channel 0xFF", description: "Acknowledge all alarms of the device, like a button"}
   - {code: 8, id: restart, argument: "none (0xFF), channel 0xFF", description: "Restart the device after the reply"}
   - {code: 9, id: enterBootloader, argument: "none (0xFF), channel 0xFF", description: "Restart into the bootloader for a firmware update (FIRMWARE.md)"}
+  - {code: 10, id: resetAlarmsAndOutput, argument: "none (0xFF)", description: "Alarm rules, fault alarm, output function, and send periods of a measurement channel back to the firmware defaults"}
 
 # Service codes of the Service message (126720); layouts in CONFIGURATION.md.
 services:
@@ -135,10 +138,11 @@ services:
 
 # Parameters for configuration over CAN (CONFIGURATION.md). scope: device or
 # channel. type: wire value int32 for uint8/uint16/uint32/int32/bool/enum,
-# string (ASCII, at most 32 characters) for string. unit: quantity = the
-# channel quantity's raw unit (absolute value), quantityDelta = the same
-# scale for differences (no offset, e.g. kelvin not degrees Celsius),
-# otherwise an SI unit. access: rw = stored and backed up, ro = state.
+# string (ASCII, at most 32 characters) for string, record (bytes laid out
+# as in `records`) for record. unit: quantity = the channel quantity's raw
+# unit (absolute value), quantityDelta = the same scale for differences (no
+# offset, e.g. kelvin not degrees Celsius), otherwise an SI unit. access:
+# rw = stored and backed up, ro = state.
 parameters:
   - {code: 1,  id: deviceRole,              scope: device,  type: string, access: rw, description: "Device role, e.g. fridgeSensor; empty = unassigned"}
   - {code: 3,  id: preferredAddress,        scope: device,  type: uint8,  access: rw, restart: true, description: "Address the device claims first"}
@@ -147,17 +151,49 @@ parameters:
   - {code: 18, id: channelEncoding,         scope: channel, type: enum,   access: rw, values: [automatic, standard, b1s, "off"], description: "Encoding switch (README, Standard PGNs); automatic = the channel's firmware default, a B1S message unless the firmware chose otherwise"}
   - {code: 19, id: channelStandardInstance, scope: channel, type: uint8,  access: rw, description: "Instance of the standard PGN; 255 = the firmware default"}
   - {code: 20, id: channelStandardSource,   scope: channel, type: uint8,  access: rw, description: "Source field of the standard PGN (standard_sources); 255 = the firmware default"}
+  - {code: 21, id: channelOutput,           scope: channel, type: record, record: output, access: rw, description: "How the channel's value is derived and how often it and its raw value are sent"}
   - {code: 32, id: calibrationOffset,       scope: channel, type: int32,  access: rw, unit: quantityDelta, description: "value = raw x gain + offset"}
   - {code: 33, id: calibrationGain,         scope: channel, type: int32,  access: rw, unit: ppm, description: "Gain in millionths (1000000 = 1)"}
-  - {code: 40, id: alarmThreshold0,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 0; absolute (quantity) for high/low, quantityDelta per minute for rise rate, quantityDelta for trends"}
-  - {code: 41, id: alarmThreshold1,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 1"}
-  - {code: 42, id: alarmThreshold2,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 2"}
-  - {code: 43, id: alarmThreshold3,         scope: channel, type: int32,  access: rw, unit: alarmRule, description: "Threshold of alarm rule 3"}
-  - {code: 44, id: alarmRule0,              scope: channel, type: uint32, access: ro, description: "Kind (bits 0..7: 0 high, 1 low, 2 rise rate, 3 sensor fault, 4 trend fall, 5 trend rise), severity (bits 8..15: 0 warning, 1 alarm, 2 emergency), bit 16 latching, bit 17 active, bit 18 acknowledged"}
-  - {code: 45, id: alarmRule1,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 1"}
-  - {code: 46, id: alarmRule2,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 2"}
-  - {code: 47, id: alarmRule3,              scope: channel, type: uint32, access: ro, description: "As alarmRule0, rule 3"}
+  - {code: 40, id: faultAlarm,              scope: channel, type: record, record: faultAlarm, access: rw, description: "Alarm when the channel has no valid value (sensor fault, no reading)"}
+  - {code: 41, id: alarm0,                  scope: channel, type: record, record: alarm, access: rw, description: "Alarm rule 0; function none = unused"}
+  - {code: 42, id: alarm1,                  scope: channel, type: record, record: alarm, access: rw, description: "Alarm rule 1"}
+  - {code: 43, id: alarm2,                  scope: channel, type: record, record: alarm, access: rw, description: "Alarm rule 2"}
+  - {code: 44, id: alarm3,                  scope: channel, type: record, record: alarm, access: rw, description: "Alarm rule 3"}
+  - {code: 45, id: alarmState,              scope: channel, type: uint32, access: ro, description: "Alarm states: bit 2n active, bit 2n+1 acknowledged, for rules n = 0..3 and the fault alarm (n = 4)"}
   - {code: 64, id: uptime,                  scope: device,  type: uint32, access: ro, unit: s, description: "Time since the last start"}
+  - {code: 65, id: windowPool,              scope: device,  type: record, record: windowPool, access: ro, description: "Windows of the device for average, minimum, maximum, and change (firmware-defined)"}
+
+# Layouts of record parameters, field by field, little-endian, no gaps.
+# Field types: uint8, uint16, int32; enum (uint8 with named values); flags
+# (uint8, bit n = the n-th name). unit as for parameters, plus: alarmValue =
+# quantity for the functions last, average, minimum, maximum; quantityDelta
+# for change; quantityDelta per minute for rate. alarmDelta = quantityDelta
+# (per minute for rate).
+records:
+  output:
+    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum], description: "Value sent; none = last"}
+    - {name: flags,      type: flags,  bits: [windowSamples], description: "windowSamples: the window counts samples, not seconds"}
+    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum"}
+    - {name: period,     type: uint16, unit: "0.1 s", description: "How often the value is sent; 0 = firmware default"}
+    - {name: rawPeriod,  type: uint16, unit: "0.1 s", description: "How often the raw value (Measurement Raw) is sent; 0 = never"}
+  faultAlarm:
+    - {name: severity,   type: enum,   values: ["off", warning, alarm, emergency]}
+    - {name: flags,      type: flags,  bits: [latching]}
+    - {name: delay,      type: uint16, unit: s, description: "How long the channel must lack a valid value"}
+  alarm:
+    - {name: function,   type: enum,   values: [none, last, average, minimum, maximum, change, rate], description: "Value the rule looks at; none = unused"}
+    - {name: comparison, type: enum,   values: [above, atLeast, below, atMost, inside, outside], description: "inside/outside: threshold..upper"}
+    - {name: severity,   type: enum,   values: [warning, alarm, emergency]}
+    - {name: flags,      type: flags,  bits: [latching, windowSamples], description: "latching: active until acknowledged; windowSamples: the window counts samples"}
+    - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum, change"}
+    - {name: delay,      type: uint16, unit: s, description: "How long the condition must hold; 0 = at the first sample"}
+    - {name: threshold,  type: int32,  unit: alarmValue, description: "Threshold; lower limit for inside/outside"}
+    - {name: upper,      type: int32,  unit: alarmValue, description: "Upper limit for inside/outside"}
+    - {name: hysteresis, type: int32,  unit: alarmDelta, description: "How far back on the safe side the value must be to clear"}
+  windowPool:
+    - {name: windows,    type: uint8}
+    - {name: free,       type: uint8}
+    - {name: buckets,    type: uint8, description: "Buckets per window: the precision is window / buckets"}
 
 # Boards that run B1S firmware with a bootloader (FIRMWARE.md); the image
 # header names the board an image is built for.

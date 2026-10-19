@@ -21,7 +21,7 @@ const frames = {
   measurement: '(1.0) can1 14FF0026#FE9F010070950400',
   notAvailable: '(1.0) can1 14FF0026#FE9F0C01FFFFFF7F',
   description: [
-    '(1.0) can1 1DFF0326#A015FE9F0001F0FF',
+    '(1.0) can1 1DFF0326#A015FE9F0001E0FF',
     '(1.0) can1 1DFF0326#A1C80002010B014C',
     '(1.0) can1 1DFF0326#A2543120626F6172',
     '(1.0) can1 1DFF0326#A364FFFFFFFFFFFF'
@@ -226,4 +226,40 @@ test('a custom path is used as written, or below the prefixes with *', () => {
   b1s.handle(measurement(1, 1));
   assert.deepStrictEqual(deltas.map(delta => delta.updates[0].values[0].path),
     ['electrical.lab.voltage', 'sb.lab.environment.cabin.temperature']);
+});
+
+test('alarm records round-trip; thresholds are absolute unless change or rate', () => {
+  const { decodeRecord, encodeRecord } = require('../src/b1s/records');
+  const { B1sAdapter } = require('../src/b1s/adapter');
+  const layout = registry.records.alarm;
+  const fields = { function: 'average', comparison: 'outside', severity: 'alarm', flags: ['latching'], window: 60,
+    delay: 30, threshold: 284150, upper: 313150, hysteresis: 500 };
+  const bytes = encodeRecord(layout, fields);
+  assert.strictEqual(bytes.length, 20);
+  assert.deepStrictEqual(decodeRecord(layout, bytes), fields);
+  const adapter = new B1sAdapter({ app: {}, directory: '/nonexistent', onDelta: () => {} });
+  adapter.registry = registry;
+  const device = { channels: new Map([[0, { kind: 1 }]]) };
+  const entry = registry.parameterNames.get('alarm0');
+  const absolute = adapter.describeParameter(entry, device, 0, 'done', bytes);
+  assert.strictEqual(absolute.si.threshold, 284.15);
+  assert.deepStrictEqual(absolute.absolute, { threshold: true, upper: true, hysteresis: false });
+  const rate = adapter.describeParameter(entry, device, 0, 'done', encodeRecord(layout, { ...fields, function: 'rate' }));
+  assert.strictEqual(rate.absolute.threshold, false);
+});
+
+test('raw values go next to the channel value, on <path>Raw', () => {
+  const parse = parser();
+  const decoded = parse('(1.0) can1 14FF0226#FE9F010070950400');
+  assert.strictEqual(decoded.description, 'B1S: Measurement Raw');
+  const { b1s, deltas } = state();
+  b1s.handle(claim);
+  b1s.handle({ ...description(0, 'inside.lab', 'Lab'), fields: { ...description(0, 'inside.lab', 'Lab').fields, raw: 1 } });
+  b1s.handle({ pgn: 65282, src: 38, fields: { manufacturerCode: 2046, quantity: 1, channel: 0, value: 300400 } });
+  const update = deltas.at(-1).updates[0];
+  assert.strictEqual(update.values[0].path, 'environment.inside.lab.temperatureRaw');
+  assert.strictEqual(update.meta[0].value.displayName, 'Lab (raw)');
+  const channel = b1s.snapshot()[0].channels[0];
+  assert.strictEqual(channel.rawPath, 'environment.inside.lab.temperatureRaw');
+  assert.strictEqual(channel.rawValue, 300.4);
 });

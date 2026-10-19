@@ -36,7 +36,8 @@ inline bool isB1s(const std::uint8_t* data, std::size_t length) {
     return length >= 2u && data[0] == (proprietaryHeader & 0xFFu) && data[1] == (proprietaryHeader >> 8u);
 }
 
-// Measurement (PGN 65280): one value of one channel.
+// Measurement (PGN 65280): one value of one channel. Measurement Raw (65282)
+// has the same layout.
 inline void encodeMeasurement(std::uint8_t (&out)[8], Quantity quantity, std::uint8_t channel, std::int32_t raw) {
     putHeader(out);
     out[2] = static_cast<std::uint8_t>(quantity);
@@ -50,6 +51,7 @@ struct ChannelDescription {
     Encoding encoding{Encoding::b1s};
     bool output{};
     bool noStandard{}; // the quantity has no standard PGN
+    bool raw{};        // the raw value is sent too (Measurement Raw)
     std::uint8_t standardInstance{0xFFu};    // 0xFF = none
     std::uint16_t periodCentiseconds{0xFFFFu}; // 0xFFFF = on change only
     const char* location{};                  // Signal K path fragment, "" = unassigned
@@ -77,7 +79,7 @@ inline std::size_t encodeChannelDescription(std::uint8_t (&out)[channelDescripti
     out[3] = description.kind;
     out[4] = static_cast<std::uint8_t>(static_cast<std::uint8_t>(description.encoding) |
                                        (description.output ? 0x04u : 0u) | (description.noStandard ? 0x08u : 0u) |
-                                       0xF0u);
+                                       (description.raw ? 0x10u : 0u) | 0xE0u);
     out[5] = description.standardInstance;
     n2k::bytes::put16(out + 6, description.periodCentiseconds);
     std::size_t length = 8u;

@@ -60,12 +60,13 @@ std::uint32_t standardPgn(slstm32::sensors::Quantity quantity) {
 std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& channel, std::uint8_t instance,
                                         std::uint8_t source, std::uint8_t sequenceId, std::uint8_t (&out)[8]) {
     using slstm32::sensors::Quantity;
-    const bool available = channel.valid();
+    std::int32_t value = 0;
+    const bool available = channel.output(value);
     switch (channel.quantity()) {
     case Quantity::temperature: {
         const auto temperatureSource = static_cast<TemperatureSource>(source);
         if (available) {
-            encodeTemperatureExtendedRange(out, sequenceId, instance, temperatureSource, channel.value());
+            encodeTemperatureExtendedRange(out, sequenceId, instance, temperatureSource, value);
         } else {
             encodeTemperatureNotAvailable(out, sequenceId, instance, temperatureSource);
         }
@@ -73,16 +74,16 @@ std::uint32_t encodeStandardMeasurement(const slstm32::sensors::Measurement& cha
     }
     case Quantity::relativeHumidity:
         encodeHumidity(out, sequenceId, instance, static_cast<HumiditySource>(source),
-                       available ? channel.value() : humidityNotAvailable);
+                       available ? value : humidityNotAvailable);
         break;
     case Quantity::pressure:
         // Channel values are 0.001 hPa = 0.1 Pa, the PGN's resolution.
         encodeActualPressure(out, sequenceId, instance, static_cast<PressureSource>(source),
-                             available ? channel.value() : pressureNotAvailable);
+                             available ? value : pressureNotAvailable);
         break;
     case Quantity::rotationalSpeed:
         // The channel instance is the engine instance (0 = single or port engine).
-        encodeEngineRapidUpdate(out, instance, available ? channel.value() : engineSpeedNotAvailable);
+        encodeEngineRapidUpdate(out, instance, available ? value : engineSpeedNotAvailable);
         break;
     default:
         return 0u;

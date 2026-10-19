@@ -12,8 +12,16 @@ using slstm32::sensors::Status;
 constexpr std::uint8_t measurementPriority = 5u;
 constexpr std::uint8_t descriptionPriority = 7u;
 
-std::int32_t rawValue(const slstm32::sensors::Measurement& channel) {
-    if (channel.valid()) return toRaw(channel.quantity(), channel.value());
+bool reached(std::uint32_t now, std::uint32_t at) { return static_cast<std::int32_t>(now - at) >= 0; }
+
+// The next multiple of the period after now.
+std::uint32_t nextSlot(std::uint32_t now, std::uint32_t period) { return now - now % period + period; }
+
+std::int32_t wireValue(const slstm32::sensors::Measurement& channel, bool raw) {
+    std::int32_t value = 0;
+    if (raw ? channel.valid() : channel.output(value)) {
+        return toRaw(channel.quantity(), raw ? channel.rawValue() : value);
+    }
     if (channel.status() == Status::fault) {
         if (channel.fault() == Fault::outOfRange) return outOfRange;
         if (channel.fault() != Fault::noResponse) return error;
@@ -48,6 +56,20 @@ std::uint8_t MeasurementPublisher::standardSource(const ChannelConfig& channel) 
     return channel.standardSource;
 }
 
+std::uint32_t MeasurementPublisher::periodMs(const ChannelConfig& channel) const {
+    const auto* stored = settings_ ? settings_->overrideOf(channel.channel) : nullptr;
+    std::uint32_t period = channel.periodMs != 0u ? channel.periodMs : periodMs_;
+    if (stored && stored->period != ChannelSettings::periodNotSet && stored->period != 0u) period = stored->period * 100u;
+    return period < minimumPeriodMs ? minimumPeriodMs : period;
+}
+
+std::uint32_t MeasurementPublisher::rawPeriodMs(const ChannelConfig& channel) const {
+    const auto* stored = settings_ ? settings_->overrideOf(channel.channel) : nullptr;
+    std::uint32_t period = channel.rawPeriodMs;
+    if (stored && stored->rawPeriod != ChannelSettings::periodNotSet) period = stored->rawPeriod * 100u;
+    return period != 0u && period < minimumPeriodMs ? minimumPeriodMs : period;
+}
+
 void MeasurementPublisher::text(ChannelSettings::Text which, const ChannelConfig& channel,
                                 char (&out)[maxTextLength + 1u]) const {
     if (settings_ && settings_->readText(which, channel.channel, out)) return;
@@ -59,7 +81,13 @@ void MeasurementPublisher::text(ChannelSettings::Text which, const ChannelConfig
 
 void MeasurementPublisher::describe(const ChannelConfig& channel) {
     const auto index = static_cast<std::size_t>(&channel - channels_);
-    if (index < count_) describePending_ |= 1u << index;
+    if (index >= count_) return;
+    describePending_ |= 1u << index;
+    // A new period applies from its next multiple.
+    const auto now = runtime_.millis();
+    states_[index].nextAt = nextSlot(now, periodMs(channel));
+    const auto raw = rawPeriodMs(channel);
+    states_[index].rawNextAt = nextSlot(now, raw != 0u ? raw : minimumPeriodMs);
 }
 
 Encoding MeasurementPublisher::encoding(const ChannelConfig& channel) const {
@@ -80,11 +108,12 @@ bool MeasurementPublisher::init() {
     for (std::size_t index = 0u; index < count_; ++index) {
         if (!channels_[index].measurement) return false;
         if (encoding(channels_[index]) == Encoding::standard) ++standard;
+        states_[index] = {};
+        describe(channels_[index]);
     }
+    describePending_ = 0u; // sent after the address claim
     log_.writef(slstm32::LogLevel::info, "b1s: %u channel(s), %u as standard PGN", static_cast<unsigned>(count_),
                 standard);
-    nextCycleAt_ = runtime_.millis() + periodMs_;
-    next_ = count_;
     return true;
 }
 
@@ -97,39 +126,59 @@ void MeasurementPublisher::run() {
     describeNext();
 
     const auto now = runtime_.millis();
-    if (next_ >= count_) {
-        if (static_cast<std::int32_t>(now - nextCycleAt_) < 0) return;
-        nextCycleAt_ += periodMs_;
-        if (static_cast<std::int32_t>(now - nextCycleAt_) >= 0) nextCycleAt_ = now + periodMs_;
-        next_ = 0u;
-        // One sequence id per cycle ties the standard readings of a cycle together.
-        sequenceId_ = static_cast<std::uint8_t>((sequenceId_ + 1u) % 253u);
-    }
-    // A full transmit queue delays the rest of the cycle to the next run().
-    while (next_ < count_) {
-        if (!send(channels_[next_])) return;
-        ++next_;
+    // A full transmit queue leaves the rest for the next run(), starting there.
+    for (std::size_t step = 0u; step < count_; ++step) {
+        const auto index = (next_ + step) % count_;
+        const auto& channel = channels_[index];
+        auto& state = states_[index];
+        if (reached(now, state.nextAt)) {
+            if (send(channel, state, false) == Sent::busy) {
+                next_ = index;
+                return;
+            }
+            const auto period = periodMs(channel);
+            state.nextAt += period;
+            if (reached(now, state.nextAt)) state.nextAt = nextSlot(now, period);
+        }
+        const auto rawPeriod = rawPeriodMs(channel);
+        if (rawPeriod != 0u && reached(now, state.rawNextAt)) {
+            if (send(channel, state, true) == Sent::busy) {
+                next_ = index;
+                return;
+            }
+            state.rawNextAt += rawPeriod;
+            if (reached(now, state.rawNextAt)) state.rawNextAt = nextSlot(now, rawPeriod);
+        }
     }
 }
 
-bool MeasurementPublisher::send(const ChannelConfig& channel) {
+MeasurementPublisher::Sent MeasurementPublisher::send(const ChannelConfig& channel, ChannelState& state, bool raw) {
     const auto& measurement = *channel.measurement;
-    if (measurement.status() == Status::unknown) return true;
+    if (measurement.status() == Status::unknown) return Sent::skipped;
+    const auto encoded = encoding(channel);
+    if (encoded == Encoding::off) return Sent::skipped;
+    // A valid value goes out once per new sample; a missing one at every period.
+    const auto samples = static_cast<std::uint16_t>(measurement.samples());
+    if (measurement.valid() && (raw ? state.rawSent && state.rawSentSamples == samples
+                                    : state.sent && state.sentSamples == samples)) {
+        return Sent::skipped;
+    }
     std::uint8_t data[8];
-    std::uint32_t number = 0u;
-    switch (encoding(channel)) {
-    case Encoding::off:
-        return true;
-    case Encoding::standard:
+    std::uint32_t number = pgn::measurement;
+    if (raw) {
+        encodeMeasurement(data, quantityOf(measurement.quantity()), channel.channel, wireValue(measurement, true));
+        number = pgn::measurementRaw;
+    } else if (encoded == Encoding::standard) {
+        sequenceId_ = static_cast<std::uint8_t>((sequenceId_ + 1u) % 253u);
         number = n2k::encodeStandardMeasurement(measurement, standardInstance(channel), standardSource(channel),
                                                 sequenceId_, data);
-        break;
-    case Encoding::b1s:
-        encodeMeasurement(data, quantityOf(measurement.quantity()), channel.channel, rawValue(measurement));
-        number = pgn::measurement;
-        break;
+    } else {
+        encodeMeasurement(data, quantityOf(measurement.quantity()), channel.channel, wireValue(measurement, false));
     }
-    return node_.sendSingle(measurementPriority, number, n2k::broadcastAddress, data, sizeof data);
+    if (!node_.sendSingle(measurementPriority, number, n2k::broadcastAddress, data, sizeof data)) return Sent::busy;
+    (raw ? state.rawSentSamples : state.sentSamples) = samples;
+    (raw ? state.rawSent : state.sent) = true;
+    return Sent::sent;
 }
 
 void MeasurementPublisher::describeNext() {
@@ -144,7 +193,9 @@ void MeasurementPublisher::describeNext() {
     description.encoding = encoded;
     description.noStandard = n2k::standardPgn(channel.measurement->quantity()) == 0u;
     description.standardInstance = encoded == Encoding::standard ? standardInstance(channel) : 0xFFu;
-    description.periodCentiseconds = static_cast<std::uint16_t>(periodMs_ / 10u);
+    description.raw = encoded != Encoding::off && rawPeriodMs(channel) != 0u;
+    const auto period = periodMs(channel) / 10u;
+    description.periodCentiseconds = static_cast<std::uint16_t>(period < 0xFFFFu ? period : 0xFFFEu);
     char location[maxTextLength + 1u];
     char label[maxTextLength + 1u];
     text(ChannelSettings::Text::location, channel, location);

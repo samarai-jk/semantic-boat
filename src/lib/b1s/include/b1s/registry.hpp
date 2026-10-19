@@ -16,6 +16,7 @@ inline constexpr std::uint16_t proprietaryHeader = 0x9FFEu; // sent as FE 9F
 namespace pgn {
 inline constexpr std::uint32_t measurement = 65280u; // single frame, broadcast
 inline constexpr std::uint32_t outputStatus = 65281u; // single frame, broadcast
+inline constexpr std::uint32_t measurementRaw = 65282u; // single frame, broadcast
 inline constexpr std::uint32_t measurementWide = 130816u; // fast packet, broadcast
 inline constexpr std::uint32_t measurementSummary = 130817u; // fast packet, broadcast
 inline constexpr std::uint32_t event = 130818u; // fast packet, broadcast
@@ -106,10 +107,11 @@ enum class Command : std::uint8_t {
     setLevel = 3u,
     calibrate = 4u,
     calibrateSecondPoint = 5u,
-    resetChannel = 6u,
+    resetCalibration = 6u,
     acknowledgeAlarms = 7u,
     restart = 8u,
     enterBootloader = 9u,
+    resetAlarmsAndOutput = 10u,
 };
 
 // Service codes of the Service message.
@@ -138,18 +140,26 @@ enum class Parameter : std::uint16_t {
     channelEncoding = 18u,
     channelStandardInstance = 19u,
     channelStandardSource = 20u,
+    channelOutput = 21u,
     calibrationOffset = 32u,
     calibrationGain = 33u,
-    alarmThreshold0 = 40u,
-    alarmThreshold1 = 41u,
-    alarmThreshold2 = 42u,
-    alarmThreshold3 = 43u,
-    alarmRule0 = 44u,
-    alarmRule1 = 45u,
-    alarmRule2 = 46u,
-    alarmRule3 = 47u,
+    faultAlarm = 40u,
+    alarm0 = 41u,
+    alarm1 = 42u,
+    alarm2 = 43u,
+    alarm3 = 44u,
+    alarmState = 45u,
     uptime = 64u,
+    windowPool = 65u,
 };
+
+// Sizes of record parameters (registry: records).
+namespace record {
+inline constexpr std::uint8_t outputSize = 8u;
+inline constexpr std::uint8_t faultAlarmSize = 4u;
+inline constexpr std::uint8_t alarmSize = 20u;
+inline constexpr std::uint8_t windowPoolSize = 3u;
+} // namespace record
 
 // True for parameters of a channel (addressed with a channel number).
 constexpr bool isChannelParameter(Parameter parameter) {
@@ -159,16 +169,15 @@ constexpr bool isChannelParameter(Parameter parameter) {
     case Parameter::channelEncoding:
     case Parameter::channelStandardInstance:
     case Parameter::channelStandardSource:
+    case Parameter::channelOutput:
     case Parameter::calibrationOffset:
     case Parameter::calibrationGain:
-    case Parameter::alarmThreshold0:
-    case Parameter::alarmThreshold1:
-    case Parameter::alarmThreshold2:
-    case Parameter::alarmThreshold3:
-    case Parameter::alarmRule0:
-    case Parameter::alarmRule1:
-    case Parameter::alarmRule2:
-    case Parameter::alarmRule3:
+    case Parameter::faultAlarm:
+    case Parameter::alarm0:
+    case Parameter::alarm1:
+    case Parameter::alarm2:
+    case Parameter::alarm3:
+    case Parameter::alarmState:
         return true;
     default:
         return false;

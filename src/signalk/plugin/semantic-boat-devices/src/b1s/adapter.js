@@ -13,11 +13,14 @@ const { loadRegistry } = require('./registry');
 const { canboatDefinitions } = require('./canboat');
 const { B1sState, scaled } = require('./state');
 const { B1sClient } = require('./client');
+const { decodeRecord, encodeRecord } = require('./records');
 
 const isoRequest = 59904;
 const isoAddressClaim = 60928;
 const consoleLimit = 65536;
-const absoluteKinds = new Set([0, 1]); // alarm rules: high, low
+const quantityUnits = new Set(['quantity', 'quantityDelta', 'alarmValue', 'alarmDelta']);
+// Alarm values are differences for these functions (registry, unit alarmValue).
+const deltaFunctions = new Set(['change', 'rate']);
 
 const defaults = {
   analyzerEvent: 'b1s-N2KAnalyzerOut',
@@ -178,15 +181,35 @@ class B1sAdapter {
     return this.registry.quantities.get(device.channels.get(channel)?.kind);
   }
 
-  // SI form of a raw parameter value: { si, unit, absolute } or null.
-  siOf(entry, device, channel, raw, ruleKind) {
-    if (typeof raw !== 'number') return null;
+  // A parameter as the API shows it: records decoded into fields; values
+  // with a quantity unit also in SI (si, siUnit), with `absolute` telling
+  // which are absolute (a temperature, not a difference). Records: si and
+  // absolute per field.
+  describeParameter(entry, device, channel, status, raw) {
+    const parameter = { name: entry.id, code: entry.code, scope: entry.scope, type: entry.type, access: entry.access,
+      unit: entry.unit ?? null, values: entry.values ?? null, record: entry.record ?? null,
+      description: entry.description ?? '', channel, status, value: raw, si: null, siUnit: null, absolute: null };
+    if (status !== 'done') return parameter;
     const quantity = this.quantityOf(device, channel);
-    if (['quantity', 'quantityDelta', 'alarmRule'].includes(entry.unit) && quantity) {
-      const absolute = entry.unit === 'quantity' || (entry.unit === 'alarmRule' && absoluteKinds.has(ruleKind));
-      return { si: scaled(raw, quantity.scale), unit: quantity.unit, absolute };
+    if (entry.type === 'record') {
+      const layout = this.registry.records[entry.record] ?? [];
+      parameter.value = decodeRecord(layout, raw);
+      if (quantity) {
+        parameter.si = {};
+        parameter.absolute = {};
+        const delta = deltaFunctions.has(parameter.value.function);
+        for (const field of layout.filter(field => quantityUnits.has(field.unit))) {
+          parameter.si[field.name] = scaled(parameter.value[field.name], quantity.scale);
+          parameter.absolute[field.name] = field.unit === 'quantity' || (field.unit === 'alarmValue' && !delta);
+        }
+        parameter.siUnit = quantity.unit;
+      }
+    } else if (quantity && quantityUnits.has(entry.unit) && typeof raw === 'number') {
+      parameter.si = scaled(raw, quantity.scale);
+      parameter.siUnit = quantity.unit;
+      parameter.absolute = entry.unit === 'quantity';
     }
-    return null;
+    return parameter;
   }
 
   // All parameters of a device, read live, then stored as its backup.
@@ -196,45 +219,43 @@ class B1sAdapter {
     const channels = [...device.channels.keys()].sort((a, b) => a - b);
     const result = [];
     for (const code of codes) {
-      const entry = this.registry.parameters.get(code) ?? { id: `parameter${code}`, scope: 'device', access: 'ro' };
+      const entry = this.registry.parameters.get(code) ?? { id: `parameter${code}`, code, scope: 'device', access: 'ro' };
       for (const channel of entry.scope === 'channel' ? channels : [null]) {
         const { status, value } = await this.client.read(device.address, code, channel ?? 0xff);
-        if (status === 'unknown parameter' && channel !== null) continue; // e.g. a rule the channel lacks
-        result.push({ name: entry.id, code, scope: entry.scope, type: entry.type, access: entry.access,
-          unit: entry.unit ?? null, values: entry.values ?? null, description: entry.description ?? '',
-          channel, status, value });
+        if (status === 'unknown parameter' && channel !== null) continue; // e.g. no measurement behind the channel
+        result.push(this.describeParameter(entry, device, channel, status, value));
       }
-    }
-    // Alarm thresholds are absolute or differences depending on their rule.
-    for (const parameter of result) {
-      const rule = parameter.name.startsWith('alarmThreshold') ? parameter.name.at(-1) : null;
-      const ruleValue = rule === null ? null
-        : result.find(other => other.name === `alarmRule${rule}` && other.channel === parameter.channel)?.value;
-      const converted = this.siOf(this.registry.parameters.get(parameter.code) ?? {}, device, parameter.channel,
-        parameter.value, ruleValue === null || ruleValue === undefined ? null : ruleValue & 0xff);
-      // A sensor-fault rule has no threshold to set.
-      if (rule !== null && ruleValue !== null && ruleValue !== undefined && (ruleValue & 0xff) === 3) parameter.access = 'ro';
-      parameter.si = converted?.si ?? null;
-      parameter.siUnit = converted?.unit ?? null;
-      parameter.absolute = converted?.absolute ?? null;
     }
     await this.saveBackup(device, result);
     return { id: device.id, address: device.address, product: device.product, parameters: result };
   }
 
-  // value: raw number, text, enum name; si: a number in the SI unit, for
-  // parameters with a quantity unit (converted with the channel's scale).
+  // value: raw number, text, enum name, or for a record its fields (raw
+  // values, enum names, flag lists); si: a number in the SI unit for
+  // parameters with a quantity unit, or for a record an object of fields in
+  // SI that replace the raw ones (converted with the channel's scale).
   async setParameter(id, name, { channel = null, value, si } = {}) {
     const device = this.device(id);
     const entry = this.registry.parameterNames.get(name);
     if (!entry) throw new Error(`Unknown parameter ${name}`);
     if (entry.access !== 'rw') throw new Error(`${name} is read-only`);
     if (entry.scope === 'channel' && !device.channels.has(channel)) throw new Error(`Unknown channel ${channel}`);
-    let raw = value;
-    if (si !== undefined && si !== null) {
-      const quantity = this.quantityOf(device, channel);
+    const quantity = this.quantityOf(device, channel);
+    const toRaw = number => {
       if (!quantity) throw new Error(`${name} has no SI form`);
-      raw = Math.round(si / quantity.scale);
+      return Math.round(Number(number) / quantity.scale);
+    };
+    let raw = value;
+    if (entry.type === 'record') {
+      const layout = this.registry.records[entry.record];
+      if (!value || typeof value !== 'object') throw new Error(`${name} needs its fields`);
+      const fields = { ...value };
+      for (const [field, number] of Object.entries(si ?? {})) {
+        if (number !== null && number !== undefined) fields[field] = toRaw(number);
+      }
+      raw = encodeRecord(layout, fields);
+    } else if (si !== undefined && si !== null) {
+      raw = toRaw(si);
     } else if (entry.type === 'enum' && typeof value === 'string') {
       raw = entry.values.indexOf(value);
       if (raw < 0) throw new Error(`${name}: one of ${entry.values.join(', ')}`);
@@ -244,7 +265,10 @@ class B1sAdapter {
     }
     if (entry.type === 'string' && typeof raw !== 'string') throw new Error(`${name} needs a text`);
     const result = await this.client.write(device.address, entry.code, entry.scope === 'channel' ? channel : 0xff, raw);
-    if (result.status === 'done') await this.updateBackup(device, name, channel, result.value);
+    if (result.status === 'done') {
+      result.value = this.describeParameter(entry, device, channel, 'done', result.value).value;
+      await this.updateBackup(device, name, channel, result.value);
+    }
     return result;
   }
 

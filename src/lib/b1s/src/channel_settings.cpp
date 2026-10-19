@@ -23,20 +23,23 @@ RedundantBlobStore ChannelSettings::store(std::size_t item) {
                               RedundantBlobStore::requiredBytes};
 }
 
+// Override record: publish, instance, source, period, raw period (uint16 each).
 void ChannelSettings::load() {
     for (std::size_t channel = 0u; channel < slots_; ++channel) {
-        // Two bytes before the source byte was added: the source stays unset.
-        std::uint8_t data[3]{notSet, notSet, notSet};
+        std::uint8_t data[7]{};
         std::size_t size = 0u;
-        if (store(3u + 3u * channel).load(data, sizeof data, size) && (size == 2u || size == 3u)) {
-            overrides_[channel] = Override{data[0], data[1], size == 3u ? data[2] : notSet};
+        if (store(3u + 3u * channel).load(data, sizeof data, size) && size == sizeof data) {
+            overrides_[channel] = Override{data[0], data[1], data[2], static_cast<std::uint16_t>(data[3] | data[4] << 8u),
+                                           static_cast<std::uint16_t>(data[5] | data[6] << 8u)};
         }
     }
 }
 
 bool ChannelSettings::writeOverride(std::uint8_t channel, const Override& value) {
     if (channel >= slots_) return false;
-    const std::uint8_t data[3]{value.publish, value.standardInstance, value.standardSource};
+    const std::uint8_t data[7]{value.publish, value.standardInstance, value.standardSource,
+                               static_cast<std::uint8_t>(value.period), static_cast<std::uint8_t>(value.period >> 8u),
+                               static_cast<std::uint8_t>(value.rawPeriod), static_cast<std::uint8_t>(value.rawPeriod >> 8u)};
     if (!store(3u + 3u * channel).commit(data, sizeof data)) return false;
     overrides_[channel] = value;
     return true;

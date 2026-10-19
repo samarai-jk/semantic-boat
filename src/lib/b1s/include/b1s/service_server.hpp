@@ -17,7 +17,7 @@ namespace b1s {
 // Status of a parameter reply (CONFIGURATION.md).
 enum class ParameterStatus : std::uint8_t {
     done = 0u, unknownParameter = 1u, unknownChannel = 2u, invalidValue = 3u, readOnly = 4u, busy = 5u,
-    notPermitted = 6u,
+    notPermitted = 6u, noResources = 7u,
 };
 
 // Result of a command reply (README, Command).
@@ -40,7 +40,7 @@ using CommandHandler = CommandResult (*)(void* context, Command command, std::ui
 
 struct ServiceServerConfig {
     MeasurementPublisher* publisher{};               // channels, encoding, descriptions
-    slstm32::sensors::MeasurementRegistry* measurements{}; // calibration, thresholds, alarms
+    slstm32::sensors::MeasurementRegistry* measurements{}; // calibration, alarms, output function
     slstm32::CommandConsole* console{};              // console over CAN (nullptr: none)
     slstm32::drivers::SerialLogDriver* log{};        // its output, mirrored to the requester
     const DeviceParameter* deviceParameters{};
@@ -74,9 +74,12 @@ public:
 
 private:
     struct Value {
-        bool text{};
+        enum class Kind : std::uint8_t { number, text, record };
+        Kind kind{Kind::number};
         std::int32_t number{};
         char string[maxTextLength + 1u]{};
+        std::uint8_t record[32]{};
+        std::uint8_t recordLength{};
     };
     struct Pending {
         bool active{};
@@ -94,6 +97,9 @@ private:
     CommandResult runCommand(Command command, std::uint8_t channel, std::int32_t argument);
     ParameterStatus read(Parameter parameter, std::uint8_t channel, Value& value);
     ParameterStatus write(Parameter parameter, std::uint8_t channel, const Value& value);
+    ParameterStatus readMeasurement(Parameter parameter, const ChannelConfig& config, Value& value);
+    ParameterStatus writeMeasurement(Parameter parameter, const ChannelConfig& config, const Value& value);
+    ParameterStatus writeOutput(const ChannelConfig& config, const Value& value);
     std::size_t parameterIds(std::uint16_t* ids, std::size_t capacity) const;
     const DeviceParameter* deviceParameter(Parameter parameter) const;
     std::size_t measurementIndex(const ChannelConfig& channel) const;

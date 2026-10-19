@@ -53,13 +53,18 @@ plugins have their own.
       mapped, learned from Signal K's data). Opened, it has three tabs, each with its own clearly
       named button: **Setup** (label, location, a custom Signal K path, how
       it is sent, the standard PGN's source by name and instance; Save
-      setup), **Calibration** (calibrate against a reference
-      entered in °C or %: one point for the offset, a second for the gain;
-      the calibration values with Save calibration values; Reset channel to
-      defaults, set apart), and **Alarms** (each rule as a sentence: "Warning
-      when above 40.0 °C", rise rates per minute, its state; Save
-      thresholds). A Save stores only the edited fields, then reads the
-      device again.
+      setup; then **Output**: the value sent, latest sample or average,
+      minimum, maximum over seconds or samples, how often it is sent, and how
+      often the raw value is sent; Save output), **Calibration** (calibrate
+      against a reference entered in °C or %: one point for the offset, a
+      second for the gain; the calibration values with Save calibration
+      values; Reset calibration, set apart), and **Alarms** (the sensor fault
+      alarm, off to emergency; up to four rules, each a sentence: "Warning
+      when the average over 10 s is above 40 °C for 3 s; clears 2 °C back;
+      latching", with bands inside/outside, rates per minute, changes over a
+      window, its state; + Add alarm and Remove; the device's free windows;
+      Save alarms; Reset alarms and output to firmware defaults). A Save stores only the
+      edited fields, then reads the device again.
     - **Log**: the device streams its log (debug lines included) only when
       switched on there, for 5, 15, or 60 minutes, at most 512 B/s, and stops
       by itself when the time is up; Stop ends it at once. Level filter,
@@ -179,8 +184,10 @@ brings its devices into Signal K and configures them over CAN
   `environment.inside.refrigerator.temperature`, or, while its channel has no
   location, to `b1s.unassigned.<device ID>.<channel>.<quantity>`; SI values,
   `null` for "not available", "error", and "out of range"; metadata with the
-  unit and the channel label. Standard PGNs of B1S devices are decoded by
-  Signal K itself.
+  unit and the channel label. A channel's raw value (Measurement Raw, when
+  switched on) goes to its path with `Raw` appended
+  (`environment.inside.refrigerator.temperatureRaw`). Standard PGNs of B1S
+  devices are decoded by Signal K itself.
 - **Custom paths.** A channel can have its own Signal K path (Setup, stored
   on the Pi, part of the backup): used exactly as written, or below the
   prefixes when it starts with `*` (`*environment.cabin.temperature`). Not
@@ -198,14 +205,10 @@ brings its devices into Signal K and configures them over CAN
   Unknown devices and channels are asked for their address claim, product
   information, and Channel Descriptions (at most every 10 s per device);
   global requests go out 3 s after start.
-- **Devices page** for a B1S device: product, software, and
-  hardware; its channels with live value, label, location, encoding, and
-  Signal K path (edit and Save; Calibrate against a reference in °C or %;
-  Reset calibration and thresholds); all parameters (thresholds and
-  calibration in °C / K / %); Identify, Restart, Restore; and the device log
-  (see Page).
+- **Devices page** for a B1S device: see Page above.
 - **Backups.** Every complete parameter read and every change is stored as
-  `b1s-backups/<device ID>.json` in the plugin data directory. Restore writes
+  `b1s-backups/<device ID>.json` in the plugin data directory, record
+  parameters (alarm rules, output) as their fields. Restore writes
   a backup onto a device: its own, or another device's (a replacement; then
   without calibration, which belongs to the old sensors).
 - The plugin status shows B1S devices, channels, measurements, and the age
@@ -213,7 +216,9 @@ brings its devices into Signal K and configures them over CAN
 
 API (admin login): `GET /b1s/devices`, `GET /b1s/devices/:id/parameters`
 (read live, then backed up), `PUT /b1s/devices/:id/parameters/:name` with
-`{channel, value}` (raw, text, or enum name) or `{channel, si}`,
+`{channel, value}` (raw, text, or enum name; for a record its fields: raw
+values, enum names, flag lists) or `{channel, si}` (a number; for a record
+an object of fields in SI that replace the raw ones),
 `POST /b1s/devices/:id/commands/:name` with `{channel, argument | si}`,
 `POST /b1s/devices/:id/console` with `{line}`,
 `POST /b1s/devices/:id/log` with `{minutes}` (1..60; 0 stops),

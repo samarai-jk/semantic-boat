@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include "slstm32/sensors/window.hpp"
 
 // Measurement channels: the common interface between sensor drivers and
 // everything that uses measured values (alarms, displays, NMEA 2000, logs).
@@ -56,28 +57,48 @@ const char* faultName(Fault fault);
 enum class Severity : std::uint8_t { warning, alarm, emergency };
 const char* severityName(Severity severity);
 
-enum class AlarmKind : std::uint8_t {
-    high,        // value above threshold
-    low,         // value below threshold
-    riseRate,    // rise per minute above threshold (thousandths of the unit per minute)
-    sensorFault, // channel faulted or stale; threshold unused
-    trendFall,   // fall over the trend window by more than threshold (a positive amount)
-    trendRise,   // rise over the trend window by more than threshold
+enum class Comparison : std::uint8_t {
+    above,   // value > threshold
+    atLeast, // value >= threshold
+    below,   // value < threshold
+    atMost,  // value <= threshold
+    inside,  // threshold <= value <= upper
+    outside, // value < threshold or value > upper
 };
+const char* comparisonName(Comparison comparison);
 
+// An alarm on a value of the channel, e.g. "warning when the average over
+// 60 s is below 11.8 V for 30 s". Thresholds are in the unit of the value:
+// thousandths of the channel unit for last, average, minimum, maximum, and
+// change; thousandths per minute for rate.
 struct AlarmRule {
-    AlarmKind kind{AlarmKind::high};
+    ValueFunction function{ValueFunction::none}; // none: the slot is unused
+    Comparison comparison{Comparison::above};
     Severity severity{Severity::warning};
-    std::int32_t threshold{};
-    // The alarm clears only once the value is this far back on the safe side.
-    std::int32_t hysteresis{};
-    // The condition must hold this long before the alarm becomes active.
-    std::uint32_t delayMs{};
     // An active latching alarm stays active until acknowledged, even after
     // the condition has cleared.
     bool latching{};
-    // Evaluate the smoothed instead of the latest value.
-    bool useFiltered{};
+    WindowLength window{};        // for average, minimum, maximum, change
+    std::uint16_t delaySeconds{}; // the condition must hold this long; 0 = at the first sample
+    std::int32_t threshold{};     // lower limit for inside/outside
+    std::int32_t upper{};         // upper limit for inside/outside
+    // The alarm clears only once the value is this far back on the safe side.
+    std::int32_t hysteresis{};
+};
+
+// The alarm when the channel has no valid value (sensor fault or stale).
+struct FaultRule {
+    bool enabled{};
+    Severity severity{Severity::warning};
+    std::uint16_t delaySeconds{};
+    bool latching{};
+};
+
+// How the channel's output value (published, shown) is derived: last,
+// average, minimum, or maximum.
+struct OutputRule {
+    ValueFunction function{ValueFunction::last};
+    WindowLength window{};
 };
 
 struct MeasurementConfig {
@@ -85,9 +106,13 @@ struct MeasurementConfig {
     Quantity quantity{Quantity::temperature};
     std::uint8_t instance{};       // unique per quantity on the device (NMEA 2000 instance)
     std::uint32_t staleAfterMs{10000u};
-    std::uint32_t filterMs{};      // smoothing time constant; 0 = none
+    std::uint32_t filterMs{};      // smoothing time constant of the rate and trend; 0 = none
+    // Default alarm rules (up to Measurement::maxAlarms), fault alarm, and
+    // output; settings stored for the channel replace them.
     const AlarmRule* alarms{};
     std::size_t alarmCount{};
+    FaultRule fault{};
+    OutputRule output{};
     // Slow trend, e.g. the 3-hour pressure tendency: the change over this
     // window, sampled into a buffer given with Measurement::setTrendBuffer().
     // 0 = no trend.
@@ -147,16 +172,23 @@ using AlarmListener = void (*)(void* context, Measurement& channel, std::size_t 
 class Measurement {
 public:
     static constexpr std::size_t maxAlarms = 4u;
+    // Alarm slots: the rules 0..maxAlarms-1 and the fault alarm.
+    static constexpr std::size_t faultSlot = maxAlarms;
+    static constexpr std::size_t alarmSlots = maxAlarms + 1u;
 
     explicit Measurement(const MeasurementConfig& config);
 
     // --- Driver side ---
     // A different identity (another sensor on the same input) resets the
-    // calibration, thresholds, and statistics; the registry then applies
-    // the settings stored for the new sensor.
+    // calibration and statistics; the registry then applies the settings
+    // stored for the new sensor. Alarms and output belong to the channel and
+    // stay.
     void setIdentity(const Identity& identity);
     void update(std::int32_t raw, std::uint32_t now);
     void fail(Fault fault, std::uint32_t now);
+    // The channel's raw value is the latest calibrated sample unless the
+    // driver sets something that suits its sensor better, after update().
+    void setRawValue(std::int32_t value) { rawValue_ = value; }
 
     // --- Readers ---
     const MeasurementConfig& config() const { return config_; }
@@ -170,7 +202,12 @@ public:
     Fault fault() const { return fault_; }
     std::int32_t value() const { return value_; }       // calibrated latest value
     std::int32_t filtered() const { return filtered_; } // smoothed (equals value without smoothing)
-    std::int32_t raw() const { return raw_; }
+    std::int32_t raw() const { return raw_; }           // uncalibrated sensor reading
+    std::int32_t rawValue() const { return rawValue_; } // see setRawValue()
+    // The output value per the output rule; false without a valid value.
+    bool output(std::int32_t& value) const;
+    // The value of a function as alarms see it; false if there is none.
+    bool functionValue(ValueFunction function, const Window* window, std::int32_t& value) const;
     std::uint32_t lastUpdateAt() const { return lastUpdateAt_; }
     std::uint32_t samples() const { return samples_; }
     std::int32_t minimum() const { return minimum_; }
@@ -192,23 +229,36 @@ public:
     std::uint32_t trendSpanMs() const { return trendSpanMs_; }
     Tendency tendency() const;
 
-    std::size_t alarmCount() const { return alarmCount_; }
-    const AlarmRule& alarmRule(std::size_t index) const { return rules_[index]; }
-    bool alarmActive(std::size_t index) const { return alarms_[index].active; }
-    bool alarmAcknowledged(std::size_t index) const { return alarms_[index].acknowledged; }
+    // --- Alarms and output (slots 0..maxAlarms-1 rules, faultSlot) ---
+    const AlarmRule& alarmRule(std::size_t slot) const { return rules_[slot]; }
+    const FaultRule& faultRule() const { return faultRule_; }
+    const OutputRule& outputRule() const { return output_; }
+    const Window* alarmWindow(std::size_t slot) const { return windows_[slot]; }
+    bool alarmUsed(std::size_t slot) const;
+    Severity alarmSeverity(std::size_t slot) const;
+    bool alarmActive(std::size_t slot) const { return alarms_[slot].active; }
+    bool alarmAcknowledged(std::size_t slot) const { return alarms_[slot].acknowledged; }
+
+    // Rule changes take windows from the pool (and return unused ones). An
+    // active alarm of a changed slot clears. Nothing changes for an invalid
+    // rule or when the pool has no window left.
+    enum class RuleResult : std::uint8_t { applied, invalid, noWindow };
+    RuleResult setAlarmRule(std::size_t slot, const AlarmRule& rule, WindowPool* pool, std::uint32_t now);
+    RuleResult setFaultRule(const FaultRule& rule);
+    RuleResult setOutputRule(const OutputRule& rule, WindowPool* pool, std::uint32_t now);
+    static bool validRule(const AlarmRule& rule);
+    static bool validRule(const OutputRule& rule);
 
     // --- Settings (persisted by MeasurementRegistry) ---
     const Calibration& calibration() const { return calibration_; }
     void setCalibration(const Calibration& calibration);
-    bool setThreshold(std::size_t rule, std::int32_t threshold);
-    bool thresholdOverridden(std::size_t rule) const { return rule < alarmCount_ && rules_[rule].threshold != config_.alarms[rule].threshold; }
 
     // --- Registry side ---
     void setAlarmListener(AlarmListener listener, void* context) {
         listener_ = listener;
         listenerContext_ = context;
     }
-    // Staleness and alarm delays; called regularly by the registry.
+    // Staleness, windows, and alarm delays; called regularly by the registry.
     void tick(std::uint32_t now);
     // Acknowledges active alarms; latching alarms whose condition has cleared end.
     void acknowledge();
@@ -231,16 +281,23 @@ private:
     static constexpr std::uint32_t rateMinimumSpanMs = 15000u;
 
     void evaluate(std::uint32_t now);
-    bool condition(const AlarmRule& rule, bool active) const;
-    void notify(std::size_t rule, AlarmTransition transition);
+    void evaluateSlot(std::size_t slot, bool holds, std::uint32_t delayMs, bool latching, std::uint32_t now);
+    bool condition(std::size_t slot, bool active, bool& known) const;
+    void clearSlot(std::size_t slot);
+    RuleResult setWindow(Window*& window, ValueFunction function, WindowLength length, WindowPool* pool,
+                         std::uint32_t now);
+    void notify(std::size_t slot, AlarmTransition transition);
     void trackRate(std::uint32_t now);
     void trackTrend(std::uint32_t now);
     void resetTrend();
 
     const MeasurementConfig& config_;
     std::array<AlarmRule, maxAlarms> rules_{};
-    std::array<AlarmState, maxAlarms> alarms_{};
-    std::size_t alarmCount_{};
+    FaultRule faultRule_{};
+    OutputRule output_{};
+    std::array<AlarmState, alarmSlots> alarms_{};
+    std::array<Window*, maxAlarms> windows_{};
+    Window* outputWindow_{};
     Identity identity_{};
     std::uint8_t identityRevision_{};
     Calibration calibration_{};
@@ -248,6 +305,7 @@ private:
     Fault fault_{Fault::none};
     std::int32_t raw_{};
     std::int32_t value_{};
+    std::int32_t rawValue_{};
     std::int32_t filtered_{};
     std::uint32_t lastUpdateAt_{};
     std::uint32_t firstTickAt_{};

@@ -1,6 +1,6 @@
 # B1S configuration over CAN (design draft)
 
-**Status:** 2026-10-18. Part of [B1S](README.md). Implemented: the device
+**Status:** 2026-10-19. Part of [B1S](README.md). Implemented: the device
 side (`b1s::ServiceServer`, `b1s::ChannelSettings`, on LT1) and the
 command-line client [`src/tools/can-bench/b1s_tool.py`](../../tools/can-bench/b1s_tool.py).
 Planned: the Signal K side (backups, replacement, the devices page).
@@ -55,7 +55,7 @@ tool reads everything else from the registry.
 | `id` | uint16, never reused |
 | `id` name | lowerCamelCase, e.g. `channelLocation` |
 | scope | `device` or `channel` (then addressed with a channel number) |
-| type | `uint8`, `uint16`, `int32`, `bool`, `enum`, `string` (max 32 ASCII) |
+| type | `uint8`, `uint16`, `int32`, `bool`, `enum`, `string` (max 32 ASCII), `record` (fields, see below) |
 | unit | for `int32` values of a channel: `quantity` means the channel quantity's raw unit (SI x scale, as in the Measurement message); otherwise an SI unit |
 | access | `rw` (stored, part of backups), `ro` (state, diagnostics) |
 | restart | the new value takes effect after a restart |
@@ -71,28 +71,93 @@ The parameters are in the registry; the first set:
 | 18 | `channelEncoding` | channel | enum `automatic`, `standard`, `b1s`, `off` | rw | Encoding switch |
 | 19 | `channelStandardInstance` | channel | uint8 | rw | Instance of the standard PGN; 255 = firmware default |
 | 20 | `channelStandardSource` | channel | uint8 | rw | Source field of the standard PGN (registry `standard_sources`); 255 = firmware default |
+| 21 | `channelOutput` | channel | record `output` | rw | Value function and window, send period, raw value period |
 | 32 | `calibrationOffset` | channel | int32, quantityDelta | rw | value = raw x gain + offset |
 | 33 | `calibrationGain` | channel | int32, ppm | rw | 500000..2000000 |
-| 40..43 | `alarmThreshold0..3` | channel | int32 | rw | Threshold of alarm rule n: absolute for high/low, a difference (per minute for rise rate) otherwise; sensor-fault rules have none |
-| 44..47 | `alarmRule0..3` | channel | uint32 | ro | Kind, severity, latching, active, acknowledged of rule n |
+| 40 | `faultAlarm` | channel | record `faultAlarm` | rw | Alarm when the channel has no valid value: off .. emergency, delay, latching |
+| 41..44 | `alarm0..3` | channel | record `alarm` | rw | Alarm rule n; function `none` = unused |
+| 45 | `alarmState` | channel | uint32 | ro | Bit 2n active, bit 2n+1 acknowledged; n = 0..3 rules, 4 fault alarm |
 | 64 | `uptime` | device | uint32, s | ro | |
+| 65 | `windowPool` | device | record `windowPool` | ro | Windows of the device: total, free, buckets per window |
 
 `quantityDelta` values have the quantity's scale but no zero offset: a
 calibration offset of 504 is 0.504 K, not -272.6 °C. A channel parameter
-the channel does not have (a fourth alarm rule) reads as "unknown
-parameter".
+the channel does not have (calibration of a channel without a measurement)
+reads as "unknown parameter".
+
+### Records
+
+A record parameter is a fixed sequence of fields, little-endian, no gaps,
+laid out in the registry (`records`); the tool and the plugin decode them
+from there. A record is written whole, so a rule never exists half changed.
+
+**`output`** (8 bytes): how the channel's value is derived and how often it
+is sent.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `function` | enum `none`, `last`, `average`, `minimum`, `maximum` | Value sent (`none` = `last`) |
+| `flags` | bit 0 `windowSamples` | The window counts samples, not seconds |
+| `window` | uint16 | Window length for average, minimum, maximum |
+| `period` | uint16, 0.1 s | How often the value is sent; 0 = firmware default |
+| `rawPeriod` | uint16, 0.1 s | How often the raw value is sent (Measurement Raw); 0 = never |
+
+**`faultAlarm`** (4 bytes): `severity` (enum `off`, `warning`, `alarm`,
+`emergency`), `flags` (bit 0 `latching`), `delay` (uint16, s: how long the
+channel must lack a valid value).
+
+**`alarm`** (20 bytes): one rule, read as a sentence: "*severity* when the
+*function* (over *window*) is *comparison* *threshold* (and *upper*) for
+*delay* seconds; clears *hysteresis* back".
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `function` | enum `none`, `last`, `average`, `minimum`, `maximum`, `change`, `rate` | The value the rule looks at; `none` = unused slot |
+| `comparison` | enum `above`, `atLeast`, `below`, `atMost`, `inside`, `outside` | `inside`/`outside` use `threshold`..`upper` |
+| `severity` | enum `warning`, `alarm`, `emergency` | |
+| `flags` | bit 0 `latching`, bit 1 `windowSamples` | Latching: active until acknowledged |
+| `window` | uint16 | Window length (s or samples) for average, minimum, maximum, change |
+| `delay` | uint16, s | How long the condition must hold; 0 = at the first sample |
+| `threshold` | int32, alarmValue | Threshold; lower limit of a band |
+| `upper` | int32, alarmValue | Upper limit of a band |
+| `hysteresis` | int32, alarmDelta | How far back on the safe side the value must be to clear |
+
+`alarmValue` is the quantity's raw unit (absolute) for `last`, `average`,
+`minimum`, `maximum`, a difference for `change` (newest minus oldest part
+of the window, e.g. the 3-hour pressure tendency), and a difference per
+minute for `rate`. `alarmDelta` is a difference (per minute for `rate`).
+
+**`windowPool`** (3 bytes, read-only): `windows`, `free`, `buckets`.
+
+### Windows
+
+Average, minimum, maximum, and change look at a sliding window. A window
+has a fixed number of buckets (the firmware decides: `slstm32`
+`StaticWindowPool<windows, buckets>`), so 15 seconds and 6 hours cost the
+same memory; the precision is window / buckets (the value covers the
+window plus at most one bucket). Windows of at most `buckets` samples are
+exact. Every output or rule that needs a window takes one from the
+device's pool; a write that would need more than the pool has is refused
+with "no resources" and changes nothing. Time windows start at multiples of
+their bucket length and values are sent at multiples of the period, so a
+10 s average sent every 10 s covers each 10 s once.
 
 Values on the wire use B1S units (SI x quantity scale); the device converts
 to its internal units (inverse of `b1s::toRaw`).
 
 **Where values live on the device:**
 
-- Channel location, label, encoding, standard instance, device role and
-  instance: a new B1S configuration record in EEPROM, keyed by B1S channel
-  number. The compiled-in `ChannelConfig` stays the default.
-- Calibration and alarm thresholds: unchanged, the slstm32
-  `MeasurementRegistry` settings keyed by the *sensor's* identity (they
-  belong to the physical sensor, not the channel).
+- Channel location, label, encoding, standard instance and source, send
+  periods, device role: the B1S configuration in EEPROM
+  (`b1s::ChannelSettings`), keyed by B1S channel number. The compiled-in
+  `ChannelConfig` stays the default.
+- Alarm rules, fault alarm, and output function: the slstm32
+  `MeasurementRegistry`, per channel (they say what the channel is used
+  for, so a replaced sensor keeps them), five records of 128 bytes per
+  channel tagged with the channel's name. The `MeasurementConfig` stays the
+  default (`resetAlarmsAndOutput`).
+- Calibration: the slstm32 `MeasurementRegistry` settings keyed by the
+  *sensor's* identity (it belongs to the physical sensor, not the channel).
 
 ## Actions
 
@@ -103,7 +168,8 @@ One-shot operations, as Command messages (61184, registry `commands`):
 | `identify` | 0xFF | seconds (bytes 4..5) | Fast green blink and a beep; 0 stops |
 | `calibrate` | channel | reference (int32, quantity) | Offset calibration against a reference at the current reading, like `sensor <name> cal` |
 | `calibrateSecondPoint` | channel | reference | Gain and offset from both points (`cal2`) |
-| `resetChannel` | channel | — | Calibration and thresholds back to defaults |
+| `resetCalibration` | channel | — | Calibration back to the defaults (offset 0, gain 1) |
+| `resetAlarmsAndOutput` | channel | — | Alarm rules, fault alarm, output function, and send periods back to the firmware defaults |
 | `acknowledgeAlarms` | 0xFF | — | Like any button or `ack` |
 | `restart` | 0xFF | — | Software restart after the reply |
 
@@ -126,16 +192,18 @@ number, status (4), fields (5..).
 | 8 | `logStream` | minutes (uint8): 1..60 start or extend, 0 stop, 255 only ask | remaining seconds (uint16; 0 = off) |
 
 Values: type 0 = int32 (4 bytes), type 1 = text (NMEA 2000 STRING_LAU,
-ASCII, at most 32 characters). Status: 0 done, 1 unknown parameter,
-2 unknown channel, 3 invalid value, 4 read-only, 5 busy, 6 not permitted.
+ASCII, at most 32 characters), type 2 = record (length byte, then the
+record's bytes). Status: 0 done, 1 unknown parameter, 2 unknown channel,
+3 invalid value, 4 read-only, 5 busy, 6 not permitted, 7 no resources (no
+window left).
 A reply without status 0 ends after the channel byte (read/write) or the
 status (others).
 
 A device handles one request at a time; a new request replaces one whose
 reply has not been sent. The client waits for each reply (1 s, three
 tries). Writes are stored at once: a reply means the value is in EEPROM.
-Location, label, encoding, and instance changes re-send the channel's
-Channel Description, so Signal K paths follow at once.
+Location, label, encoding, instance, and output changes re-send the
+channel's Channel Description, so Signal K paths follow at once.
 
 **Log stream and console:** a device sends its log (every level, debug
 included) to one requester only when asked, as `console` replies of up to
@@ -169,7 +237,8 @@ after one initial chunk, with drop markers.
   device's `rw` parameters as JSON in the plugin data directory, by device
   ID, with product and time.
 - **Replacement:** Restore writes another device's backup onto a new device
-  (without calibration, which belongs to the old sensors). *Planned:* the
+  (without calibration, which belongs to the old sensors). Backups hold
+  record parameters (alarm rules, output) as their fields. *Planned:* the
   page offers this by itself when a device of the same product without a
   role appears while a configured one has been missing for a while.
 - After a location change, Signal K paths change at once (the plugin
@@ -185,6 +254,13 @@ release builds. Since release builds use -Os (2026-10-18), B1S (n2k stack,
 b1s library, CAN binding) is about 9.3 KiB of LT1's 72.6 KiB. EEPROM:
 `ChannelSettings::requiredBytes(slots)`, 128 bytes for the role and 384
 bytes per channel slot.
+
+Configurable alarms, outputs, and periods (2026-10-19, LT1 product build):
++5.4 KiB of flash (73,264 to 78,760 bytes: slstm32 windows, rules, and
+their storage +3.0 KiB; B1S records, periods, Measurement Raw +1.8 KiB),
++2.6 KiB of RAM, of which 2.4 KiB is LT1's window pool (16 windows of 16
+buckets, a device decision) and 64 bytes the send schedules. EEPROM: 640
+bytes per measurement channel (`MeasurementRegistry::processingBytes()`).
 
 ## Firmware
 
@@ -214,4 +290,10 @@ bytes per channel slot.
    configuration client, API, backups, page. Verified against LT1 through
    the adapter (parameters with SI values, writes, calibration, commands,
    backup, restore, console).
-3. Planned: replacement offered automatically; daily backups.
+3. Done (2026-10-19): configurable alarm rules (up to four per channel,
+   with value function, window, comparison including bands, delay,
+   hysteresis, severity, latching), configurable sensor-fault alarm, output
+   function, send periods, and the raw value. Verified on LT1: rolling and
+   block averages, raw values, only new samples sent, band alarm active and
+   cleared, invalid band refused, settings survive a restart.
+4. Planned: replacement offered automatically; daily backups.

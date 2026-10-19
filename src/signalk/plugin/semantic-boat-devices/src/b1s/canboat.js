@@ -52,6 +52,12 @@ function canboatDefinitions(registry) {
         number('channel', 'Channel', 8, 24),
         number('value', 'Value', 32, 32, { Signed: true })
       ]),
+      definition(registry.pgns.measurementRaw, 'b1sMeasurementRaw', 'B1S: Measurement Raw', 'Single', 8, [
+        ...header(registry),
+        number('quantity', 'Quantity', 8, 16),
+        number('channel', 'Channel', 8, 24),
+        number('value', 'Value', 32, 32, { Signed: true })
+      ]),
       definition(registry.pgns.channelDescription, 'b1sChannelDescription', 'B1S: Channel Description', 'Fast', 76, [
         ...header(registry),
         number('channel', 'Channel', 8, 16),
@@ -59,7 +65,8 @@ function canboatDefinitions(registry) {
         number('encoding', 'Encoding', 2, 32),
         number('output', 'Output Channel', 1, 34),
         number('noStandard', 'No Standard PGN', 1, 35),
-        { Id: 'reserved2', Name: 'Reserved', BitLength: 4, BitOffset: 36, BitStart: 4, Resolution: 1,
+        number('raw', 'Raw Value Sent', 1, 36),
+        { Id: 'reserved2', Name: 'Reserved', BitLength: 3, BitOffset: 37, BitStart: 5, Resolution: 1,
           FieldType: 'RESERVED' },
         number('standardInstance', 'Standard PGN Instance', 8, 40),
         number('period', 'Nominal Period', 16, 48, { Resolution: 0.01, Unit: 's' }),

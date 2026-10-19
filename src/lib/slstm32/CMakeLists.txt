@@ -50,6 +50,7 @@ add_library(slstm32 STATIC
     src/sensors/measurement_log.cpp
     src/sensors/registry.cpp
     src/sensors/rtd.cpp
+    src/sensors/window.cpp
     src/storage/keyed_record_store.cpp
     src/storage/redundant_blob_store.cpp
 )

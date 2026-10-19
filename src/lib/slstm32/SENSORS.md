@@ -179,7 +179,10 @@ channels, alarms, and settings storage are described in the
   below 0.1 hPa, rapid above 3.5 hPa. `sensor <name> trend <min>` shortens
   the window for tests. The trend is lost at a restart (3 h until fully
   valid again); keeping it in the RTC backup registers would be a later
-  improvement.
+  improvement. (Since 2026-10-19 the alarm kinds `trendFall`/`trendRise`
+  are gone: the same alarms are rules with the `change` function over a
+  3-hour window, e.g. "warning when the change over 10800 s is below
+  -3 hPa".)
 
 Overnight comparison BMP585 (SEN0664) against BMP280 (SEN0253), 10.3 h on
 lab-test-01 (2026-10-17/18), both with the 3-hour trend:

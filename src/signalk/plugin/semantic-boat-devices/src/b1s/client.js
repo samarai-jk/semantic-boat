@@ -7,7 +7,7 @@
 
 const reply = 0x80;
 const parameterStatus = ['done', 'unknown parameter', 'unknown channel', 'invalid value', 'read-only', 'busy',
-  'not permitted'];
+  'not permitted', 'no resources'];
 const commandResults = ['done', 'unknown command', 'unknown channel', 'invalid argument', 'refused', 'busy'];
 
 function hexBytes(text) {
@@ -23,7 +23,8 @@ function int32Bytes(value) {
   return [value & 0xff, value >> 8 & 0xff, value >> 16 & 0xff, value >> 24 & 0xff];
 }
 
-// Value of a read or write reply: bytes after the status.
+// Value of a read or write reply: bytes after the status. Text (type 1) as
+// a string, a record (type 2) as an array of its bytes, numbers as numbers.
 function decodeValue(bytes) {
   const [codeLow, codeHigh, channel, type] = bytes;
   const code = codeLow | codeHigh << 8;
@@ -31,6 +32,7 @@ function decodeValue(bytes) {
     const length = bytes[4];
     return { code, channel, value: String.fromCharCode(...bytes.slice(6, 4 + length)) };
   }
+  if (type === 2) return { code, channel, value: bytes.slice(5, 5 + bytes[4]) };
   return { code, channel, value: int32(bytes, 4) };
 }
 
@@ -145,7 +147,9 @@ class B1sClient {
 
   async write(address, code, channel, value) {
     let encoded;
-    if (typeof value === 'string') {
+    if (Array.isArray(value)) {
+      encoded = [2, value.length, ...value]; // record bytes
+    } else if (typeof value === 'string') {
       const text = [...value].map(character => character.charCodeAt(0) & 0x7f).slice(0, 32);
       encoded = [1, text.length + 2, 1, ...text];
     } else {

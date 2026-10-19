@@ -50,7 +50,8 @@ class B1sState {
     const fields = n2k.fields ?? {};
     if (n2k.pgn === isoAddressClaim) return this.addressClaim(n2k.src, fields);
     if (n2k.pgn === productInformation) return this.product(n2k.src, fields);
-    if (n2k.pgn !== this.registry.pgns.measurement && n2k.pgn !== this.registry.pgns.channelDescription) return;
+    const pgns = this.registry.pgns;
+    if (n2k.pgn !== pgns.measurement && n2k.pgn !== pgns.measurementRaw && n2k.pgn !== pgns.channelDescription) return;
     if (field(fields, 'manufacturerCode', 'Manufacturer Code') !== this.registry.manufacturerCode) return;
     this.lastMessageAt = this.now();
     const device = this.deviceAt(n2k.src);
@@ -59,8 +60,8 @@ class B1sState {
       this.ask(n2k.src, isoAddressClaim);
       return;
     }
-    if (n2k.pgn === this.registry.pgns.channelDescription) this.describe(device, fields);
-    else this.measure(device, n2k, fields);
+    if (n2k.pgn === pgns.channelDescription) this.describe(device, fields);
+    else this.measure(device, n2k, fields, n2k.pgn === pgns.measurementRaw);
   }
 
   addressClaim(address, fields) {
@@ -73,7 +74,7 @@ class B1sState {
     if (manufacturer !== this.registry.manufacturerCode) return;
     let device = this.devices.get(id);
     if (!device) {
-      device = { id, address, channels: new Map(), values: new Map(), product: null };
+      device = { id, address, channels: new Map(), values: new Map(), rawValues: new Map(), product: null };
       this.devices.set(id, device);
       this.ask(address, productInformation);
     }
@@ -112,6 +113,7 @@ class B1sState {
       encoding: encodings[encoding] ?? 'n/a',
       output: field(fields, 'output', 'Output Channel') === 1,
       noStandard: field(fields, 'noStandard', 'No Standard PGN') === 1,
+      raw: field(fields, 'raw', 'Raw Value Sent') === 1,
       standardInstance: field(fields, 'standardInstance', 'Standard PGN Instance') ?? null,
       period: field(fields, 'period', 'Nominal Period') ?? null,
       location: field(fields, 'location', 'Location') ?? '',
@@ -152,7 +154,9 @@ class B1sState {
       { path: entry.path, value: entry.value, at: Date.parse(entry.timestamp) || this.now() });
   }
 
-  measure(device, n2k, fields) {
+  // The raw value of a channel (Measurement Raw) goes next to its value:
+  // <path>Raw (a Signal K path cannot be a value and a branch at once).
+  measure(device, n2k, fields, isRaw = false) {
     const channel = field(fields, 'channel', 'Channel');
     const quantityCode = field(fields, 'quantity', 'Quantity');
     if (channel === undefined || channel === null || quantityCode === undefined || quantityCode === null) return;
@@ -166,8 +170,8 @@ class B1sState {
     const value = raw === null || raw === undefined || specialValues.has(raw) || !quantity
       ? null
       : scaled(raw, quantity.scale);
-    const path = this.pathOf(device, description, quantityCode);
-    device.values.set(channel, { value, at: this.now() });
+    const path = this.pathOf(device, description, quantityCode) + (isRaw ? 'Raw' : '');
+    (isRaw ? device.rawValues : device.values).set(channel, { value, at: this.now() });
     const update = {
       source: { label: 'b1s', type: 'NMEA2000', pgn: n2k.pgn, src: String(n2k.src) },
       values: [{ path, value }]
@@ -175,7 +179,7 @@ class B1sState {
     if (n2k.timestamp) update.timestamp = n2k.timestamp;
     if (!this.metaSent.has(path) && device.channels.has(channel)) {
       const meta = { description: `B1S device ${device.id}, channel ${channel}` };
-      if (description.label) meta.displayName = description.label;
+      if (description.label) meta.displayName = isRaw ? `${description.label} (raw)` : description.label;
       if (quantity && quantity.unit !== '1') meta.units = quantity.unit;
       update.meta = [{ path, value: meta }];
       this.metaSent.add(path);
@@ -212,6 +216,8 @@ class B1sState {
         const standardPgn = quantity?.standard_pgn ?? null;
         let latest = device.values.get(channel.channel);
         let path = this.pathOf(device, channel, channel.kind);
+        const rawPath = channel.raw && channel.encoding !== 'off' ? `${path}Raw` : null;
+        const raw = rawPath ? device.rawValues.get(channel.channel) : null;
         if (channel.encoding === 'standard') {
           // Learned from Signal K's mapping once the first value arrived.
           const mapped = device.standard?.get(`${standardPgn}:${channel.standardInstance ?? ''}`);
@@ -228,7 +234,9 @@ class B1sState {
           customPath: this.channelPath(device.id, channel.channel),
           value: latest?.value ?? null,
           ageMs: latest?.at ? Math.max(0, this.now() - latest.at) : null,
-          path
+          path,
+          rawPath,
+          rawValue: raw?.value ?? null
         };
       })
     }));

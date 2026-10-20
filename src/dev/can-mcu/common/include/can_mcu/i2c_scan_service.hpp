@@ -6,7 +6,7 @@
 #include "slstm32/runtime.hpp"
 #include "slstm32/service.hpp"
 
-namespace lab_test_01 {
+namespace can_mcu {
 
 // Lists the devices on the I2C bus at startup, then rescans periodically and
 // logs devices that appear or disappear, so sensors can be plugged in while
@@ -31,4 +31,4 @@ private:
     std::uint32_t nextScanAt_{};
 };
 
-} // namespace lab_test_01
+} // namespace can_mcu

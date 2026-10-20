@@ -96,14 +96,12 @@ cmake --build build/lab-test-01/product-check
 | Path | Content |
 | --- | --- |
 | `cmx/` | CubeMX project; only `USER CODE` sections are edited by hand |
-| `../common/` | can-mcu board support shared by all can-mcu devices |
+| `../common/` | can-mcu board support shared by all can-mcu devices, including the health record, I2C scan, and CAN monitor services |
 | `src/app.cpp` | Composition root and the C hooks called from `main.c`; measurement channels, alarm rules and sounds |
 | `src/dev_tools.hpp`, `src/dev_tools_disabled.cpp` | Seam to the development tools and its no-op stand-in |
 | `src/dev/` | **Development and test code only**: tool aggregator with `trap` and `i2c`, hardware test, input module test, background load |
 | `src/board.cpp` | LT1 host bindings: buttons, TIM1 LEDs and buzzer |
 | `src/diagnostics_service.cpp` | Supply dips and the heartbeat |
-| `src/can_monitor_service.cpp` | CAN state, activity LED, N2K message log and summary |
-| `src/i2c_scan_service.cpp` | I2C scan at startup and hot-plug detection (read-only) |
 | `src/device_settings.cpp` | Settings record in EEPROM: boot counter and NMEA 2000 address |
 
 `main.c` calls `lab_test_01_app_init()` after the CubeMX peripheral

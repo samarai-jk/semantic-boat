@@ -1,6 +1,6 @@
-#include "i2c_scan_service.hpp"
+#include "can_mcu/i2c_scan_service.hpp"
 
-namespace lab_test_01 {
+namespace can_mcu {
 namespace {
 
 using slstm32::LogLevel;
@@ -91,4 +91,4 @@ void I2cScanService::logDevice(const char* event, std::uint8_t address) const {
                 partsAt(address));
 }
 
-} // namespace lab_test_01
+} // namespace can_mcu

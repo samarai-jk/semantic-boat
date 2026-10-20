@@ -8,10 +8,13 @@ function(can_mcu_add_common target)
         ${CAN_MCU_COMMON_DIR}/src/board.cpp
         ${CAN_MCU_COMMON_DIR}/src/board_temperatures.cpp
         ${CAN_MCU_COMMON_DIR}/src/can_bus.cpp
+        ${CAN_MCU_COMMON_DIR}/src/can_monitor_service.cpp
         ${CAN_MCU_COMMON_DIR}/src/dac_audio.cpp
         ${CAN_MCU_COMMON_DIR}/src/firmware.cpp
+        ${CAN_MCU_COMMON_DIR}/src/health_service.cpp
         ${CAN_MCU_COMMON_DIR}/src/interrupts.cpp
         ${CAN_MCU_COMMON_DIR}/src/i2c_bus.cpp
+        ${CAN_MCU_COMMON_DIR}/src/i2c_scan_service.cpp
         ${CAN_MCU_COMMON_DIR}/src/mcu_monitor.cpp
         ${CAN_MCU_COMMON_DIR}/src/one_wire_pin.cpp
         ${CAN_MCU_COMMON_DIR}/src/supervision.cpp

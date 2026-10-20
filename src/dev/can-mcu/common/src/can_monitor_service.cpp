@@ -1,7 +1,7 @@
-#include "can_monitor_service.hpp"
+#include "can_mcu/can_monitor_service.hpp"
 #include <cstdio>
 
-namespace lab_test_01 {
+namespace can_mcu {
 namespace {
 
 using slstm32::LogLevel;
@@ -121,7 +121,21 @@ void CanMonitorService::watchStatus() {
     lastStatus_ = status;
 }
 
+void CanMonitorService::identify(std::uint32_t durationMs) {
+    identifying_ = durationMs != 0u;
+    identifyUntil_ = runtime_.millis() + durationMs;
+    if (identifying_) {
+        activityLed_.blink(200u, 100u);
+    } else {
+        activityLed_.off();
+    }
+}
+
 void CanMonitorService::showActivity() {
+    if (identifying_) {
+        if (static_cast<std::int32_t>(runtime_.millis() - identifyUntil_) < 0) return;
+        identify(0u);
+    }
     const auto counters = can_.counters();
     const auto traffic = counters.received + counters.transmitted;
     if (traffic == lastTraffic_) return;
@@ -152,4 +166,4 @@ void CanMonitorService::summary(std::uint32_t now) {
                 static_cast<unsigned long>(n2kCounters.conflictsLost));
 }
 
-} // namespace lab_test_01
+} // namespace can_mcu

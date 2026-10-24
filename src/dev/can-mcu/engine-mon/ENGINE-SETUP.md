@@ -1,11 +1,18 @@
 # engine-mon: engine setup
 
-**Status: draft for review (2026-10-24).** The sensors, inputs, and outputs
-of the engine monitor as planned, with their pins, the drivers that read
-them, and the points still to resolve. Nothing here is wired or implemented
-yet; the current firmware still has the bring-up pin map of the
-[README](README.md#host-io). Once this is agreed, firmware, CubeMX project,
-and README follow it.
+**Status: agreed (2026-10-24), CubeMX and firmware to follow.** The
+sensors, inputs, and outputs of the engine monitor, with their pins, the
+drivers that read them, and the CubeMX configuration. The current firmware
+still has the bring-up pin map of the [README](README.md#host-io); it
+follows this document once the CubeMX project is regenerated.
+
+Decisions (2026-10-24): D23 on PC13; 10 kΩ pull-downs on PA8, PA9, PA10;
+all PT100 probes behind DFRobot SEN0198 amplifiers; I2C sensor cables as
+short as possible, shielded, shield to engine ground; oil pressure and
+coolant temperature from the engine's own senders for now. **Engine
+control (preheat, start, stop) is a separate sub-project:** the outputs are
+experimental, behind an external arming switch; the stop solenoid is
+energize-to-stop. This firmware monitors only.
 
 ## Overview
 
@@ -22,8 +29,8 @@ and README follow it.
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
  I2C1    PB8/PB9 ── AD1 (ADS1115 0x48): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
                  ── AD2 (ADS1115 0x49): A20..A23  12 V system, reserve x3
+                 ── AD3 (ADS1115 0x4A): raw water pressure (NPI-19 bridge), its excitation
                  ── DHT20 (0x38) .................. engine room temperature and humidity
-                 ── raw water pressure 0..2 bar ... part and address to be chosen
                  ── on the can-mcu: EEPROM 0x52, TMP75 0x4F (enclosure)
 ```
 
@@ -59,9 +66,28 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 | Starter voltage | direct | AD1 A13 | 12 |
 | 12 V system | direct | AD2 A20 | 13 |
 | Reserve | | AD2 A21, A22, A23 | later |
-| Raw water pressure, 0..2 bar | I2C sensor, part to be chosen | I2C | 16 |
+| Raw water pressure, 0..2 bar | Amphenol NovaSensor NPI-19, 30 psi gauge (mV bridge) | AD3 AIN0-AIN1 | 16 |
 
 The modules measure 0..18.8 V at their terminals (12 V systems; not 24 V).
+
+**Raw water pressure.** Measured between the raw water pump and the engine
+block: below about 1 bar is normal, above about 1.5 bar points to a blockage
+(thresholds to be found by testing). The NPI-19 is not an I2C sensor but a
+passive piezoresistive bridge (about 4..5 kΩ) with a millivolt output:
+100 mV full scale at 1 mA (types "H", constant current) or at 10 V (types
+"V"/VC, constant voltage). It is read with its own ADS1115 module (AD3,
+0x4A, ADDR to SDA):
+
+- Bridge excited ratiometrically from +3.3 V (constant voltage: the
+  VC/"V" type is compensated for that). Full scale then about 33 mV.
+- AIN0-AIN1 differential, ±0.256 V range: 7.8 µV per count, about 4,200
+  counts over 2.07 bar, so about 0.5 mbar per count.
+- AIN2 single-ended measures the excitation, so the pressure is computed
+  ratiometrically (supply changes cancel out).
+- A constant-current ("H") type would need a 1 mA current source instead;
+  check which type the sensor is.
+- Calibrate offset (open to air) and span (a reference gauge) with the
+  two-point calibration.
 
 ### Digital inputs (12 V, through the modules)
 
@@ -119,71 +145,121 @@ PA13/PA14/PB3 (debug). **No pin is left spare.**
 
 ## Sanity check
 
-### Must change
+Resolved (2026-10-24):
 
-1. **PB15 cannot be D23.** PB15 is `HOST_POWER` on the can-mcu: it drives
-   the 8 A high-side switch on CN3 and is not on the host header. D23 moves
-   to PC13 (input only; PC13 must not drive loads, which an input does not).
-2. **One sensor per 1-Wire bus.** `Ds18b20Driver` and `Ct1780Driver` each
-   handle one device per bus, so the second DS18B20 needs its own pin (PB2
-   above). Sharing a bus would need a multi-drop driver (search ROM); that
-   would free pins later.
-3. **I2C2 is gone.** PB13/PB14 were kept for a second I2C bus; they are now
-   a 1-Wire bus and D22. Every I2C sensor shares I2C1 with the can-mcu's
-   EEPROM (see 9.).
+1. **PB15 cannot be D23** (it is `HOST_POWER` on the can-mcu): D23 is on
+   PC13.
+2. **One sensor per 1-Wire bus** (`Ds18b20Driver`, `Ct1780Driver`): three
+   buses, PB12, PB13, PB2. Sharing a bus would need a multi-drop driver
+   (search ROM); that would free pins later.
+3. **I2C2 is gone** (PB13/PB14 now used): every I2C device shares I2C1 with
+   the EEPROM. Cables short and shielded, shield to engine ground.
+4. **Outputs at reset:** 10 kΩ pull-downs on PA8, PA9, PA10.
+5. **Engine control** (stop solenoid energize-to-stop, starter, preheater):
+   a separate sub-project, outputs experimental behind an external arming
+   switch. Interlocks (neutral only, crank time limits, not while running,
+   preheat time limit, off on any fault) and who may command them over CAN
+   (B1S has no write protection yet) are decided there.
+6. **PT100:** SEN0198 amplifiers, about 30..350 °C (a cold engine reads at
+   the low end, fine for alarms). Each analog input needs a **pull-down** on
+   the host, so a missing probe becomes a fault instead of a floating
+   184 °C (seen on LT1).
+7. **Engine senders (A10, A11):** used as they are, calibrated in place;
+   a dedicated sensor maybe later.
+8. **Raw water pressure:** NPI-19 on AD3 (see above), not on I2C directly.
 
-### Safety (engine control): to decide before the outputs are wired
+Still to check:
 
-4. **Outputs at reset.** The TIM1 pins float until the firmware starts the
-   timer. The MOSFET switch inputs need pull-downs, or a load switches during
-   reset or while flashing. Check that the MOSFET modules have them.
-5. **Stop solenoid type.** Is it energize-to-stop (12 V stops the engine) or
-   energize-to-run (12 V lets it run)? With energize-to-run, a device reset
-   or crash stops the engine; then the device must not switch it at all.
-6. **Starter interlocks in the firmware:** crank only in neutral (D20 and
-   D21 both off), not while running (rpm above a threshold), at most a few
-   seconds per attempt with a pause between attempts, off at any fault or
-   watchdog reset. Preheater with a maximum on-time (glow plugs burn out).
-7. **Who may start the engine.** B1S has no write protection yet (decided
-   2026-10-18: anyone on B1S may configure). Remote start over CAN needs at
-   least an explicit, local confirmation, or starting stays on the device's
-   buttons and the engine's own panel. Proposal: the first firmware only
-   *monitors*; the outputs come with their interlocks in a separate step.
-
-### Check
-
-8. **PT100 inputs.** A PT100 cannot go to the ADC directly; it needs an
-   amplifier. Assumed: DFRobot SEN0198 (driver and bridge formula verified on
-   LT1). It covers about 30..350 °C: a cold engine reads at the low end, fine
-   for alarms. Each analog input needs a **pull-down** on the host, so a
-   missing probe becomes a fault instead of a floating 184 °C (seen on LT1).
-9. **I2C in the engine room.** DHT20 and the raw water sensor on cables in
-   the engine room put long wires and noise on I2C1, which also carries the
-   EEPROM. Keep those cables short (well under 1 m), or put the sensors
-   behind an I2C buffer or isolator. The two input modules are isolated
-   (ISO1541) and are not the problem.
-10. **I2C addresses.** In use: 0x38 DHT20, 0x48 AD1 (R33), 0x49 AD2 (R34),
-    0x4F TMP75, 0x52 EEPROM. The raw water pressure sensor must not use one
-    of them; part to be chosen.
-11. **Raw water pressure.** Measured where? Before the raw water pump the
-    pressure is often slightly below ambient (suction); after it, positive.
-    A gauge sensor of 0..2 bar suits the pump outlet.
-12. **Engine senders (A10 oil pressure, A11 coolant).** If they are the
-    engine's resistive senders that also drive gauges, the module measures
-    the voltage the gauge produces at the sender: usable, but calibrated in
-    place (two points). Without a gauge a sender needs a pull-up on the host.
-13. **Isolated ground.** All four analog inputs of a module share the
+9. **I2C addresses** in use: 0x38 DHT20, 0x48 AD1, 0x49 AD2, 0x4A AD3,
+   0x4F TMP75, 0x52 EEPROM; 0x4B is the last free ADS1115 address.
+10. **Isolated ground:** the four analog inputs of AD1 (and of AD2) share the
     module's isolated ground GND_I; connect it to the engine block / battery
     negative where the senders are grounded.
-14. **DHT20 in the engine room.** Specified to 80 °C; oil vapour wears the
+11. **DHT20 in the engine room:** specified to 80 °C; oil vapour wears the
     humidity sensor over time.
+12. **NPI-19 type** (constant voltage or constant current), see above.
 
-## Follow-up work (after review)
+## CubeMX configuration
 
-- CubeMX: PB13 output open-drain (1-Wire), PB14 and PC13 inputs with
-  pull-up, PA15 TIM2_CH1 and PA2 TIM2_CH3 PWM (LEDs); PA15 no longer an
-  input.
-- Firmware: the channels above; B1S channel slots and the measurement
+The complete configuration of `cmx/stm32.ioc`, so that every can-mcu device
+is set up the same way. Labels become `<LABEL>_Pin` / `<LABEL>_GPIO_Port`
+in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
+
+### Pins
+
+| Pin | Mode (CubeMX signal) | Pull | Initial level | Speed | Label |
+| --- | --- | --- | --- | --- | --- |
+| PA0 | GPIO_Input | Pull-up | | | `DI10_RPM` |
+| PA1 | GPIO_Input | Pull-up | | | `DI11_IGNITION` |
+| PA2 | TIM2_CH3 (PWM Generation CH3) | | | Low | `LED_RED` |
+| PA3 | GPIO_Input | Pull-up | | | `DI12_STARTER_SOLENOID` |
+| PA4 | ADC1_IN9 (single-ended) | | | | `AI0_WET_EXHAUST` |
+| PA5 | ADC1_IN10 (single-ended) | | | | `AI1_ALTERNATOR` |
+| PA6 | ADC1_IN11 (single-ended) | | | | `AI2_HEAT_EXCHANGER` |
+| PA7 | GPIO_Input | Pull-up | | | `DI13_FUEL_STOP_SOLENOID` |
+| PA8 | TIM1_CH1 (PWM Generation CH1) | | | Low | `DO0_PREHEATER` |
+| PA9 | TIM1_CH2 (PWM Generation CH2) | | | Low | `DO1_STARTER` |
+| PA10 | TIM1_CH3 (PWM Generation CH3) | | | Low | `DO2_STOP_SOLENOID` |
+| PA11 | CAN1_RX | | | | `CAN_RX` |
+| PA12 | CAN1_TX | | | | `CAN_TX` |
+| PA13 | SYS_JTMS-SWDIO | | | | `SWDIO` |
+| PA14 | SYS_JTCK-SWCLK | | | | `SWCLK` |
+| PA15 | TIM2_CH1 (PWM Generation CH1) | | | Low | `LED_GREEN` |
+| PB0 | GPIO_Output, push-pull | No pull | High (LED off) | Low | `CAN_ACTIVE` |
+| PB1 | GPIO_Output, push-pull | No pull | Low (high-speed mode) | Low | `CAN_MUTE` |
+| PB2 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW2_CALORIFIER` |
+| PB3 | SYS_JTDO-SWO | | | | `TRACESWO` |
+| PB4 | GPIO_Input | Pull-up | | | `DI20_GEAR_REVERSE` |
+| PB5 | GPIO_Input | Pull-up | | | `DI21_GEAR_FORWARD` |
+| PB6 | USART1_TX | | | | `STL_COM_TX` |
+| PB7 | USART1_RX | | | | `STL_COM_RX` |
+| PB8 | I2C1_SCL | | | | `I2C_SCL` |
+| PB9 | I2C1_SDA | | | | `I2C_SDA` |
+| PB10 | GPIO_Input | No pull (frontend) | | | `BTN0` |
+| PB11 | GPIO_Input | No pull (frontend) | | | `BTN1` |
+| PB12 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW0_DRY_EXHAUST` |
+| PB13 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW1_GEARBOX_OIL` |
+| PB14 | GPIO_Input | Pull-up | | | `DI22_PREHEATER_RELAY` |
+| PB15 | GPIO_Output, push-pull | No pull | Low (load off) | Low | `HOST_POWER` |
+| PC13 | GPIO_Input | Pull-up | | | `DI23_RESERVE1` |
+| PC14, PC15 | RCC_OSC32_IN/OUT (LSE crystal) | | | | |
+| PH0, PH1 | RCC_OSC_IN/OUT (HSE crystal) | | | | |
+| PH3 | BOOT0 (GPIO_Input) | | | | `BOOT0` |
+
+Notes:
+
+- **TIM2_CH1 on PA15:** CubeMX offers TIM2_CH1 on PA0 first; assign it on
+  PA15 (click PA15, choose TIM2_CH1), PA0 stays a GPIO input.
+- **No EXTI mode** on any input: the shared can-mcu code switches the
+  buttons (and later the rpm input) to interrupts itself and owns all EXTI
+  vectors.
+- The firmware also configures the 1-Wire pins and the timer channels
+  itself; CubeMX only gives them a safe start.
+
+### Peripherals
+
+| Peripheral | Settings |
+| --- | --- |
+| RCC | HSE: crystal (8 MHz); LSE: crystal (32.768 kHz). PLL source HSE, M /1, N x20, R /2: SYSCLK 80 MHz, HCLK, APB1, APB2 80 MHz. PLLSAI1 for the ADC: 32 MHz |
+| SYS | Debug: Trace Asynchronous Sw (SWD + SWO on PB3); timebase SysTick |
+| RTC | Activate clock source; RTC clock from LSE |
+| CAN1 | Prescaler 20, BS1 13 TQ, BS2 2 TQ, SJW 1 TQ (250 kbit/s, sample point 87.5 %); ABOM enable, NART enable, TXFP enable, other options disabled; NVIC: CAN1 TX, RX0, SCE enabled |
+| I2C1 | Standard mode, 100 kHz (timing `0x10D19CE4`); no interrupts, no DMA |
+| USART1 | Asynchronous, 115200 baud, 8N1, no flow control; **no** USART1 interrupt (the shared can-mcu code owns it) |
+| ADC1 | IN9, IN10, IN11 single-ended; Vrefint channel enabled; clock asynchronous /1 (PLLSAI1); 12 bit, right aligned, scan disabled, continuous disabled, 1 regular conversion (rank 1: Vrefint, 2.5 cycles; the firmware switches channels itself); no interrupt, no DMA |
+| TIM1 | Clock internal; CH1, CH2, CH3 PWM Generation: mode PWM1, pulse 0, output polarity **High**, fast mode disabled, idle state Reset; prescaler and period don't matter (the firmware sets 1 kHz); no interrupts |
+| TIM2 | Clock internal; CH1 (PA15) and CH3 (PA2) PWM Generation: mode PWM1, pulse 0, output polarity **High** for LEDs from the pin to GND (**Low** for LEDs from +3.3 V to the pin); no interrupts |
+| NVIC | Priority group 4; only the CAN1 interrupts enabled (no EXTI, no USART1) |
+| Project | Toolchain CMake, project name `stm32`, location `src/dev/can-mcu/engine-mon/cmx` |
+
+After regenerating: commit, then pull the firmware changes (the
+`USER CODE` hooks in `main.c` and `stm32l4xx_it.c` stay as they are).
+
+## Follow-up work
+
+- CubeMX: as in [CubeMX configuration](#cubemx-configuration).
+- Firmware: the channels above, AD3 for the raw water pressure, LEDs on
+  TIM2; B1S channel slots and the measurement
   channel area enlarged from 16 to 24 (EEPROM still fits: about 30 of 32
   KiB); the window pool reviewed for about 18 channels.
 - B1S: a representation for the digital inputs (switch states). There is no

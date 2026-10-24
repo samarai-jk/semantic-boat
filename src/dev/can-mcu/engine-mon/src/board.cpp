@@ -224,7 +224,7 @@ std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
 std::array<slstm32::drivers::DigitalInputHardware, digitalInputCount> digitalInputs() {
     std::array<slstm32::drivers::DigitalInputHardware, digitalInputCount> result{};
     for (std::size_t index = 0u; index < result.size(); ++index) {
-        result[index] = {&inputPins[index], &configureInput, &readInput, true};
+        result[index] = {&inputPins[index], &configureInput, &readInput, false};
     }
     return result;
 }

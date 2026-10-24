@@ -153,6 +153,12 @@ std::uint32_t identifyUntil{};
 bool applicationFailed{};
 bool clickPending{};
 
+// Digital inputs as last logged (12 V present), and the gear position.
+bool inputsLogged[engine_mon::board::digitalInputCount]{};
+bool inputsKnown{};
+enum class Gear : std::uint8_t { neutral, forward, reverse, invalid };
+Gear loggedGear{Gear::neutral};
+
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
 char serialCode[25]{};
@@ -470,6 +476,44 @@ void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
 }
 
+const char* gearName(Gear gear) {
+    switch (gear) {
+    case Gear::neutral: return "neutral";
+    case Gear::forward: return "forward";
+    case Gear::reverse: return "reverse";
+    case Gear::invalid: return "forward and reverse at once (check the reed switches)";
+    }
+    return "?";
+}
+
+// Logs every change of a digital input (debug) and of the gear position
+// derived from the two gearbox reed switches (info); the state at startup
+// once (info).
+void watchInputs() {
+    using engine_mon::board::digitalInputCount;
+    using engine_mon::board::digitalInputNames;
+    for (std::size_t index = 0u; index < digitalInputCount; ++index) {
+        const bool on = digitalInputs[index]->value();
+        if (inputsKnown && on != inputsLogged[index]) {
+            logger.writef(LogLevel::debug, "input: %s %s", digitalInputNames[index], on ? "12 V" : "off");
+        }
+        inputsLogged[index] = on;
+    }
+    const bool reverse = inputsLogged[engine_mon::board::gearReverseInput];
+    const bool forward = inputsLogged[engine_mon::board::gearForwardInput];
+    const auto gear = forward && reverse ? Gear::invalid : forward ? Gear::forward : reverse ? Gear::reverse : Gear::neutral;
+    if (!inputsKnown || gear != loggedGear) {
+        logger.writef(gear == Gear::invalid ? LogLevel::warning : LogLevel::info, "gearbox: %s", gearName(gear));
+        loggedGear = gear;
+    }
+    if (!inputsKnown) {
+        char text[digitalInputCount + 1u]{};
+        for (std::size_t index = 0u; index < digitalInputCount; ++index) text[index] = inputsLogged[index] ? '1' : '0';
+        logger.writef(LogLevel::info, "input: D10..D13 D20..D23 = %.4s %.4s (1 = 12 V)", text, text + 4);
+        inputsKnown = true;
+    }
+}
+
 // Status LED: one green LED says how the engine monitor is.
 //   dim, steady (1 %) .............. all good
 //   full, blinking ................. a measurement alarm waits for
@@ -617,6 +661,7 @@ extern "C" void engine_mon_app_run(void) {
     can_mcu::refreshWatchdog();
     events.process();
     application.run();
+    watchInputs();
     if (clickPending) {
         clickPending = false;
         buzzer.play(2700u, 25u, 0.05f);

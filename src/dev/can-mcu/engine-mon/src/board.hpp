@@ -26,9 +26,16 @@ inline constexpr const char* buttonNames[buttonCount]{"BF5", "BF6"};
 // PA3 (starter solenoid), PA7 (fuel stop solenoid), PB4 (gearbox reverse),
 // PB5 (gearbox forward), PB14 (preheater relay), PC13 (reserve 1). Inputs
 // with pull-up, each on its own EXTI line (any of them can count pulses).
-// Physical pin level: the 12v-ad-input-iso module drives low while 12 V is
-// present, and an unplugged input reads high.
+// Logical value = 12 V present at the module terminal: the 12v-ad-input-iso
+// module drives its output low then (the binding is active low), and an
+// unplugged input reads "no 12 V".
 std::array<slstm32::drivers::DigitalInputHardware, digitalInputCount> digitalInputs();
+inline constexpr const char* digitalInputNames[digitalInputCount]{
+    "D10 rpm",           "D11 ignition",          "D12 starter solenoid", "D13 fuel stop solenoid",
+    "D20 gearbox reverse", "D21 gearbox forward", "D22 preheater relay",  "D23 reserve 1"};
+// Indices of the gearbox reed switches (12 V while the gear is engaged).
+inline constexpr std::size_t gearReverseInput = 4u;
+inline constexpr std::size_t gearForwardInput = 5u;
 // GPIO pin mask of a digital input, as passed to HAL_GPIO_EXTI_Callback().
 std::uint16_t digitalInputMask(std::size_t index);
 

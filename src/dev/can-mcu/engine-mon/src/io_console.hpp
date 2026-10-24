@@ -12,7 +12,8 @@
 namespace engine_mon {
 
 // Service command "io": the state of every host input and output (digital
-// input levels and their change counts, analog inputs in mV, output duty).
+// inputs: 12 V present or off, with their change counts; analog inputs in
+// mV; output duty).
 // Read-only; switching outputs by hand is a development tool.
 class IoConsole {
 public:

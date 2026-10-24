@@ -18,26 +18,7 @@ public:
     bool init() override {
         return context_.console.add({"do", "do <n> <0..100>  DEV: set output n by hand (percent)", &doCommand, this});
     }
-    void run() override {
-        // TEMPORARY (output test with a meter or scope, 2026-10-24): DO0 1 Hz,
-        // DO1 2 Hz, DO2 5 Hz, each fully on for half the period. Remove after
-        // the test. Keep the arming switch off: these are the preheater,
-        // starter, and stop solenoid relays.
-        constexpr std::uint32_t periodsMs[]{1000u, 500u, 200u};
-        if (!outputTestLogged_) {
-            outputTestLogged_ = true;
-            context_.log.write(slstm32::LogLevel::warning,
-                               "DEV: output test running: DO0 1 Hz, DO1 2 Hz, DO2 5 Hz (arming switch off!)");
-        }
-        const auto now = context_.runtime.millis();
-        for (std::size_t index = 0u; index < context_.outputCount && index < 3u; ++index) {
-            const bool on = now % periodsMs[index] < periodsMs[index] / 2u;
-            if (on != outputOn_[index]) {
-                outputOn_[index] = on;
-                context_.outputs[index]->setDuty(on ? 1.0f : 0.0f);
-            }
-        }
-    }
+    void run() override {}
 
 private:
     static void doCommand(void* self, std::size_t argc, const char* const* argv) {
@@ -57,8 +38,6 @@ private:
     }
 
     const DevToolsContext& context_;
-    bool outputTestLogged_{};
-    bool outputOn_[3]{};
 };
 
 } // namespace

@@ -8,16 +8,9 @@ bool IoConsole::registerCommands(slstm32::CommandConsole& console) {
 
 void IoConsole::show() const {
     using slstm32::LogLevel;
-    char levels[board::digitalInputCount + 1u]{};
     for (std::size_t index = 0u; index < board::digitalInputCount; ++index) {
-        levels[index] = inputs_[index]->value() ? '1' : '0';
-    }
-    log_.writef(LogLevel::info, "io: DI0..7 %s (pin level; 0 = 12 V on an input module)", levels);
-    for (std::size_t index = 0u; index < board::digitalInputCount; ++index) {
-        if (inputs_[index]->changes() != 0u) {
-            log_.writef(LogLevel::info, "io: DI%u %lu change(s)", static_cast<unsigned>(index),
-                        static_cast<unsigned long>(inputs_[index]->changes()));
-        }
+        log_.writef(LogLevel::info, "io: %-22s %s, %lu change(s)", board::digitalInputNames[index],
+                    inputs_[index]->value() ? "12 V" : "off", static_cast<unsigned long>(inputs_[index]->changes()));
     }
     for (std::size_t index = 0u; index < board::analogInputCount; ++index) {
         const auto input = analogInputs_[index];

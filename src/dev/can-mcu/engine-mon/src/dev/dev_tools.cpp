@@ -7,6 +7,7 @@
 // (relays, horn), so this never belongs in a product build.
 #include "dev_tools.hpp"
 #include <cstdlib>
+#include <optional>
 
 namespace engine_mon {
 namespace {
@@ -19,13 +20,13 @@ public:
         return context_.console.add({"do", "do <n> <0..100>  DEV: set output n by hand (percent)", &doCommand, this});
     }
     void run() override {
-        // TEMPORARY (LED brightness test, 2026-10-24): red at full brightness
-        // while BF5 (button 0) is held, off when released. Remove after the test.
-        const bool held = context_.buttons.pressed(0u);
-        if (held == redHeld_) return;
-        redHeld_ = held;
-        context_.redLed.setBrightness(1.0f);
-        context_.redLed.set(held);
+        // TEMPORARY (LED wiring test, 2026-10-24): each LED at full brightness
+        // (pin high) only while its button is held, otherwise off (pin low):
+        // red on BF5 (button 0), green on BF6 (button 1). The tools take the
+        // green LED over from the application (no alive blink). Remove after
+        // the test.
+        follow(context_.redLed, context_.buttons.pressed(0u), redHeld_);
+        follow(context_.greenLed, context_.buttons.pressed(1u), greenHeld_);
     }
 
 private:
@@ -45,8 +46,16 @@ private:
         context.log.writef(slstm32::LogLevel::warning, "DEV: DO%lu set to %lu %%", index, percent);
     }
 
+    static void follow(slstm32::drivers::PwmLedDriver& led, bool held, std::optional<bool>& shown) {
+        if (shown == held) return;
+        shown = held;
+        led.setBrightness(1.0f);
+        led.set(held);
+    }
+
     const DevToolsContext& context_;
-    bool redHeld_{};
+    std::optional<bool> redHeld_{};
+    std::optional<bool> greenHeld_{};
 };
 
 } // namespace

@@ -13,8 +13,8 @@
 // code categories and build profiles"). The composition root always binds
 // devTools(); the build decides what it is:
 // - with development tools: src/dev/dev_tools.cpp adds the bring-up command
-//   "do" (switch the outputs by hand) and, temporarily, the red LED at full
-//   brightness while BF5 is held;
+//   "do" (switch the outputs by hand) and, temporarily, the LEDs on the
+//   buttons (red while BF5 is held, green while BF6 is held);
 // - without: src/dev_tools_disabled.cpp returns a service that does nothing.
 // Product code must not depend on anything inside src/dev/.
 namespace engine_mon {
@@ -27,6 +27,7 @@ struct DevToolsContext {
     slstm32::drivers::PwmOutputDriver* const* outputs;
     std::size_t outputCount;
     slstm32::drivers::ButtonDriver& buttons;
+    slstm32::drivers::PwmLedDriver& greenLed;
     slstm32::drivers::PwmLedDriver& redLed;
 };
 

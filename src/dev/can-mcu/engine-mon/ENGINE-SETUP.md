@@ -67,6 +67,7 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 | 12 V system | direct | AD2 A20 | 13 |
 | Reserve | | AD2 A21, A22, A23 | later |
 | Raw water pressure, 0..2.07 bar | Amphenol NovaSensor NPI-19, I2C, 30 psi gauge | I2C 0x28 | 16 |
+| Raw water temperature (to try) | the same sensor's temperature output | I2C 0x28 | 17 |
 
 The modules measure 0..18.8 V at their terminals (12 V systems; not 24 V).
 
@@ -83,8 +84,16 @@ code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
   ±20 mbar) over the compensated range.
 - Measurement: command 0xAC (full measurement), wait until the status says
   "not busy", then read status, two bytes of bridge (pressure) data, and two
-  bytes of temperature data. Valid data 8.4 ms after power-on. The datasheet
-  gives no formula for the temperature bytes, so only the pressure is used.
+  bytes of temperature data. Valid data 8.4 ms after power-on.
+- **Raw water temperature (to try):** the temperature bytes are the
+  sensor's own temperature, which in flowing raw water follows the water: an
+  indirect sea water temperature. The datasheet gives no formula, so the
+  scaling has to be found on the bench (two reference temperatures, e.g.
+  room and a water bath). The value is only meaningful while the raw water
+  pump runs (engine on); at rest it drifts towards engine room temperature.
+  It is published as an engine channel (B1S channel 17), **not** as the
+  boat's sea temperature: `environment.water.temperature` belongs to the
+  NMEA 2000 instruments (see B1S README, Standard PGNs).
 - Operating temperature -40..125 °C (ranges from 100 kPa); wetted parts
   316L stainless steel.
 - Needs a new slstm32 driver (`Npi19Driver`): about 100 lines, like the
@@ -258,6 +267,18 @@ Notes:
 
 After regenerating: commit, then pull the firmware changes (the
 `USER CODE` hooks in `main.c` and `stm32l4xx_it.c` stay as they are).
+
+## Tests on the hardware
+
+- **RTC backup battery:** EM has a backup cell on CN6 (VBAT). Check that it
+  works: with the cell fitted, power the board off for a while; afterwards
+  the RTC must still run (time kept, LSE running) and the backup registers
+  must have kept their content (crash record, bootloader flags). Without the
+  cell both are lost.
+- **Raw water temperature scaling** of the NPI-19 (see above).
+- **RPM:** pulses per revolution against a tachometer.
+- **Inputs and outputs** once the firmware has the new pin map: each input
+  with 12 V on its module terminal, each output with the arming switch.
 
 ## Follow-up work
 

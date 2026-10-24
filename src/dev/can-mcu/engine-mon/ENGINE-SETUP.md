@@ -53,7 +53,7 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 | Heat exchanger | PT100, 350 °C probe, analog amplifier | ADC1 IN11 | PA6 | as above | 6 |
 | Gearbox oil | DS18B20 (to 125 °C) | 1-Wire bus 1 | PB13 | `Ds18b20Driver` | 7 |
 | Calorifier water | DS18B20 (to 125 °C) | 1-Wire bus 2 | **PB2** (proposed) | `Ds18b20Driver` | 8 |
-| Coolant (engine sender) | engine's sender | AD1 A11 | ADS1115 0x48 ch 1 | `AdInputIso12v` + conversion | 10 |
+| Coolant (engine sender) | engine's sender | AD1 A11 | ADS1115 0x49 ch 1 | `AdInputIso12v` + conversion | 10 |
 | Engine room | DHT20 | I2C 0x38 | | `Dht20Driver` | 14 (temperature), 15 (humidity) |
 | Enclosure, MCU die | TMP75, internal | I2C 0x4F, ADC | | `BoardTemperatures` | 0, 1 (exist) |
 

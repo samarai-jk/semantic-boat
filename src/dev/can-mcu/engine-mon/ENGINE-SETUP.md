@@ -130,7 +130,7 @@ of them can count pulses.
 | --- | --- | --- |
 | Green LED (enclosure) | **PA15** (proposed) | TIM2_CH1: dimmable. Bridge R48 open |
 | Red LED (enclosure) | **PA2** (proposed) | TIM2_CH3: dimmable; the same timer as green. On host-dev also wired to the remote LED (300 Ω), harmless |
-| Buttons BTN0, BTN1 | PB10, PB11 | Frontends BTN_FUN_4/5, bridges R51, R52 fitted (as now) |
+| Buttons BF5, BF6 | PB10, PB11 | Frontends BTN_FUN_4/5, bridges R51, R52 fitted (as now) |
 
 ## MCU pin map (all 21 host GPIOs)
 
@@ -228,8 +228,8 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 | PB7 | USART1_RX | | | | `STL_COM_RX` |
 | PB8 | I2C1_SCL | | | | `I2C_SCL` |
 | PB9 | I2C1_SDA | | | | `I2C_SDA` |
-| PB10 | GPIO_Input | No pull (frontend) | | | `BTN0` |
-| PB11 | GPIO_Input | No pull (frontend) | | | `BTN1` |
+| PB10 | GPIO_Input | No pull (frontend) | | | `BF5` |
+| PB11 | GPIO_Input | No pull (frontend) | | | `BF6` |
 | PB12 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW0_DRY_EXHAUST` |
 | PB13 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW1_GEARBOX_OIL` |
 | PB14 | GPIO_Input | Pull-up | | | `DI22_PREHEATER_RELAY` |

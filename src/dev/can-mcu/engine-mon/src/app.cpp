@@ -243,7 +243,7 @@ bool firmwareConfirmed{};
 
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const engine_mon::DevToolsContext devToolsContext{runtime, logger, console, outputs,
-                                                  sizeof outputs / sizeof outputs[0]};
+                                                  sizeof outputs / sizeof outputs[0], greenLed, redLed};
 
 namespace component {
 struct SerialLog;
@@ -350,7 +350,8 @@ void configureN2kIdentity() {
 void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (size != sizeof(slstm32::drivers::ButtonEvent)) return;
     const auto& event = *static_cast<const slstm32::drivers::ButtonEvent*>(payload);
-    logger.writef(LogLevel::info, "button: BTN%u %s", static_cast<unsigned>(event.id),
+    logger.writef(LogLevel::info, "button: %s %s",
+                  event.id < engine_mon::board::buttonCount ? engine_mon::board::buttonNames[event.id] : "?",
                   event.pressed ? "pressed" : "released");
     if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
 }

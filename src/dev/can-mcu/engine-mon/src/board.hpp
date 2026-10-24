@@ -16,9 +16,11 @@ inline constexpr std::size_t digitalInputCount = 8u;
 inline constexpr std::size_t outputCount = 3u;
 inline constexpr std::size_t analogInputCount = 3u;
 
-// BTN0, BTN1 (IDs 0, 1) on the frontends BTN_FUN_4 (PB10) and BTN_FUN_5
+// BF5, BF6 (IDs 0, 1; named like the host-dev buttons on the same
+// frontends) on BTN_FUN_4 (PB10) and BTN_FUN_5
 // (PB11): the buttons reachable from outside the case. Bridges R51, R52.
 std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons();
+inline constexpr const char* buttonNames[buttonCount]{"BF5", "BF6"};
 
 // DI0..DI7 = module inputs D10..D13, D20..D23: PA0 (rpm), PA1 (ignition),
 // PA3 (starter solenoid), PA7 (fuel stop solenoid), PB4 (gearbox reverse),

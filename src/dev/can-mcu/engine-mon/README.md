@@ -14,7 +14,7 @@ once the sensors are chosen. Not yet run on hardware.
 
 | Function | MCU | host-dev header | EXTI | Notes |
 | --- | --- | --- | --- | --- |
-| BTN0, BTN1 | PB10, PB11 | BF5, BF6 (frontends BTN_FUN_4, BTN_FUN_5) | 10, 11 | Reachable from outside the case; acknowledge alarms |
+| BF5, BF6 | PB10, PB11 | BF5, BF6 (frontends BTN_FUN_4, BTN_FUN_5) | 10, 11 | Reachable from outside the case; acknowledge alarms |
 | AI0..AI2 | PA4, PA5, PA6 | J1.2, J1.4, J1.3 | – | ADC1 IN9..IN11, 0..3.3 V, sampled by `McuMonitor` |
 | DO0..DO2 | PA8, PA9, PA10 | J2.4, J2.5, J2.6 | – | TIM1 CH1..CH3, PWM mode 1, active high, 1 kHz; duty 0 = off, 1 = on |
 | OW0, OW1 | PB12, PB2 | J1.7, J1.15 | – | 1-Wire, open-drain; 4.7 kΩ pull-up on the host |

@@ -18,7 +18,15 @@ public:
     bool init() override {
         return context_.console.add({"do", "do <n> <0..100>  DEV: set output n by hand (percent)", &doCommand, this});
     }
-    void run() override {}
+    void run() override {
+        // TEMPORARY (LED brightness test, 2026-10-24): red at full brightness
+        // while BF5 (button 0) is held, off when released. Remove after the test.
+        const bool held = context_.buttons.pressed(0u);
+        if (held == redHeld_) return;
+        redHeld_ = held;
+        context_.redLed.setBrightness(1.0f);
+        context_.redLed.set(held);
+    }
 
 private:
     static void doCommand(void* self, std::size_t argc, const char* const* argv) {
@@ -38,6 +46,7 @@ private:
     }
 
     const DevToolsContext& context_;
+    bool redHeld_{};
 };
 
 } // namespace

@@ -18,6 +18,7 @@
 #   supply       supply dips below the firmware threshold (yellow)
 #   can          CAN controller state changes (magenta)
 #   module/i2c   input module and I2C devices appearing, digital input changes (green)
+#   input        engine-mon digital input changes and the gear position (green)
 #   console      console commands and replies (white)
 #   swd          SWD probe results (dark cyan)
 #   warnings and errors not covered above (yellow / red)
@@ -78,6 +79,7 @@ rules=(
     'supply dip'                                             "$yellow"     supply
     'can state:'                                             "$magenta"    can
     'input module: (DI[0-9]|ADC)'                            "$green"      module
+    '\] [DIWE] (input|gearbox): '                           "$green"      input
     'i2c 0x[0-9A-F]{2} (appeared|disappeared)|i2c: [0-9]+ device' "$green" i2c
     'n2k: (claimed address [0-9]+$|address|.*lower NAME|.*NAME wins|no free address)' "$dark_green" n2k
     '\] I > '                                                "$white"      console

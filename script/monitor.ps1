@@ -72,6 +72,7 @@ $serialRules = @(
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },
     @{ Pattern = 'can state:'; Color = 'Magenta'; Label = 'can' },
     @{ Pattern = 'input module: (DI\d|ADC)'; Color = 'Green'; Label = 'module' },
+    @{ Pattern = '\] [DIWE] (input|gearbox): '; Color = 'Green'; Label = 'input' },
     @{ Pattern = 'i2c 0x[0-9A-F]{2} (appeared|disappeared)|i2c: \d+ device'; Color = 'Green'; Label = 'i2c' },
     @{ Pattern = 'n2k: (claimed address \d+$|address|.*lower NAME|.*NAME wins|no free address)'; Color = 'DarkGreen'; Label = 'n2k' },
     @{ Pattern = '\] I > '; Color = 'White'; Label = 'console' },

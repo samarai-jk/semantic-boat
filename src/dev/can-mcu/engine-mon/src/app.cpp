@@ -146,6 +146,7 @@ slstm32::drivers::ToneDriver buzzer{runtime, engine_mon::board::buzzer()};
 can_mcu::RtcClock rtc{logger};
 std::uint32_t identifyUntil{};
 bool applicationFailed{};
+bool clickPending{};
 
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
@@ -238,6 +239,9 @@ constexpr slstm32::drivers::TonePattern warningSound{warningSteps, sizeof warnin
 constexpr slstm32::drivers::TonePattern alarmSound{alarmSteps, sizeof alarmSteps / sizeof alarmSteps[0], true};
 constexpr slstm32::drivers::TonePattern emergencySound{emergencySteps, sizeof emergencySteps / sizeof emergencySteps[0],
                                                        true};
+// Feedback: started (rising two-tone).
+constexpr ToneStep startupSteps[]{{2200u, 70u, 0.05f}, {0u, 30u}, {2900u, 90u, 0.05f}};
+constexpr slstm32::drivers::TonePattern startupSound{startupSteps, sizeof startupSteps / sizeof startupSteps[0], false};
 slstm32::drivers::TonePatternPlayer tonePlayer{runtime, buzzer};
 const sensors::AlarmAnnunciator::Config annunciatorConfig{{&warningSound, &alarmSound, &emergencySound}, nullptr,
                                                           nullptr};
@@ -379,6 +383,9 @@ void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     logger.writef(LogLevel::info, "button: %s %s",
                   event.id < engine_mon::board::buttonCount ? engine_mon::board::buttonNames[event.id] : "?",
                   event.pressed ? "pressed" : "released");
+    // A quiet click as feedback, played after the annunciator has run (it
+    // may stop its alarm sound in this pass, which would cut the click).
+    if (event.pressed) clickPending = true;
     if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
 }
 
@@ -512,6 +519,9 @@ extern "C" void engine_mon_app_init(void) {
         applicationFailed = true;
     }
     rtc.logState();
+    // Started: a short, quiet rising two-tone (the first tone now, the second
+    // from the tone pattern player).
+    if (!applicationFailed) tonePlayer.play(startupSound);
     if (boardTemperature.defaultConfiguration()) {
         logger.write(LogLevel::info, "tmp75: 12-bit setting not accepted, using the default configuration");
     }
@@ -526,6 +536,10 @@ extern "C" void engine_mon_app_run(void) {
     can_mcu::refreshWatchdog();
     events.process();
     application.run();
+    if (clickPending) {
+        clickPending = false;
+        buzzer.play(2700u, 25u, 0.05f);
+    }
     const auto now = runtime.millis();
     if (identifyUntil != 0u && static_cast<std::int32_t>(now - identifyUntil) >= 0) identifyUntil = 0u;
     showStatus();

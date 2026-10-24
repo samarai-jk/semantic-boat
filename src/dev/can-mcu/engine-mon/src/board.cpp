@@ -110,8 +110,8 @@ struct LedChannel {
     std::uint32_t channel;
 };
 
-LedChannel greenChannel{TIM_CHANNEL_1};
-LedChannel redChannel{TIM_CHANNEL_3};
+LedChannel greenChannel{TIM_CHANNEL_3}; // PA2
+LedChannel redChannel{TIM_CHANNEL_1};   // PA15
 bool ledTimerConfigured{};
 
 bool configureLedTimer(void*) {
@@ -126,7 +126,8 @@ bool configureLedTimer(void*) {
     TIM_OC_InitTypeDef channel{};
     channel.OCMode = TIM_OCMODE_PWM1;
     channel.Pulse = 0u;
-    channel.OCPolarity = TIM_OCPOLARITY_HIGH;
+    // Low polarity: the pins sink the LED, so a high duty means bright.
+    channel.OCPolarity = TIM_OCPOLARITY_LOW;
     channel.OCFastMode = TIM_OCFAST_DISABLE;
     for (const auto* led : {&greenChannel, &redChannel}) {
         if (HAL_TIM_PWM_ConfigChannel(&htim2, &channel, led->channel) != HAL_OK) return false;

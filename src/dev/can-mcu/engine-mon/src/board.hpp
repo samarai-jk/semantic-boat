@@ -38,8 +38,10 @@ std::uint16_t digitalInputMask(std::size_t index);
 // Engine control is a separate sub-project: the firmware leaves them off.
 std::array<slstm32::drivers::PwmOutputHardware, outputCount> outputs();
 
-// Enclosure LEDs on TIM2 (1 kHz PWM, active high): green on PA15 (CH1),
-// red on PA2 (CH3). Duty = brightness.
+// Enclosure LED, a green/red bicolor LED with its common anode on +3.3 V,
+// the cathodes sunk by the pins (as host-dev's H9 on LT1): green on PA2
+// (TIM2_CH3), red on PA15 (TIM2_CH1); 1 kHz PWM with low polarity, so duty
+// = brightness.
 slstm32::drivers::PwmOutputHardware greenLed();
 slstm32::drivers::PwmOutputHardware redLed();
 

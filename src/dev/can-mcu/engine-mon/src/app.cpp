@@ -137,9 +137,8 @@ slstm32::drivers::CanBusDriver can{runtime, can_mcu::canBusHardware(), canReceiv
 slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
 // Enclosure LEDs: green = alive (slow blink), fast blink = identify; red =
 // measurement alarms (blinking while unacknowledged, steady while active).
-// Green at 0.01 % duty (4 of 40000 timer steps): the enclosure LED is very
-// bright, even 1 % dazzles.
-slstm32::drivers::PwmLedDriver greenLed{runtime, engine_mon::board::greenLed(), 0.0001f};
+// Green at 1 % duty: the enclosure LED is bright, full duty dazzles.
+slstm32::drivers::PwmLedDriver greenLed{runtime, engine_mon::board::greenLed(), 0.01f};
 slstm32::drivers::PwmLedDriver redLed{runtime, engine_mon::board::redLed()};
 can_mcu::RtcClock rtc{logger};
 sensors::AlarmSummary shownAlarms{};

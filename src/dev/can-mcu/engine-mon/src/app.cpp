@@ -15,6 +15,7 @@
 #include "can_mcu/i2c_scan_service.hpp"
 #include "can_mcu/image_header.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "can_mcu/one_wire_pin.hpp"
 #include "can_mcu/rtc_clock.hpp"
 #include "can_mcu/supervision.hpp"
 #include "device_settings.hpp"
@@ -34,6 +35,8 @@
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
+#include "slstm32/drivers/ct1780.hpp"
+#include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/digital_input.hpp"
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
@@ -199,7 +202,24 @@ constexpr sensors::MeasurementConfig mcuChannelConfig{
     "mcu", sensors::Quantity::temperature, 1u, 10000u, 8000u, mcuAlarms, sizeof mcuAlarms / sizeof mcuAlarms[0]};
 sensors::Measurement boardChannel{boardChannelConfig};
 sensors::Measurement mcuChannel{mcuChannelConfig};
-sensors::Measurement* const channels[]{&boardChannel, &mcuChannel};
+// Dry exhaust: CT1780 K-type thermocouple converter on 1-Wire bus 0 (PB12),
+// one reading per second. Default alarms are placeholders until the engine's
+// normal exhaust temperatures are known (tune over CAN): a warning above
+// 550 °C over 30 s, a missing or open thermocouple a warning after 10 s.
+constexpr sensors::AlarmRule dryExhaustAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {30u, false}, 10u, 550000, 0, 20000},
+};
+constexpr sensors::MeasurementConfig dryExhaustChannelConfig{
+    "dry-exhaust", sensors::Quantity::temperature, 2u, 10000u, 0u, dryExhaustAlarms,
+    sizeof dryExhaustAlarms / sizeof dryExhaustAlarms[0], {true, Severity::warning, 10u, false}};
+sensors::Measurement dryExhaustChannel{dryExhaustChannelConfig};
+can_mcu::OneWirePin oneWirePin0{engine_mon::board::oneWire0Port, engine_mon::board::oneWire0Pin};
+slstm32::drivers::OneWireBus oneWire0{runtime, oneWirePin0.hardware()};
+constexpr std::uint32_t dryExhaustPeriodMs = 1000u;
+slstm32::drivers::Ct1780Driver dryExhaustSensor{runtime, oneWire0, logger, &dryExhaustChannel, nullptr,
+                                                dryExhaustPeriodMs};
+
+sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &dryExhaustChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -220,21 +240,24 @@ constexpr auto engineRoom = static_cast<std::uint8_t>(n2k::TemperatureSource::en
 const b1s::ChannelConfig b1sChannels[]{
     {&boardChannel, 0u, b1s::Publish::b1s, engineRoom, "", "Engine monitor enclosure"},
     {&mcuChannel, 1u, b1s::Publish::b1s, engineRoom, "", "Engine monitor MCU die"},
+    {&dryExhaustChannel, 3u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::TemperatureSource::exhaustGas), "",
+     "Dry exhaust"},
 };
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
 b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
 b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels, b1sStates, 2000u, logger, &b1sSettings};
 
-// Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
-// severity, as on LT1: a quiet "have a look", firm beeps that ask for action,
-// a full-level siren for "act now". They play while an alarm waits for
-// acknowledgement (BF5 or BF6).
+// Alarm sounds on the passive buzzer, one per severity, all at full volume
+// (an engine room is loud) and near the buzzer's 2.7 kHz resonance, where it
+// is loudest: two chirps every 30 s ("have a look"), three beeps every 3 s
+// ("act"), a continuous two-tone siren ("act now"). They play while an
+// alarm waits for acknowledgement (BF5 or BF6).
 using slstm32::drivers::ToneStep;
-constexpr ToneStep warningSteps[]{{2700u, 40u, 0.05f}, {0u, 120u}, {2700u, 40u, 0.05f}, {0u, 30000u}};
-constexpr ToneStep alarmSteps[]{{2700u, 150u, 0.3f}, {0u, 150u}, {2700u, 150u, 0.3f},
-                                {0u, 150u},          {2700u, 150u, 0.3f}, {0u, 2500u}};
-constexpr ToneStep emergencySteps[]{{2400u, 250u, 1.0f}, {3000u, 250u, 1.0f}};
+constexpr ToneStep warningSteps[]{{2700u, 60u, 1.0f}, {0u, 120u}, {2700u, 60u, 1.0f}, {0u, 30000u}};
+constexpr ToneStep alarmSteps[]{{2700u, 150u, 1.0f}, {0u, 150u}, {2700u, 150u, 1.0f},
+                                {0u, 150u},          {2700u, 150u, 1.0f}, {0u, 2500u}};
+constexpr ToneStep emergencySteps[]{{2550u, 250u, 1.0f}, {2850u, 250u, 1.0f}};
 constexpr slstm32::drivers::TonePattern warningSound{warningSteps, sizeof warningSteps / sizeof warningSteps[0], true};
 constexpr slstm32::drivers::TonePattern alarmSound{alarmSteps, sizeof alarmSteps / sizeof alarmSteps[0], true};
 constexpr slstm32::drivers::TonePattern emergencySound{emergencySteps, sizeof emergencySteps / sizeof emergencySteps[0],
@@ -287,6 +310,7 @@ struct Do1;
 struct Do2;
 struct Mcu;
 struct BoardTemperature;
+struct DryExhaustSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -323,6 +347,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Do2>(do2),
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
+        slstm32::bind<component::DryExhaustSensor>(dryExhaustSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),

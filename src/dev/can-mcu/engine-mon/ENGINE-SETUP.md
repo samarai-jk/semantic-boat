@@ -25,7 +25,7 @@ energize-to-stop. This firmware monitors only.
  Outputs PA8..PA10 ── MOSFET switches -> relays ... preheater, starter, stop solenoid
  Inputs  PA0, PA1, PA3, PA7 ── module AD1 D10..D13  rpm, ignition, starter solenoid, fuel stop solenoid
          PB4, PB5, PB14, PC13 ─ module AD2 D20..D23 gearbox reverse/forward, preheater relay, reserve
- LED     PA2 green, PA15 red (bicolor, common anode on +3.3 V, pins sink)
+ Status  PA15 green LED (sunk), PA2 buzzer (TIM15) -- after the rewiring below
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
  I2C1    PB8/PB9 ── AD1 (ADS1115 0x48): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
                  ── AD2 (ADS1115 0x49): A20..A23  12 V system, reserve x3
@@ -128,13 +128,27 @@ of them can count pulses.
 
 | Function | MCU pin | Notes |
 | --- | --- | --- |
-| Green LED (enclosure) | **PA2** | TIM2_CH3: dimmable. On host-dev also wired to the remote LED (300 Ω), harmless |
-| Red LED (enclosure) | **PA15** | TIM2_CH1: dimmable; the same timer as green. Bridge R48 open |
+| Status LED (green half of the enclosure LED) | **PA15** | TIM2_CH1, low polarity (the pin sinks the LED). Bridge R48 open |
+| Buzzer (host-dev BUZ1, passive, 3.3 V, driver input H7.1) | **PA2** | TIM15_CH1: a timer of its own (tone and volume independent of the LED). On host-dev also wired to the remote LED (300 Ω), harmless |
 
 The enclosure LED is a green/red bicolor LED with its common anode on
 +3.3 V; the pins sink the cathodes (active low, as host-dev's H9 on LT1).
-TIM2 runs with low output polarity, so a higher duty is brighter. Verified
-2026-10-24 (PA2 green, PA15 red).
+Only green is used (decided 2026-10-24; red is not bright enough):
+
+| Status LED | Meaning |
+| --- | --- |
+| dim, steady (1 %) | all good |
+| full, blinking 0.5 / 1 / 4 Hz | a warning / alarm / emergency waits for acknowledgement (BF5 or BF6) |
+| full, steady | alarms acknowledged but still active |
+| full, 5 Hz | identify (over CAN), or the application failed to start |
+
+**Rewiring (pending):** the bring-up wiring has green on PA2 and red on
+PA15 (verified 2026-10-24). Green moves to PA15 and the buzzer input to PA2,
+because PA15 is JTDI with an internal pull-up after every reset and during
+the bootloader (also through a 20..40 s firmware update over CAN): on the
+buzzer driver it would hold the transistor half on (static coil current),
+on the sunk LED it just keeps the LED off. Until then the firmware drives
+green on PA2.
 | Buttons BF5, BF6 | PB10, PB11 | Frontends BTN_FUN_4/5, bridges R51, R52 fitted (as now) |
 
 ## MCU pin map (all 21 host GPIOs)
@@ -143,7 +157,7 @@ TIM2 runs with low output polarity, so a higher duty is brighter. Verified
 | --- | --- | --- | --- | --- |
 | PA0 | D10 rpm | | PB2 | 1-Wire 2 calorifier |
 | PA1 | D11 ignition | | PB4 | D20 gearbox reverse |
-| PA2 | Green LED | | PB5 | D21 gearbox forward |
+| PA2 | Buzzer | | PB5 | D21 gearbox forward |
 | PA3 | D12 starter solenoid | | PB10 | Button 0 |
 | PA4 | PT100 wet exhaust | | PB11 | Button 1 |
 | PA5 | PT100 alternator | | PB12 | 1-Wire 0 CT1780 |
@@ -152,7 +166,7 @@ TIM2 runs with low output polarity, so a higher duty is brighter. Verified
 | PA8 | DO0 preheater | | PC13 | D23 reserve |
 | PA9 | DO1 starter | | | |
 | PA10 | DO2 stop solenoid | | | |
-| PA15 | Red LED | | | |
+| PA15 | Status LED (green) | | | |
 
 Fixed on the can-mcu and not available: PB8/PB9 (I2C1), PB15 (HOST_POWER),
 PA11/PA12 (CAN), PB0/PB1 (CAN LED, transceiver mode), PB6/PB7 (VCP),
@@ -209,7 +223,7 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 | --- | --- | --- | --- | --- | --- |
 | PA0 | GPIO_Input | Pull-up | | | `DI10_RPM` |
 | PA1 | GPIO_Input | Pull-up | | | `DI11_IGNITION` |
-| PA2 | TIM2_CH3 (PWM Generation CH3) | | | Low | `LED_GREEN` |
+| PA2 | TIM15_CH1 (PWM Generation CH1) | | | Low | `BUZZER` |
 | PA3 | GPIO_Input | Pull-up | | | `DI12_STARTER_SOLENOID` |
 | PA4 | ADC1_IN9 (single-ended) | | | | `AI0_WET_EXHAUST` |
 | PA5 | ADC1_IN10 (single-ended) | | | | `AI1_ALTERNATOR` |
@@ -222,7 +236,7 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 | PA12 | CAN1_TX | | | | `CAN_TX` |
 | PA13 | SYS_JTMS-SWDIO | | | | `SWDIO` |
 | PA14 | SYS_JTCK-SWCLK | | | | `SWCLK` |
-| PA15 | TIM2_CH1 (PWM Generation CH1) | | | Low | `LED_RED` |
+| PA15 | TIM2_CH1 (PWM Generation CH1) | | | Low | `LED_GREEN` |
 | PB0 | GPIO_Output, push-pull | No pull | High (LED off) | Low | `CAN_ACTIVE` |
 | PB1 | GPIO_Output, push-pull | No pull | Low (high-speed mode) | Low | `CAN_MUTE` |
 | PB2 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW2_CALORIFIER` |
@@ -266,7 +280,8 @@ Notes:
 | USART1 | Asynchronous, 115200 baud, 8N1, no flow control; **no** USART1 interrupt (the shared can-mcu code owns it) |
 | ADC1 | IN9, IN10, IN11 single-ended; Vrefint channel enabled; clock asynchronous /1 (PLLSAI1); 12 bit, right aligned, scan disabled, continuous disabled, 1 regular conversion (rank 1: Vrefint, 2.5 cycles; the firmware switches channels itself); no interrupt, no DMA |
 | TIM1 | Clock internal; CH1, CH2, CH3 PWM Generation: mode PWM1, pulse 0, output polarity **High**, fast mode disabled, idle state Reset; prescaler and period don't matter (the firmware sets 1 kHz); no interrupts |
-| TIM2 | Clock internal; CH1 (PA15, red) and CH3 (PA2, green) PWM Generation: mode PWM1, pulse 0, output polarity **Low** (the pins sink the LED); no interrupts |
+| TIM2 | Clock internal; CH1 (PA15, status LED) PWM Generation: mode PWM1, pulse 0, output polarity **Low** (the pin sinks the LED); CH3 not used; no interrupts |
+| TIM15 | Clock internal; CH1 (PA2, buzzer) PWM Generation: mode PWM1, pulse 0, output polarity **High** (the driver input is active high); prescaler and period don't matter (the firmware sets the tone); no interrupts |
 | NVIC | Priority group 4; only the CAN1 interrupts enabled (no EXTI, no USART1) |
 | Project | Toolchain CMake, project name `stm32`, location `src/dev/can-mcu/engine-mon/cmx` |
 

@@ -29,7 +29,7 @@ energize-to-stop. This firmware monitors only.
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
  I2C1    PB8/PB9 ── AD1 (ADS1115 0x48): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
                  ── AD2 (ADS1115 0x49): A20..A23  12 V system, reserve x3
-                 ── AD3 (ADS1115 0x4A): raw water pressure (NPI-19 bridge), its excitation
+                 ── NPI-19 (0x28) ................. raw water pressure 0..2.07 bar
                  ── DHT20 (0x38) .................. engine room temperature and humidity
                  ── on the can-mcu: EEPROM 0x52, TMP75 0x4F (enclosure)
 ```
@@ -66,28 +66,29 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 | Starter voltage | direct | AD1 A13 | 12 |
 | 12 V system | direct | AD2 A20 | 13 |
 | Reserve | | AD2 A21, A22, A23 | later |
-| Raw water pressure, 0..2 bar | Amphenol NovaSensor NPI-19, 30 psi gauge (mV bridge) | AD3 AIN0-AIN1 | 16 |
+| Raw water pressure, 0..2.07 bar | Amphenol NovaSensor NPI-19, I2C, 30 psi gauge | I2C 0x28 | 16 |
 
 The modules measure 0..18.8 V at their terminals (12 V systems; not 24 V).
 
 **Raw water pressure.** Measured between the raw water pump and the engine
 block: below about 1 bar is normal, above about 1.5 bar points to a blockage
-(thresholds to be found by testing). The NPI-19 is not an I2C sensor but a
-passive piezoresistive bridge (about 4..5 kΩ) with a millivolt output:
-100 mV full scale at 1 mA (types "H", constant current) or at 10 V (types
-"V"/VC, constant voltage). It is read with its own ADS1115 module (AD3,
-0x4A, ADDR to SDA):
+(thresholds to be found by testing). Sensor: Amphenol NovaSensor NPI-19
+with I2C output (datasheet AAS-920-699), 30 psi (207 kPa) gauge, ordering
+code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
 
-- Bridge excited ratiometrically from +3.3 V (constant voltage: the
-  VC/"V" type is compensated for that). Full scale then about 33 mV.
-- AIN0-AIN1 differential, ±0.256 V range: 7.8 µV per count, about 4,200
-  counts over 2.07 bar, so about 0.5 mbar per count.
-- AIN2 single-ended measures the excitation, so the pressure is computed
-  ratiometrically (supply changes cancel out).
-- A constant-current ("H") type would need a 1 mA current source instead;
-  check which type the sensor is.
-- Calibrate offset (open to air) and span (a reference gauge) with the
-  two-point calibration.
+- I2C address 0x28, 100..400 kHz (I2C1 runs at 100 kHz), no clock
+  stretching; supply 2.5..5.5 V, 3.3 V on the I2C connector, about 3 mA.
+- 14-bit pressure: 1638 counts at 0 bar, 14746 at 2.07 bar (10..90 % of the
+  range), so about 0.16 mbar per count. Total error band ±1 % FSO (about
+  ±20 mbar) over the compensated range.
+- Measurement: command 0xAC (full measurement), wait until the status says
+  "not busy", then read status, two bytes of bridge (pressure) data, and two
+  bytes of temperature data. Valid data 8.4 ms after power-on. The datasheet
+  gives no formula for the temperature bytes, so only the pressure is used.
+- Operating temperature -40..125 °C (ranges from 100 kPa); wetted parts
+  316L stainless steel.
+- Needs a new slstm32 driver (`Npi19Driver`): about 100 lines, like the
+  DHT20 driver (command, poll, read, pressure channel).
 
 ### Digital inputs (12 V, through the modules)
 
@@ -166,18 +167,21 @@ Resolved (2026-10-24):
    184 °C (seen on LT1).
 7. **Engine senders (A10, A11):** used as they are, calibrated in place;
    a dedicated sensor maybe later.
-8. **Raw water pressure:** NPI-19 on AD3 (see above), not on I2C directly.
+8. **Raw water pressure:** NPI-19 with I2C output at 0x28 (see above).
 
 Still to check:
 
-9. **I2C addresses** in use: 0x38 DHT20, 0x48 AD1, 0x49 AD2, 0x4A AD3,
-   0x4F TMP75, 0x52 EEPROM; 0x4B is the last free ADS1115 address.
+9. **I2C addresses** in use: 0x28 NPI-19, 0x38 DHT20, 0x48 AD1, 0x49 AD2,
+   0x4F TMP75, 0x52 EEPROM: no conflict. 0x4A and 0x4B remain for two more
+   input modules.
 10. **Isolated ground:** the four analog inputs of AD1 (and of AD2) share the
     module's isolated ground GND_I; connect it to the engine block / battery
     negative where the senders are grounded.
 11. **DHT20 in the engine room:** specified to 80 °C; oil vapour wears the
     humidity sensor over time.
-12. **NPI-19 type** (constant voltage or constant current), see above.
+12. **NPI-19 on its cable:** the sensor sits at the raw water pump, so its
+    I2C cable is the longest one; it carries 3.3 V, GND, SCL, SDA (shielded,
+    shield to engine ground, as decided).
 
 ## CubeMX configuration
 
@@ -258,8 +262,8 @@ After regenerating: commit, then pull the firmware changes (the
 ## Follow-up work
 
 - CubeMX: as in [CubeMX configuration](#cubemx-configuration).
-- Firmware: the channels above, AD3 for the raw water pressure, LEDs on
-  TIM2; B1S channel slots and the measurement
+- Firmware: the channels above, a new `Npi19Driver` (slstm32) for the raw
+  water pressure, LEDs on TIM2; B1S channel slots and the measurement
   channel area enlarged from 16 to 24 (EEPROM still fits: about 30 of 32
   KiB); the window pool reviewed for about 18 channels.
 - B1S: a representation for the digital inputs (switch states). There is no

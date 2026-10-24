@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include "health_service.hpp"
-#include "i2c_scan_service.hpp"
+#include "can_mcu/health_service.hpp"
+#include "can_mcu/i2c_scan_service.hpp"
 #include "n2k/node.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "slstm32/console.hpp"
@@ -38,10 +38,10 @@ struct DevToolsContext {
     slstm32::drivers::PwmLedDriver& redLed;
     slstm32::drivers::ToneDriver& buzzer;
     slstm32::drivers::I2cBus& i2c;
-    I2cScanService& i2cScan;
+    can_mcu::I2cScanService& i2cScan;
     semantic_modules::AdInputIso12v& inputModule;
     n2k::Node& n2kNode;
-    HealthService& health;
+    can_mcu::HealthService& health;
 };
 
 slstm32::Service& devTools(const DevToolsContext& context);

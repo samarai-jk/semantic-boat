@@ -5,7 +5,7 @@
 // product code.
 
 #include <cstdint>
-#include "health_service.hpp"
+#include "can_mcu/health_service.hpp"
 #include "n2k/node.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
@@ -25,7 +25,7 @@ namespace lab_test_01 {
 class ActivityService final : public slstm32::Service {
 public:
     ActivityService(slstm32::Runtime runtime, n2k::Node& node, semantic_modules::AdInputIso12v& module,
-                    HealthService& health, slstm32::drivers::PwmLedDriver& greenLed,
+                    can_mcu::HealthService& health, slstm32::drivers::PwmLedDriver& greenLed,
                     slstm32::drivers::PwmLedDriver& redLed)
         : runtime_(runtime), node_(node), module_(module), health_(health), greenLed_(greenLed),
           redLed_(redLed) {}
@@ -39,7 +39,7 @@ private:
     slstm32::Runtime runtime_;
     n2k::Node& node_;
     semantic_modules::AdInputIso12v& module_;
-    HealthService& health_;
+    can_mcu::HealthService& health_;
     slstm32::drivers::PwmLedDriver& greenLed_;
     slstm32::drivers::PwmLedDriver& redLed_;
     std::uint32_t nextPublishAt_{};

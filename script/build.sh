@@ -90,7 +90,7 @@ printf '[build.sh] Build succeeded: %s\n' "$elf_path"
 
 if [[ "$do_flash" -eq 1 ]]; then
     case "$firmware" in
-        remote-a|lab-test-01|can-mcu-bootloader) openocd_target=target/stm32l4x.cfg ;;
+        remote-a|lab-test-01|engine-mon|can-mcu-bootloader) openocd_target=target/stm32l4x.cfg ;;
         *) fail "No OpenOCD target is configured for $firmware; add its mapping to script/build.sh." ;;
     esac
     images=()

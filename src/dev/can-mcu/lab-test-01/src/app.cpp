@@ -8,13 +8,13 @@
 #include "can_mcu/i2c_bus.hpp"
 #include "can_mcu/mcu_monitor.hpp"
 #include "can_mcu/supervision.hpp"
-#include "can_monitor_service.hpp"
+#include "can_mcu/can_monitor_service.hpp"
 #include "device_settings.hpp"
 #include "dev_tools.hpp"
 #include "diagnostics_service.hpp"
 #include "events.hpp"
-#include "health_service.hpp"
-#include "i2c_scan_service.hpp"
+#include "can_mcu/health_service.hpp"
+#include "can_mcu/i2c_scan_service.hpp"
 #include "b1s/measurement_publisher.hpp"
 #include "b1s/registry.hpp"
 #include "b1s/service_server.hpp"
@@ -161,8 +161,8 @@ n2k::Node n2kNode{runtime, can, n2kConfig, logger};
 
 lab_test_01::DiagnosticsService diagnostics{runtime, logger, events, mcu, boardTemperature,
                                             i2c, buzzer};
-lab_test_01::I2cScanService i2cScan{runtime, i2c, logger};
-lab_test_01::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
+can_mcu::I2cScanService i2cScan{runtime, i2c, logger};
+can_mcu::CanMonitorService canMonitor{runtime, logger, can, n2kNode, canActivityLed};
 
 // Measurement channels: the board and MCU probes and a DFRobot DHT20 on the
 // I2C connectors ("air", "air-rh"). The alarm rules are firmware defaults;
@@ -248,7 +248,7 @@ sensors::AlarmAnnunciator annunciator{measurements, tonePlayer, annunciatorConfi
 semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
     runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
-lab_test_01::HealthService health{runtime, logger, eeprom, lab_test_01::healthRecordOffset, mcu};
+can_mcu::HealthService health{runtime, logger, eeprom, lab_test_01::healthRecordOffset, mcu};
 
 // Configuration, calibration, and the console over CAN (src/lib/b1s/CONFIGURATION.md).
 bool readPreferredAddress(void*, std::int32_t& value);
@@ -421,7 +421,7 @@ void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
 // to the CAN monitor's message log.
 void onN2kMessage(void*, const n2k::CanId& id, const std::uint8_t* data, std::uint8_t length) {
     if (serviceServer.handleMessage(id, data, length)) return;
-    lab_test_01::CanMonitorService::onMessage(&canMonitor, id, data, length);
+    can_mcu::CanMonitorService::onMessage(&canMonitor, id, data, length);
 }
 
 bool readPreferredAddress(void*, std::int32_t& value) {

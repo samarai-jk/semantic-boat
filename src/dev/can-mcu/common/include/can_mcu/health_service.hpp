@@ -10,7 +10,7 @@
 #include "slstm32/storage/byte_storage.hpp"
 #include "slstm32/storage/redundant_blob_store.hpp"
 
-namespace lab_test_01 {
+namespace can_mcu {
 
 // Long-term health record for unattended runs, kept in EEPROM so that it
 // survives power loss and does not depend on a PC capturing the log:
@@ -63,4 +63,4 @@ private:
     bool previousRunFailed_{};
 };
 
-} // namespace lab_test_01
+} // namespace can_mcu

@@ -9,7 +9,7 @@
 #include "slstm32/runtime.hpp"
 #include "slstm32/service.hpp"
 
-namespace lab_test_01 {
+namespace can_mcu {
 
 // CAN and NMEA 2000 visibility for bring-up: logs every change of the
 // controller state, flashes the yellow RJ45 LED on traffic, logs messages
@@ -25,6 +25,9 @@ public:
     bool init() override;
     void run() override;
 
+    // Blinks the activity LED fast for this long instead of showing traffic
+    // (identify); 0 ends it.
+    void identify(std::uint32_t durationMs);
     // n2k::MessageHandler
     static void onMessage(void* context, const n2k::CanId& id, const std::uint8_t* data,
                           std::uint8_t length);
@@ -43,9 +46,11 @@ private:
     std::uint32_t nextSummaryAt_{};
     std::uint32_t logWindowStartedAt_{};
     std::uint32_t lastTraffic_{};
+    std::uint32_t identifyUntil_{};
+    bool identifying_{};
     std::uint32_t suppressedMessages_{};
     std::uint8_t loggedInWindow_{};
     slstm32::drivers::CanStatus lastStatus_{};
 };
 
-} // namespace lab_test_01
+} // namespace can_mcu

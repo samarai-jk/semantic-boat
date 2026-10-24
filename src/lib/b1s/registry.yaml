@@ -210,3 +210,6 @@ products:
   - {product_code: 2, id: can-mcu-bootloader, model: "Semantic Boat can-mcu bootloader", preferred_address: 240,
      device_class: 10, device_function: 130, frames_per_second: 0.1,
      description: "Bootloader of can-mcu devices while it waits for or receives a firmware update (src/dev/can-mcu/can-mcu-bootloader)"}
+  - {product_code: 3, id: engine-mon, model: "Semantic Boat Engine Monitor", preferred_address: 40,
+     device_class: 50, device_function: 140, frames_per_second: 10,
+     description: "Marine diesel engine monitor: can-mcu + engine host (on the bench host-dev) (src/dev/can-mcu/engine-mon); class 50 propulsion, function 140 engine room monitoring"}

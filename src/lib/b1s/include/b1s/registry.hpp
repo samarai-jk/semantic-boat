@@ -229,6 +229,7 @@ struct Product {
 namespace product {
 inline constexpr Product labTest01{1u, 35u, 75u, 130u};
 inline constexpr Product canMcuBootloader{2u, 240u, 10u, 130u};
+inline constexpr Product engineMon{3u, 40u, 50u, 140u};
 } // namespace product
 
 } // namespace b1s

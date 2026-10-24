@@ -1,9 +1,9 @@
-#include "health_service.hpp"
+#include "can_mcu/health_service.hpp"
 #include <cstring>
 #include "can_mcu/board.hpp"
 #include "can_mcu/supervision.hpp"
 
-namespace lab_test_01 {
+namespace can_mcu {
 namespace {
 
 using slstm32::LogLevel;
@@ -175,4 +175,4 @@ void HealthService::healthCommand(void* context, std::size_t argc, const char* c
     self.logTotals();
 }
 
-} // namespace lab_test_01
+} // namespace can_mcu

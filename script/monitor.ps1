@@ -67,7 +67,7 @@ $serialRules = @(
     @{ Pattern = 'as3935: lightning'; Color = 'Magenta'; Label = 'LIGHTNING' },
     @{ Pattern = '\] [IWE] values: '; Color = 'Green'; Label = 'values' },
     @{ Pattern = '\] [IWE] (dht20|sht31|ds18b20|ct1780|veml7700|as3935|lightning|uv-index|bmp585|bno055|bmp280|attitude|scd4x)[ :]'; Color = 'Green'; Label = 'sensor' },
-    @{ Pattern = 'lab-test-01 \(.*built'; Color = 'DarkRed'; Label = 'boot' },
+    @{ Pattern = '(lab-test-01|engine-mon) \(.*built'; Color = 'DarkRed'; Label = 'boot' },
     @{ Pattern = 'BF\d pressed'; Color = 'Cyan'; Label = 'button' },
     @{ Pattern = 'supply dip'; Color = 'Yellow'; Label = 'supply' },
     @{ Pattern = 'can state:'; Color = 'Magenta'; Label = 'can' },

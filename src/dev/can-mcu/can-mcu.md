@@ -344,7 +344,8 @@ when assigning peripherals.
 - PB4 (NJTRST) and PA15 (JTDI) are free for GPIO use because only SWD is used;
   keep PA13, PA14, and PB3 reserved for debugging.
 - CubeMX starting points: `hardware/can-mcu/stm32/stm32.ioc` (labels for the
-  display host) and `src/dev/can-mcu/lab-test-01/cmx/stm32.ioc`.
+  display host), `src/dev/can-mcu/lab-test-01/cmx/stm32.ioc`, and
+  `src/dev/can-mcu/engine-mon/cmx/stm32.ioc`.
 
 ### Shared board support (`common/`)
 
@@ -377,6 +378,10 @@ therefore deliberately outside `slstm32`. It currently provides:
   stores the crash record, writes the reason to the VCP (if USART1 is
   running), and blinks the yellow CAN LED until the watchdog (if started)
   resets the MCU.
+- services every can-mcu device can use: `HealthService` (health record in
+  EEPROM, console `health`), `I2cScanService` (logs I2C devices as they
+  appear and disappear), `CanMonitorService` (CAN state, traffic on the
+  yellow LED, message log, `identify()` blinking).
 
 Requirements on a device's CubeMX project: USART1 on PB6/PB7, and no EXTI
 interrupts enabled in CubeMX (the shared layer owns those vectors).

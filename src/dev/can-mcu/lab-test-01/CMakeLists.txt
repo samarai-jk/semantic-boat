@@ -24,11 +24,8 @@ can_mcu_add_common(${LAB_TEST_01_TARGET})
 target_sources(${LAB_TEST_01_TARGET} PRIVATE
     src/app.cpp
     src/board.cpp
-    src/can_monitor_service.cpp
     src/device_settings.cpp
     src/diagnostics_service.cpp
-    src/health_service.cpp
-    src/i2c_scan_service.cpp
 )
 
 # LT1 is a lab device: development tools are on by default. Check that it also

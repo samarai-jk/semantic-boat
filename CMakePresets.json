@@ -42,6 +42,26 @@
       }
     },
     {
+      "name": "engine-mon-debug",
+      "displayName": "engine-mon (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/engine-mon/debug",
+      "toolchainFile": "${sourceDir}/src/dev/can-mcu/engine-mon/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEMANTIC_BOAT_DEVICE": "engine-mon"
+      }
+    },
+    {
+      "name": "engine-mon-release",
+      "inherits": "engine-mon-debug",
+      "displayName": "engine-mon (Release)",
+      "binaryDir": "${sourceDir}/build/engine-mon/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "can-mcu-bootloader-debug",
       "displayName": "can-mcu-bootloader (Debug)",
       "generator": "Ninja",
@@ -78,6 +98,14 @@
     {
       "name": "lab-test-01-release",
       "configurePreset": "lab-test-01-release"
+    },
+    {
+      "name": "engine-mon-debug",
+      "configurePreset": "engine-mon-debug"
+    },
+    {
+      "name": "engine-mon-release",
+      "configurePreset": "engine-mon-release"
     },
     {
       "name": "can-mcu-bootloader-debug",

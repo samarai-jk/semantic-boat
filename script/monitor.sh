@@ -73,7 +73,7 @@ rules=(
     'as3935: lightning'                                      "$magenta"    LIGHTNING
     '\] [IWE] values: '                                      "$green"      values
     '\] [IWE] (dht20|sht31|ds18b20|ct1780|veml7700|as3935|lightning|uv-index|bmp585|bno055|bmp280|attitude|scd4x)[ :]' "$green" sensor
-    'lab-test-01 \(.*built'                                  "$dark_red"   boot
+    '(lab-test-01|engine-mon) \(.*built'                     "$dark_red"   boot
     'BF[0-9] pressed'                                        "$cyan"       button
     'supply dip'                                             "$yellow"     supply
     'can state:'                                             "$magenta"    can

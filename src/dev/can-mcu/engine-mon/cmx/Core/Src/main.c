@@ -21,6 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "can_mcu/fatal.h"
+#include "engine_mon/app.h"
 
 /* USER CODE END Includes */
 
@@ -113,6 +115,7 @@ int main(void)
   MX_RTC_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  engine_mon_app_init();
 
   /* USER CODE END 2 */
 
@@ -123,6 +126,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    engine_mon_app_run();
   }
   /* USER CODE END 3 */
 }
@@ -610,11 +614,7 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+  can_mcu_fatal_error("Error_Handler");
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

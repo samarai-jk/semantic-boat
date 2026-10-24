@@ -270,11 +270,15 @@ After regenerating: commit, then pull the firmware changes (the
 
 ## Tests on the hardware
 
-- **RTC backup battery:** EM has a backup cell on CN6 (VBAT). Check that it
-  works: with the cell fitted, power the board off for a while; afterwards
-  the RTC must still run (time kept, LSE running) and the backup registers
-  must have kept their content (crash record, bootloader flags). Without the
-  cell both are lost.
+- **RTC backup battery: passed (2026-10-24).** EM has a backup cell on
+  CN6 (VBAT). Clock set and a marker written to backup register 31; with the
+  cell, after about 55 minutes without power, the clock still ran (correct
+  to within the reading delay of about a second) and the marker was kept.
+  Without the cell (disconnected earlier the same day) both were lost:
+  `rtc: not set`, register 0. The cell's own voltage cannot be measured
+  while EM is powered (VBAT is a diode-OR of +3V3 and the cell), so a
+  weak cell only shows as `rtc: not set` after a power loss. Drift over days
+  still to be checked against the Pi.
 - **Raw water temperature scaling** of the NPI-19 (see above).
 - **RPM:** pulses per revolution against a tachometer.
 - **Inputs and outputs** once the firmware has the new pin map: each input

@@ -18,16 +18,7 @@ public:
     bool init() override {
         return context_.console.add({"do", "do <n> <0..100>  DEV: set output n by hand (percent)", &doCommand, this});
     }
-    void run() override {
-        // TEMPORARY (LED bring-up with the scope, 2026-10-24): a fixed pattern
-        // from the first run on, after the application has set its own: green
-        // 2 Hz, red 5 Hz, both 50 % on. Remove once the LEDs work.
-        if (ledPatternSet_) return;
-        ledPatternSet_ = true;
-        context_.greenLed.blink(500u, 250u);
-        context_.redLed.blink(200u, 100u);
-        context_.log.write(slstm32::LogLevel::warning, "DEV: LED test pattern: green 2 Hz (PA15), red 5 Hz (PA2)");
-    }
+    void run() override {}
 
 private:
     static void doCommand(void* self, std::size_t argc, const char* const* argv) {
@@ -47,7 +38,6 @@ private:
     }
 
     const DevToolsContext& context_;
-    bool ledPatternSet_{};
 };
 
 } // namespace

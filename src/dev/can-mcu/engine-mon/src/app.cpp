@@ -243,7 +243,7 @@ bool firmwareConfirmed{};
 
 // Development and test tools (src/dev/), or a no-op without them; see dev_tools.hpp.
 const engine_mon::DevToolsContext devToolsContext{runtime, logger, console, outputs,
-                                                  sizeof outputs / sizeof outputs[0], greenLed, redLed};
+                                                  sizeof outputs / sizeof outputs[0]};
 
 namespace component {
 struct SerialLog;

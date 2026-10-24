@@ -32,6 +32,7 @@
 #include "slstm32/application.hpp"
 #include "slstm32/build_profile.hpp"
 #include "slstm32/console.hpp"
+#include "slstm32/drivers/analog_sensor.hpp"
 #include "slstm32/drivers/at24c256.hpp"
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
@@ -51,6 +52,7 @@
 #include "slstm32/sensors/measurement_console.hpp"
 #include "slstm32/sensors/measurement_log.hpp"
 #include "slstm32/sensors/registry.hpp"
+#include "slstm32/sensors/rtd.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
 #include <array>
 #include <cstdint>
@@ -219,7 +221,51 @@ constexpr std::uint32_t dryExhaustPeriodMs = 1000u;
 slstm32::drivers::Ct1780Driver dryExhaustSensor{runtime, oneWire0, logger, &dryExhaustChannel, nullptr,
                                                 dryExhaustPeriodMs};
 
-sensors::Measurement* const channels[]{&boardChannel, &mcuChannel, &dryExhaustChannel};
+// PT100 probes (350 °C) through DFRobot SEN0198 amplifiers on the ADC
+// (PA4..PA6, sampled by the McuMonitor), one reading per second each. Bridge
+// constants of DFRobot's library (verified on LT1; calibrate with two
+// points). Below 50 mV or above 3.2 V the probe, the amplifier, or its
+// supply is missing (an open input floats inside that range: the host needs
+// pull-downs). Default alarms are placeholders until the engine's normal
+// values are known (tune over CAN): wet exhaust is the raw water failure
+// alarm (warning above 70 °C, alarm above 85 °C); alternator and heat
+// exchanger warn above 90 °C and 95 °C.
+constexpr sensors::RtdBridge sen0198Bridge{1800.0f, 3976.2f, 39.762f};
+const slstm32::drivers::AnalogSensorConfig pt100Config{sensors::rtdBridgeConversion(sen0198Bridge), 50, 3200, 1000u};
+constexpr sensors::FaultRule pt100Fault{true, Severity::warning, 10u, false};
+constexpr sensors::AlarmRule wetExhaustAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {10u, false}, 5u, 70000, 0, 3000},
+    {ValueFunction::average, Comparison::above, Severity::alarm, false, {5u, false}, 3u, 85000, 0, 3000},
+};
+constexpr sensors::AlarmRule alternatorAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {60u, false}, 10u, 90000, 0, 3000},
+};
+constexpr sensors::AlarmRule heatExchangerAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {30u, false}, 10u, 95000, 0, 3000},
+};
+constexpr sensors::MeasurementConfig wetExhaustChannelConfig{
+    "wet-exhaust", sensors::Quantity::temperature, 3u, 10000u, 0u, wetExhaustAlarms,
+    sizeof wetExhaustAlarms / sizeof wetExhaustAlarms[0], pt100Fault};
+constexpr sensors::MeasurementConfig alternatorChannelConfig{
+    "alternator", sensors::Quantity::temperature, 4u, 10000u, 0u, alternatorAlarms,
+    sizeof alternatorAlarms / sizeof alternatorAlarms[0], pt100Fault};
+constexpr sensors::MeasurementConfig heatExchangerChannelConfig{
+    "heat-exchanger", sensors::Quantity::temperature, 5u, 10000u, 0u, heatExchangerAlarms,
+    sizeof heatExchangerAlarms / sizeof heatExchangerAlarms[0], pt100Fault};
+sensors::Measurement wetExhaustChannel{wetExhaustChannelConfig};
+sensors::Measurement alternatorChannel{alternatorChannelConfig};
+sensors::Measurement heatExchangerChannel{heatExchangerChannelConfig};
+// McuMonitor input indices 0..2 = AI0..AI2 (added in this order at init).
+slstm32::drivers::AnalogSensor wetExhaustSensor{runtime, mcu.inputHardware(0u), pt100Config, &wetExhaustChannel,
+                                                sensors::Identity::analog(engine_mon::board::analogChannels[0])};
+slstm32::drivers::AnalogSensor alternatorSensor{runtime, mcu.inputHardware(1u), pt100Config, &alternatorChannel,
+                                                sensors::Identity::analog(engine_mon::board::analogChannels[1])};
+slstm32::drivers::AnalogSensor heatExchangerSensor{runtime, mcu.inputHardware(2u), pt100Config,
+                                                   &heatExchangerChannel,
+                                                   sensors::Identity::analog(engine_mon::board::analogChannels[2])};
+
+sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &dryExhaustChannel,
+                                       &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -242,6 +288,10 @@ const b1s::ChannelConfig b1sChannels[]{
     {&mcuChannel, 1u, b1s::Publish::b1s, engineRoom, "", "Engine monitor MCU die"},
     {&dryExhaustChannel, 3u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::TemperatureSource::exhaustGas), "",
      "Dry exhaust"},
+    {&wetExhaustChannel, 4u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::TemperatureSource::exhaustGas), "",
+     "Wet exhaust"},
+    {&alternatorChannel, 5u, b1s::Publish::b1s, engineRoom, "", "Alternator"},
+    {&heatExchangerChannel, 6u, b1s::Publish::b1s, engineRoom, "", "Heat exchanger"},
 };
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
@@ -311,6 +361,9 @@ struct Do2;
 struct Mcu;
 struct BoardTemperature;
 struct DryExhaustSensor;
+struct WetExhaustSensor;
+struct AlternatorSensor;
+struct HeatExchangerSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -348,6 +401,9 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::DryExhaustSensor>(dryExhaustSensor),
+        slstm32::bind<component::WetExhaustSensor>(wetExhaustSensor),
+        slstm32::bind<component::AlternatorSensor>(alternatorSensor),
+        slstm32::bind<component::HeatExchangerSensor>(heatExchangerSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),

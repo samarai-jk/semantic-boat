@@ -103,7 +103,10 @@ void Ct1780Driver::finish(std::uint32_t now) {
     if (faults != faultBits_) {
         char text[20];
         if (faults) {
-            log_.writef(LogLevel::warning, "ct1780 %s: %s", OneWireBus::formatRom(text, rom_), faultText(faults));
+            // With the raw scratchpad (CRC checked): the converter's own report.
+            log_.writef(LogLevel::warning, "ct1780 %s: %s (scratchpad %02X %02X %02X %02X %02X %02X %02X %02X %02X)",
+                        OneWireBus::formatRom(text, rom_), faultText(faults), data[0], data[1], data[2], data[3],
+                        data[4], data[5], data[6], data[7], data[8]);
         } else {
             log_.writef(LogLevel::info, "ct1780 %s: thermocouple ok", OneWireBus::formatRom(text, rom_));
         }

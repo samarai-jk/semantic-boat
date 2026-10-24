@@ -111,6 +111,9 @@ at 0x08004000; a fresh can-mcu needs `flash-all` once.
 
 ## Open points
 
+- The engine setup (sensors, inputs, outputs, final pin map) is planned in
+  [ENGINE-SETUP.md](ENGINE-SETUP.md), still under review.
+
 - Engine host board: input conditioning, output drivers with pull-downs,
   connectors.
 - Engine channels: rpm on DI0 (frequency input), coolant and exhaust

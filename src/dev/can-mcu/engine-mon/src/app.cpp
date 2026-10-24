@@ -26,6 +26,8 @@
 #include "b1s/registry.hpp"
 #include "b1s/service_server.hpp"
 #include "n2k/name.hpp"
+#include "semantic_modules/ad_input_iso_12v.hpp"
+#include "semantic_modules/ad_input_iso_12v_calibration.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
 #include "n2k/temperature.hpp"
@@ -55,6 +57,7 @@
 #include "slstm32/sensors/rtd.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
 #include <array>
+#include <climits>
 #include <cstdint>
 #include <cstdio>
 extern "C" {
@@ -115,16 +118,23 @@ const auto buttonConfigs = engine_mon::board::buttons();
 slstm32::drivers::ButtonDriver buttons{runtime, events, engine_mon::buttonPressed,
                                        buttonConfigs.data(), buttonConfigs.size()};
 
+// The two 12v-ad-input-iso modules: AD1 (0x49) with D10..D13 and A10..A13,
+// AD2 (0x48) with D20..D23 and A20..A23. Analog inputs 0..18.8 V at the
+// terminal (fsr2048), digital inputs debounced 20 ms.
 const auto inputHardware = engine_mon::board::digitalInputs();
-slstm32::drivers::DigitalInputDriver di0{runtime, inputHardware[0], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di1{runtime, inputHardware[1], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di2{runtime, inputHardware[2], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di3{runtime, inputHardware[3], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di4{runtime, inputHardware[4], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di5{runtime, inputHardware[5], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di6{runtime, inputHardware[6], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver di7{runtime, inputHardware[7], inputDebounceMs};
-slstm32::drivers::DigitalInputDriver* const digitalInputs[]{&di0, &di1, &di2, &di3, &di4, &di5, &di6, &di7};
+const semantic_modules::AdInputIso12vConfig ad1Config{
+    engine_mon::board::ad1Address, slstm32::drivers::Ads1115Driver::Gain::fsr2048,
+    slstm32::drivers::Ads1115Driver::DataRate::sps128,
+    {inputHardware[0], inputHardware[1], inputHardware[2], inputHardware[3]}, inputDebounceMs};
+const semantic_modules::AdInputIso12vConfig ad2Config{
+    engine_mon::board::ad2Address, slstm32::drivers::Ads1115Driver::Gain::fsr2048,
+    slstm32::drivers::Ads1115Driver::DataRate::sps128,
+    {inputHardware[4], inputHardware[5], inputHardware[6], inputHardware[7]}, inputDebounceMs};
+semantic_modules::AdInputIso12v ad1{runtime, i2c, ad1Config};
+semantic_modules::AdInputIso12v ad2{runtime, i2c, ad2Config};
+semantic_modules::AdInputIso12v* const inputModules[]{&ad1, &ad2};
+semantic_modules::AdInputIso12vCalibrationStore inputModuleCalibrationStore{eeprom,
+                                                                            engine_mon::moduleCalibrationOffset};
 
 const auto outputHardware = engine_mon::board::outputs();
 slstm32::drivers::PwmOutputDriver do0{outputHardware[0]};
@@ -328,7 +338,10 @@ sensors::AlarmAnnunciator annunciator{measurements, tonePlayer, annunciatorConfi
 
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
 can_mcu::HealthService health{runtime, logger, eeprom, engine_mon::healthRecordOffset, mcu};
-engine_mon::IoConsole ioConsole{logger, digitalInputs, outputs, mcu, analogInputs};
+engine_mon::IoConsole ioConsole{logger, inputModules, outputs, mcu, analogInputs};
+// Stored calibrations of the modules' analog inputs; console "ain", "cal".
+semantic_modules::AdInputIso12vCalibrator inputModuleCalibrator{
+    runtime, logger, inputModuleCalibrationStore, inputModules, sizeof inputModules / sizeof inputModules[0]};
 
 // Configuration, calibration, and the console over CAN (src/lib/b1s/CONFIGURATION.md).
 bool readPreferredAddress(void*, std::int32_t& value);
@@ -353,14 +366,9 @@ const engine_mon::DevToolsContext devToolsContext{runtime, logger, console, outp
 namespace component {
 struct SerialLog;
 struct Buttons;
-struct Di0;
-struct Di1;
-struct Di2;
-struct Di3;
-struct Di4;
-struct Di5;
-struct Di6;
-struct Di7;
+struct Ad1;
+struct Ad2;
+struct InputModuleCalibrator;
 struct Do0;
 struct Do1;
 struct Do2;
@@ -393,14 +401,8 @@ auto application = slstm32::makeApplication(
     slstm32::makeDriverSet(
         slstm32::bind<component::SerialLog>(serialLog),
         slstm32::bind<component::Buttons>(buttons),
-        slstm32::bind<component::Di0>(di0),
-        slstm32::bind<component::Di1>(di1),
-        slstm32::bind<component::Di2>(di2),
-        slstm32::bind<component::Di3>(di3),
-        slstm32::bind<component::Di4>(di4),
-        slstm32::bind<component::Di5>(di5),
-        slstm32::bind<component::Di6>(di6),
-        slstm32::bind<component::Di7>(di7),
+        slstm32::bind<component::Ad1>(ad1),
+        slstm32::bind<component::Ad2>(ad2),
         slstm32::bind<component::Do0>(do0),
         slstm32::bind<component::Do1>(do1),
         slstm32::bind<component::Do2>(do2),
@@ -426,6 +428,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::ServiceServer>(serviceServer),
         slstm32::bind<component::TonePlayer>(tonePlayer),
         slstm32::bind<component::Annunciator>(annunciator),
+        slstm32::bind<component::InputModuleCalibrator>(inputModuleCalibrator),
         slstm32::bind<component::Console>(console),
         slstm32::bind<component::DevTools>(engine_mon::devTools(devToolsContext))));
 
@@ -486,18 +489,55 @@ const char* gearName(Gear gear) {
     return "?";
 }
 
-// Logs every change of a digital input (debug) and of the gear position
-// derived from the two gearbox reed switches (info); the state at startup
-// once (info).
+bool digitalOn(std::size_t index) {
+    constexpr auto perModule = semantic_modules::AdInputIso12v::channels;
+    return inputModules[index / perModule]->digitalActive(index % perModule);
+}
+
+// Analog inputs of AD1/AD2 as last logged (mV; INT32_MIN = no value).
+constexpr std::int32_t analogUnknown = INT32_MIN;
+constexpr std::int32_t analogLogStepMv = 250;
+std::int32_t analogLogged[engine_mon::board::moduleAnalogCount]{};
+
+void logAnalog(std::size_t index, std::int32_t millivolts) {
+    if (millivolts == analogUnknown) {
+        logger.writef(LogLevel::debug, "input: %s -", engine_mon::board::moduleAnalogNames[index]);
+        return;
+    }
+    const auto magnitude = millivolts < 0 ? -millivolts : millivolts;
+    logger.writef(LogLevel::debug, "input: %s %s%ld.%02ld V", engine_mon::board::moduleAnalogNames[index],
+                  millivolts < 0 ? "-" : "", static_cast<long>(magnitude / 1000),
+                  static_cast<long>(magnitude % 1000 / 10));
+}
+
+// Logs every change of a digital input and every analog change of at least
+// 0.25 V (debug), the gear position from the two gearbox reed switches on
+// change (info), and the state at startup once (info).
 void watchInputs() {
     using engine_mon::board::digitalInputCount;
     using engine_mon::board::digitalInputNames;
+    using engine_mon::board::moduleAnalogCount;
+    constexpr auto perModule = semantic_modules::AdInputIso12v::channels;
     for (std::size_t index = 0u; index < digitalInputCount; ++index) {
-        const bool on = digitalInputs[index]->value();
+        const bool on = digitalOn(index);
         if (inputsKnown && on != inputsLogged[index]) {
             logger.writef(LogLevel::debug, "input: %s %s", digitalInputNames[index], on ? "12 V" : "off");
         }
         inputsLogged[index] = on;
+    }
+    for (std::size_t index = 0u; index < moduleAnalogCount; ++index) {
+        const auto& module = *inputModules[index / perModule];
+        const auto channel = index % perModule;
+        const auto value = module.analogValid(channel) ? module.analogMillivolts(channel) : analogUnknown;
+        const auto last = analogLogged[index];
+        const bool changed = (value == analogUnknown) != (last == analogUnknown) ||
+                             (value != analogUnknown && (value - last >= analogLogStepMv || last - value >= analogLogStepMv));
+        if (!inputsKnown || changed) {
+            // The first value after startup (or after the module answers
+            // again) is not a change.
+            if (inputsKnown && last != analogUnknown) logAnalog(index, value);
+            analogLogged[index] = value;
+        }
     }
     const bool reverse = inputsLogged[engine_mon::board::gearReverseInput];
     const bool forward = inputsLogged[engine_mon::board::gearForwardInput];
@@ -636,7 +676,8 @@ extern "C" void engine_mon_app_init(void) {
         logger.write(LogLevel::error, "events: alarm acknowledge button not subscribed");
     }
     if (!health.registerCommands(console) || !measurementConsole.registerCommands(console) ||
-        !ioConsole.registerCommands(console) || !rtc.registerCommands(console)) {
+        !ioConsole.registerCommands(console) || !rtc.registerCommands(console) ||
+        !inputModuleCalibrator.registerCommands(console)) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {

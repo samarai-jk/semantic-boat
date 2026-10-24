@@ -27,8 +27,8 @@ energize-to-stop. This firmware monitors only.
          PA0, PA1, PA3, PA7 ── module AD2 D20..D23  gearbox reverse/forward, preheater relay, reserve
  Status  PA15 green LED (sunk), PA2 buzzer (TIM15) -- after the rewiring below
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
- I2C1    PB8/PB9 ── AD1 (ADS1115 0x48): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
-                 ── AD2 (ADS1115 0x49): A20..A23  12 V system, reserve x3
+ I2C1    PB8/PB9 ── AD1 (ADS1115 0x49): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
+                 ── AD2 (ADS1115 0x48): A20..A23  12 V system, reserve x3
                  ── NPI-19 (0x28) ................. raw water pressure 0..2.07 bar
                  ── DHT20 (0x38) .................. engine room temperature and humidity
                  ── on the can-mcu: EEPROM 0x52, TMP75 0x4F (enclosure)
@@ -113,8 +113,8 @@ code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
 | D23 | Reserve 1 | PA7 | 7 | |
 
 The two groups follow the wiring (decided 2026-10-24: the module with the
-gearbox reed switches feeds PA0/PA1/PA3/PA7). Which module has I2C address
-0x48 and which 0x49 is determined with the analog inputs.
+gearbox reed switches feeds PA0/PA1/PA3/PA7). **AD1 is 0x49** (R34 fitted:
+D10..D13, A10..A13) and **AD2 is 0x48** (R33 fitted: D20..D23, A20..A23).
 
 Module outputs are low while 12 V is present (the firmware inverts); an
 unplugged module reads "no 12 V". Every input has its own EXTI line, so any
@@ -203,7 +203,7 @@ Resolved (2026-10-24):
 
 Still to check:
 
-9. **I2C addresses** in use: 0x28 NPI-19, 0x38 DHT20, 0x48 AD1, 0x49 AD2,
+9. **I2C addresses** in use: 0x28 NPI-19, 0x38 DHT20, 0x48 AD2, 0x49 AD1,
    0x4F TMP75, 0x52 EEPROM: no conflict. 0x4A and 0x4B remain for two more
    input modules.
 10. **Isolated ground:** the four analog inputs of AD1 (and of AD2) share the

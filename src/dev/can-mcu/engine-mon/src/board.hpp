@@ -27,13 +27,23 @@ inline constexpr const char* buttonNames[buttonCount]{"BF5", "BF6"};
 // (gearbox reverse), PA1 (gearbox forward), PA3 (preheater relay), PA7
 // (reserve 1). Inputs
 // with pull-up, each on its own EXTI line (any of them can count pulses).
-// Logical value = 12 V present at the module terminal: the 12v-ad-input-iso
-// module drives its output low then (the binding is active low), and an
-// unplugged input reads "no 12 V".
+// The bindings report the physical pin level; the 12v-ad-input-iso module
+// drives its output low while 12 V is present at its terminal, which the
+// module driver (semantic_modules::AdInputIso12v) inverts. An unplugged input
+// reads "no 12 V".
 std::array<slstm32::drivers::DigitalInputHardware, digitalInputCount> digitalInputs();
 inline constexpr const char* digitalInputNames[digitalInputCount]{
     "D10 rpm",           "D11 ignition",          "D12 starter solenoid", "D13 fuel stop solenoid",
     "D20 gearbox reverse", "D21 gearbox forward", "D22 preheater relay",  "D23 reserve 1"};
+// The two 12v-ad-input-iso modules (I2C1): AD1 has the digital inputs
+// D10..D13 (indices 0..3) and the analog inputs A10..A13, AD2 D20..D23
+// (indices 4..7) and A20..A23.
+inline constexpr std::uint8_t ad1Address = 0x49u; // R34 fitted
+inline constexpr std::uint8_t ad2Address = 0x48u; // R33 fitted
+inline constexpr std::size_t moduleAnalogCount = 8u;
+inline constexpr const char* moduleAnalogNames[moduleAnalogCount]{
+    "A10 oil pressure", "A11 coolant temperature", "A12 alternator voltage", "A13 starter voltage",
+    "A20 12 V system",  "A21 reserve 1",           "A22 reserve 2",          "A23 reserve 3"};
 // Indices of the gearbox reed switches (12 V while the gear is engaged).
 inline constexpr std::size_t gearReverseInput = 4u;
 inline constexpr std::size_t gearForwardInput = 5u;

@@ -4,6 +4,7 @@ extern "C" {
 #include "main.h"
 extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim15;
 }
 
 namespace engine_mon::board {
@@ -110,8 +111,7 @@ struct LedChannel {
     std::uint32_t channel;
 };
 
-LedChannel greenChannel{TIM_CHANNEL_3}; // PA2
-LedChannel redChannel{TIM_CHANNEL_1};   // PA15
+LedChannel greenChannel{TIM_CHANNEL_1}; // PA15
 bool ledTimerConfigured{};
 
 bool configureLedTimer(void*) {
@@ -129,9 +129,7 @@ bool configureLedTimer(void*) {
     // Low polarity: the pins sink the LED, so a high duty means bright.
     channel.OCPolarity = TIM_OCPOLARITY_LOW;
     channel.OCFastMode = TIM_OCFAST_DISABLE;
-    for (const auto* led : {&greenChannel, &redChannel}) {
-        if (HAL_TIM_PWM_ConfigChannel(&htim2, &channel, led->channel) != HAL_OK) return false;
-    }
+    if (HAL_TIM_PWM_ConfigChannel(&htim2, &channel, greenChannel.channel) != HAL_OK) return false;
     htim2.Instance->EGR = TIM_EGR_UG;
     ledTimerConfigured = true;
     return true;
@@ -153,15 +151,67 @@ void stopLed(void* context) {
     writeLed(context, 0.0f);
 }
 
+// --- TIM15: buzzer -----------------------------------------------------------
+
+bool buzzerStarted{};
+
+// TIM15 runs from APB2 (doubled if APB2 is divided); 16-bit counter.
+bool setToneFrequency(std::uint32_t frequencyHz) {
+    if (frequencyHz == 0u) return false;
+    auto clock = HAL_RCC_GetPCLK2Freq();
+    if ((RCC->CFGR & RCC_CFGR_PPRE2) != RCC_CFGR_PPRE2_DIV1) clock *= 2u;
+    const auto ticks = clock / frequencyHz;
+    if (ticks < 2u) return false;
+    const auto prescaler = (ticks - 1u) / 65536u;
+    if (prescaler > 0xFFFFu) return false;
+    __HAL_TIM_SET_PRESCALER(&htim15, prescaler);
+    __HAL_TIM_SET_AUTORELOAD(&htim15, clock / ((prescaler + 1u) * frequencyHz) - 1u);
+    return true;
+}
+
+bool configureBuzzer(void*) {
+    // PWM mode 1, high polarity (the driver input is active high), compare 0:
+    // the output stays low (silent) until a tone sets the compare.
+    TIM_OC_InitTypeDef channel{};
+    channel.OCMode = TIM_OCMODE_PWM1;
+    channel.Pulse = 0u;
+    channel.OCPolarity = TIM_OCPOLARITY_HIGH;
+    channel.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+    channel.OCFastMode = TIM_OCFAST_DISABLE;
+    channel.OCIdleState = TIM_OCIDLESTATE_RESET;
+    channel.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+    if (HAL_TIM_PWM_ConfigChannel(&htim15, &channel, TIM_CHANNEL_1) != HAL_OK) return false;
+    if (!setToneFrequency(2700u)) return false;
+    htim15.Instance->EGR = TIM_EGR_UG;
+    buzzerStarted = HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1) == HAL_OK;
+    return buzzerStarted;
+}
+
+bool startTone(void*, std::uint32_t frequencyHz, float level) {
+    if (!buzzerStarted || !setToneFrequency(frequencyHz)) return false;
+    if (level < 0.0f) level = 0.0f;
+    if (level > 1.0f) level = 1.0f;
+    const auto period = __HAL_TIM_GET_AUTORELOAD(&htim15) + 1u;
+    __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_1, static_cast<std::uint32_t>(static_cast<float>(period) * 0.5f * level));
+    htim15.Instance->EGR = TIM_EGR_UG;
+    return true;
+}
+
+// Interrupt-safe: may run from SysTick via ToneDriver::onTick().
+void stopTone(void*) {
+    __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_1, 0u);
+}
+
 } // namespace
+
+slstm32::drivers::ToneOutputHardware buzzer() {
+    return {nullptr, &configureBuzzer, &startTone, &stopTone};
+}
 
 slstm32::drivers::PwmOutputHardware greenLed() {
     return {&greenChannel, &configureLedTimer, &startLed, &stopLed, &writeLed};
 }
 
-slstm32::drivers::PwmOutputHardware redLed() {
-    return {&redChannel, &configureLedTimer, &startLed, &stopLed, &writeLed};
-}
 
 std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
     using can_mcu::ButtonFrontend;

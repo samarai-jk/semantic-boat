@@ -39,8 +39,11 @@
 #include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/pwm_output.hpp"
 #include "slstm32/drivers/serial_log.hpp"
+#include "slstm32/drivers/tone.hpp"
+#include "slstm32/drivers/tone_pattern.hpp"
 #include "slstm32/drivers/tmp75.hpp"
 #include "slstm32/event_bus.hpp"
+#include "slstm32/sensors/alarm_annunciator.hpp"
 #include "slstm32/sensors/measurement.hpp"
 #include "slstm32/sensors/measurement_console.hpp"
 #include "slstm32/sensors/measurement_log.hpp"
@@ -139,6 +142,7 @@ slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
 // brightness = something needs attention. The red half of the enclosure LED
 // is not used (its pin becomes the buzzer).
 slstm32::drivers::PwmLedDriver statusLed{runtime, engine_mon::board::greenLed()};
+slstm32::drivers::ToneDriver buzzer{runtime, engine_mon::board::buzzer()};
 can_mcu::RtcClock rtc{logger};
 std::uint32_t identifyUntil{};
 bool applicationFailed{};
@@ -221,6 +225,24 @@ b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverr
 b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
 b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels, b1sStates, 2000u, logger, &b1sSettings};
 
+// Alarm sounds on the passive buzzer (loudest near 2.7 kHz), one per
+// severity, as on LT1: a quiet "have a look", firm beeps that ask for action,
+// a full-level siren for "act now". They play while an alarm waits for
+// acknowledgement (BF5 or BF6).
+using slstm32::drivers::ToneStep;
+constexpr ToneStep warningSteps[]{{2700u, 40u, 0.05f}, {0u, 120u}, {2700u, 40u, 0.05f}, {0u, 30000u}};
+constexpr ToneStep alarmSteps[]{{2700u, 150u, 0.3f}, {0u, 150u}, {2700u, 150u, 0.3f},
+                                {0u, 150u},          {2700u, 150u, 0.3f}, {0u, 2500u}};
+constexpr ToneStep emergencySteps[]{{2400u, 250u, 1.0f}, {3000u, 250u, 1.0f}};
+constexpr slstm32::drivers::TonePattern warningSound{warningSteps, sizeof warningSteps / sizeof warningSteps[0], true};
+constexpr slstm32::drivers::TonePattern alarmSound{alarmSteps, sizeof alarmSteps / sizeof alarmSteps[0], true};
+constexpr slstm32::drivers::TonePattern emergencySound{emergencySteps, sizeof emergencySteps / sizeof emergencySteps[0],
+                                                       true};
+slstm32::drivers::TonePatternPlayer tonePlayer{runtime, buzzer};
+const sensors::AlarmAnnunciator::Config annunciatorConfig{{&warningSound, &alarmSound, &emergencySound}, nullptr,
+                                                          nullptr};
+sensors::AlarmAnnunciator annunciator{measurements, tonePlayer, annunciatorConfig};
+
 slstm32::CommandConsole console{can_mcu::vcpInput(), logger};
 can_mcu::HealthService health{runtime, logger, eeprom, engine_mon::healthRecordOffset, mcu};
 engine_mon::IoConsole ioConsole{logger, digitalInputs, outputs, mcu, analogInputs};
@@ -264,6 +286,9 @@ struct BoardTemperature;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
+struct Buzzer;
+struct TonePlayer;
+struct Annunciator;
 struct Health;
 struct I2cScan;
 struct N2kNode;
@@ -296,7 +321,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
-        slstm32::bind<component::StatusLed>(statusLed)),
+        slstm32::bind<component::StatusLed>(statusLed),
+        slstm32::bind<component::Buzzer>(buzzer)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Health>(health),
         slstm32::bind<component::I2cScan>(i2cScan),
@@ -307,6 +333,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::MeasurementLog>(measurementLog),
         slstm32::bind<component::MeasurementPublisher>(measurementPublisher),
         slstm32::bind<component::ServiceServer>(serviceServer),
+        slstm32::bind<component::TonePlayer>(tonePlayer),
+        slstm32::bind<component::Annunciator>(annunciator),
         slstm32::bind<component::Console>(console),
         slstm32::bind<component::DevTools>(engine_mon::devTools(devToolsContext))));
 
@@ -417,7 +445,8 @@ b1s::ParameterStatus writePreferredAddress(void*, std::int32_t value) {
     return saveSettings() ? b1s::ParameterStatus::done : b1s::ParameterStatus::busy;
 }
 
-// Device commands over CAN: identify (status LED and yellow CAN LED blink fast),
+// Device commands over CAN: identify (status LED and yellow CAN LED blink
+// fast, one quiet beep),
 // restart, and restart into the bootloader (both after the reply has gone out).
 b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, std::int32_t argument) {
     switch (command) {
@@ -425,6 +454,7 @@ b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, s
         const auto durationMs = static_cast<std::uint32_t>(argument & 0xFFFF) * 1000u;
         canMonitor.identify(durationMs);
         identifyUntil = durationMs == 0u ? 0u : runtime.millis() + durationMs;
+        if (durationMs != 0u) buzzer.play(2700u, 80u, 0.05f);
         return b1s::CommandResult::done;
     }
     case b1s::Command::restart:
@@ -510,7 +540,10 @@ extern "C" void engine_mon_app_run(void) {
     }
 }
 
-extern "C" void engine_mon_app_tick(void) {}
+extern "C" void engine_mon_app_tick(void) {
+    // Keep short tone deadlines accurate while the foreground is busy.
+    buzzer.onTick();
+}
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {
     (void)buttons.onInterrupt(pin);

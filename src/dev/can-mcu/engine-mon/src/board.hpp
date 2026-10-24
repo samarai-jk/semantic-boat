@@ -38,12 +38,17 @@ std::uint16_t digitalInputMask(std::size_t index);
 // Engine control is a separate sub-project: the firmware leaves them off.
 std::array<slstm32::drivers::PwmOutputHardware, outputCount> outputs();
 
-// Enclosure LED, a green/red bicolor LED with its common anode on +3.3 V,
-// the cathodes sunk by the pins (as host-dev's H9 on LT1): green on PA2
-// (TIM2_CH3), red on PA15 (TIM2_CH1); 1 kHz PWM with low polarity, so duty
-// = brightness.
+// Status LED: the green half of the enclosure LED (common anode on +3.3 V,
+// the pin sinks the cathode, as host-dev's H9 on LT1) on PA15 (TIM2_CH1);
+// 1 kHz PWM with low polarity, so duty = brightness. The red half is not
+// connected.
 slstm32::drivers::PwmOutputHardware greenLed();
-slstm32::drivers::PwmOutputHardware redLed();
+
+// Buzzer: host-dev BUZ1 (passive, about 2.7 kHz resonance) through its
+// low-side driver (input active high, 47 kOhm pull-down) on PA2, TIM15_CH1.
+// A tone is a square wave; 50 % duty is full volume. Silent with the
+// output low; never statically high (the coil would only draw current).
+slstm32::drivers::ToneOutputHardware buzzer();
 
 // AI0..AI2: PA4..PA6, ADC1 IN9..IN11 (SEN0198 PT100 amplifiers: wet
 // exhaust, alternator, heat exchanger), sampled by can_mcu::McuMonitor.

@@ -17,6 +17,7 @@ function(can_mcu_add_common target)
         ${CAN_MCU_COMMON_DIR}/src/i2c_scan_service.cpp
         ${CAN_MCU_COMMON_DIR}/src/mcu_monitor.cpp
         ${CAN_MCU_COMMON_DIR}/src/one_wire_pin.cpp
+        ${CAN_MCU_COMMON_DIR}/src/rtc_clock.cpp
         ${CAN_MCU_COMMON_DIR}/src/supervision.cpp
     )
     target_include_directories(${target} PRIVATE ${CAN_MCU_COMMON_DIR}/include)

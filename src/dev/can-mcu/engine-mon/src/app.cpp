@@ -15,6 +15,7 @@
 #include "can_mcu/i2c_scan_service.hpp"
 #include "can_mcu/image_header.hpp"
 #include "can_mcu/mcu_monitor.hpp"
+#include "can_mcu/rtc_clock.hpp"
 #include "can_mcu/supervision.hpp"
 #include "device_settings.hpp"
 #include "dev_tools.hpp"
@@ -35,6 +36,7 @@
 #include "slstm32/drivers/can_bus.hpp"
 #include "slstm32/drivers/digital_input.hpp"
 #include "slstm32/drivers/led.hpp"
+#include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/pwm_output.hpp"
 #include "slstm32/drivers/serial_log.hpp"
 #include "slstm32/drivers/tmp75.hpp"
@@ -133,6 +135,13 @@ slstm32::drivers::CanBusDriver can{runtime, can_mcu::canBusHardware(), canReceiv
                                    canReceiveBuffer.size(), canTransmitBuffer.data(),
                                    canTransmitBuffer.size()};
 slstm32::drivers::LedDriver canActivityLed{runtime, can_mcu::canActivityLed()};
+// Enclosure LEDs: green = alive (slow blink), fast blink = identify; red =
+// measurement alarms (blinking while unacknowledged, steady while active).
+slstm32::drivers::PwmLedDriver greenLed{runtime, engine_mon::board::greenLed()};
+slstm32::drivers::PwmLedDriver redLed{runtime, engine_mon::board::redLed()};
+can_mcu::RtcClock rtc{logger};
+sensors::AlarmSummary shownAlarms{};
+std::uint32_t identifyUntil{};
 
 // Filled in at startup from the MCU unique ID: NAME unique number and the
 // serial code of the product information.
@@ -254,6 +263,8 @@ struct Mcu;
 struct BoardTemperature;
 struct Can;
 struct CanActivityLed;
+struct GreenLed;
+struct RedLed;
 struct Health;
 struct I2cScan;
 struct N2kNode;
@@ -285,7 +296,9 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::Mcu>(mcu),
         slstm32::bind<component::BoardTemperature>(boardTemperature),
         slstm32::bind<component::Can>(can),
-        slstm32::bind<component::CanActivityLed>(canActivityLed)),
+        slstm32::bind<component::CanActivityLed>(canActivityLed),
+        slstm32::bind<component::GreenLed>(greenLed),
+        slstm32::bind<component::RedLed>(redLed)),
     slstm32::makeServiceSet(
         slstm32::bind<component::Health>(health),
         slstm32::bind<component::I2cScan>(i2cScan),
@@ -337,7 +350,31 @@ void configureN2kIdentity() {
 void onButton(slstm32::EventId, const void* payload, std::uint8_t size, void*) {
     if (size != sizeof(slstm32::drivers::ButtonEvent)) return;
     const auto& event = *static_cast<const slstm32::drivers::ButtonEvent*>(payload);
+    logger.writef(LogLevel::info, "button: BTN%u %s", static_cast<unsigned>(event.id),
+                  event.pressed ? "pressed" : "released");
     if (event.pressed && measurements.summary().unacknowledged) measurements.acknowledgeAll();
+}
+
+// Red LED: blinking while an alarm waits for acknowledgement (faster the
+// more severe), steady while acknowledged alarms are still active.
+void showAlarms() {
+    const auto summary = measurements.summary();
+    if (summary.active == shownAlarms.active && summary.unacknowledged == shownAlarms.unacknowledged &&
+        summary.highest == shownAlarms.highest && summary.highestUnacknowledged == shownAlarms.highestUnacknowledged) {
+        return;
+    }
+    shownAlarms = summary;
+    if (summary.unacknowledged) {
+        switch (summary.highestUnacknowledged) {
+        case Severity::warning: redLed.blink(2000u, 100u); break;
+        case Severity::alarm: redLed.blink(500u, 250u); break;
+        case Severity::emergency: redLed.blink(160u, 80u); break;
+        }
+    } else if (summary.active) {
+        redLed.on();
+    } else {
+        redLed.off();
+    }
 }
 
 // B1S service and command messages go to the service server; everything else
@@ -359,13 +396,22 @@ b1s::ParameterStatus writePreferredAddress(void*, std::int32_t value) {
     return saveSettings() ? b1s::ParameterStatus::done : b1s::ParameterStatus::busy;
 }
 
-// Device commands over CAN: identify (the yellow CAN LED blinks fast),
+// Device commands over CAN: identify (green and yellow CAN LED blink fast),
 // restart, and restart into the bootloader (both after the reply has gone out).
 b1s::CommandResult runDeviceCommand(void*, b1s::Command command, std::uint8_t, std::int32_t argument) {
     switch (command) {
-    case b1s::Command::identify:
-        canMonitor.identify(static_cast<std::uint32_t>(argument & 0xFFFF) * 1000u);
+    case b1s::Command::identify: {
+        const auto durationMs = static_cast<std::uint32_t>(argument & 0xFFFF) * 1000u;
+        canMonitor.identify(durationMs);
+        if (durationMs == 0u) {
+            identifyUntil = 0u;
+            greenLed.blink(2000u, 60u);
+        } else {
+            greenLed.blink(200u, 100u);
+            identifyUntil = runtime.millis() + durationMs;
+        }
         return b1s::CommandResult::done;
+    }
     case b1s::Command::restart:
     case b1s::Command::enterBootloader:
         bootloaderRequested = command == b1s::Command::enterBootloader;
@@ -413,13 +459,16 @@ extern "C" void engine_mon_app_init(void) {
         logger.write(LogLevel::error, "events: alarm acknowledge button not subscribed");
     }
     if (!health.registerCommands(console) || !measurementConsole.registerCommands(console) ||
-        !ioConsole.registerCommands(console)) {
+        !ioConsole.registerCommands(console) || !rtc.registerCommands(console)) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {
         logger.write(LogLevel::error, "application init failed");
-        canActivityLed.blink(250u, 125u);
+        redLed.blink(250u, 125u);
+    } else {
+        greenLed.blink(2000u, 60u);
     }
+    rtc.logState();
     if (boardTemperature.defaultConfiguration()) {
         logger.write(LogLevel::info, "tmp75: 12-bit setting not accepted, using the default configuration");
     }
@@ -434,7 +483,12 @@ extern "C" void engine_mon_app_run(void) {
     can_mcu::refreshWatchdog();
     events.process();
     application.run();
+    showAlarms();
     const auto now = runtime.millis();
+    if (identifyUntil != 0u && static_cast<std::int32_t>(now - identifyUntil) >= 0) {
+        identifyUntil = 0u;
+        greenLed.blink(2000u, 60u);
+    }
     if (!firmwareConfirmed && now >= firmwareConfirmAfterMs) {
         firmwareConfirmed = true;
         can_mcu::confirmFirmware();

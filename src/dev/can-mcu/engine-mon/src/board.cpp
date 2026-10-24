@@ -3,6 +3,7 @@
 extern "C" {
 #include "main.h"
 extern TIM_HandleTypeDef htim1;
+extern TIM_HandleTypeDef htim2;
 }
 
 namespace engine_mon::board {
@@ -16,14 +17,14 @@ struct InputPin {
 };
 
 InputPin inputPins[digitalInputCount]{
-    {GPIOA, GPIO_PIN_0},  // DI0, TIM2_CH1: rpm
-    {GPIOA, GPIO_PIN_1},  // DI1, TIM2_CH2
-    {GPIOA, GPIO_PIN_3},  // DI2
-    {GPIOA, GPIO_PIN_7},  // DI3
-    {GPIOB, GPIO_PIN_4},  // DI4
-    {GPIOB, GPIO_PIN_5},  // DI5
-    {GPIOC, GPIO_PIN_13}, // DI6
-    {GPIOA, GPIO_PIN_15}, // DI7
+    {GPIOA, GPIO_PIN_0},  // DI0 = D10, rpm
+    {GPIOA, GPIO_PIN_1},  // DI1 = D11, ignition
+    {GPIOA, GPIO_PIN_3},  // DI2 = D12, starter solenoid
+    {GPIOA, GPIO_PIN_7},  // DI3 = D13, fuel stop solenoid
+    {GPIOB, GPIO_PIN_4},  // DI4 = D20, gearbox reverse
+    {GPIOB, GPIO_PIN_5},  // DI5 = D21, gearbox forward
+    {GPIOB, GPIO_PIN_14}, // DI6 = D22, preheater relay
+    {GPIOC, GPIO_PIN_13}, // DI7 = D23, reserve 1
 };
 
 bool configureInput(void* context) {
@@ -101,7 +102,65 @@ void stopOutput(void* context) {
     writeOutput(context, 0.0f);
 }
 
+// --- TIM2: enclosure LEDs ------------------------------------------------------
+
+constexpr std::uint32_t ledFrequencyHz = 1000u;
+
+struct LedChannel {
+    std::uint32_t channel;
+};
+
+LedChannel greenChannel{TIM_CHANNEL_1};
+LedChannel redChannel{TIM_CHANNEL_3};
+bool ledTimerConfigured{};
+
+bool configureLedTimer(void*) {
+    if (ledTimerConfigured) return true;
+    // TIM2 runs from APB1 (doubled if APB1 is divided).
+    auto clock = HAL_RCC_GetPCLK1Freq();
+    if ((RCC->CFGR & RCC_CFGR_PPRE1) != RCC_CFGR_PPRE1_DIV1) clock *= 2u;
+    const auto ticks = clock / ledFrequencyHz;
+    const auto prescaler = (ticks - 1u) / 65536u;
+    __HAL_TIM_SET_PRESCALER(&htim2, prescaler);
+    __HAL_TIM_SET_AUTORELOAD(&htim2, clock / ((prescaler + 1u) * ledFrequencyHz) - 1u);
+    TIM_OC_InitTypeDef channel{};
+    channel.OCMode = TIM_OCMODE_PWM1;
+    channel.Pulse = 0u;
+    channel.OCPolarity = TIM_OCPOLARITY_HIGH;
+    channel.OCFastMode = TIM_OCFAST_DISABLE;
+    for (const auto* led : {&greenChannel, &redChannel}) {
+        if (HAL_TIM_PWM_ConfigChannel(&htim2, &channel, led->channel) != HAL_OK) return false;
+    }
+    htim2.Instance->EGR = TIM_EGR_UG;
+    ledTimerConfigured = true;
+    return true;
+}
+
+bool startLed(void* context) {
+    return HAL_TIM_PWM_Start(&htim2, static_cast<LedChannel*>(context)->channel) == HAL_OK;
+}
+
+void writeLed(void* context, float duty) {
+    if (duty < 0.0f) duty = 0.0f;
+    if (duty > 1.0f) duty = 1.0f;
+    const auto period = __HAL_TIM_GET_AUTORELOAD(&htim2) + 1u;
+    const auto compare = duty >= 1.0f ? period : static_cast<std::uint32_t>(static_cast<float>(period) * duty + 0.5f);
+    __HAL_TIM_SET_COMPARE(&htim2, static_cast<LedChannel*>(context)->channel, compare);
+}
+
+void stopLed(void* context) {
+    writeLed(context, 0.0f);
+}
+
 } // namespace
+
+slstm32::drivers::PwmOutputHardware greenLed() {
+    return {&greenChannel, &configureLedTimer, &startLed, &stopLed, &writeLed};
+}
+
+slstm32::drivers::PwmOutputHardware redLed() {
+    return {&redChannel, &configureLedTimer, &startLed, &stopLed, &writeLed};
+}
 
 std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons() {
     using can_mcu::ButtonFrontend;

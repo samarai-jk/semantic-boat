@@ -23,8 +23,8 @@ energize-to-stop. This firmware monitors only.
          PB2  ── DS18B20 .......................... calorifier water
  ADC     PA4..PA6 ── 3x PT100 amplifier ........... wet exhaust, alternator, heat exchanger
  Outputs PA8..PA10 ── MOSFET switches -> relays ... preheater, starter, stop solenoid
- Inputs  PA0, PA1, PA3, PA7 ── module AD1 D10..D13  rpm, ignition, starter solenoid, fuel stop solenoid
-         PB4, PB5, PB14, PC13 ─ module AD2 D20..D23 gearbox reverse/forward, preheater relay, reserve
+ Inputs  PB4, PB5, PB14, PC13 ─ module AD1 D10..D13 rpm, ignition, starter solenoid, fuel stop solenoid
+         PA0, PA1, PA3, PA7 ── module AD2 D20..D23  gearbox reverse/forward, preheater relay, reserve
  Status  PA15 green LED (sunk), PA2 buzzer (TIM15) -- after the rewiring below
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
  I2C1    PB8/PB9 ── AD1 (ADS1115 0x48): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
@@ -103,14 +103,18 @@ code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
 
 | Input | Signal | MCU pin | EXTI | Notes |
 | --- | --- | --- | --- | --- |
-| D10 | RPM (alternator W) | PA0 | 0 | Frequency input; verified at 750 Hz through the module on LT1. Pulses per revolution = pole pairs x pulley ratio, calibrate against a tachometer |
-| D11 | Ignition | PA1 | 1 | |
-| D12 | Starter solenoid | PA3 | 3 | Feedback: 12 V on the solenoid |
-| D13 | Fuel stop solenoid | PA7 | 7 | Feedback |
-| D20 | Gearbox reverse | PB4 | 4 | Bridge R50 open |
-| D21 | Gearbox forward | PB5 | 5 | Bridge R53 open |
-| D22 | Preheater relay | PB14 | 14 | Feedback of output DO0 |
-| D23 | Reserve 1 | **PC13** (moved, see 1. below) | 13 | Bridge R47 open |
+| D10 | RPM (alternator W) | PB4 | 4 | Frequency input (edge interrupt); verified at 750 Hz through the module on LT1. Pulses per revolution = pole pairs x pulley ratio, calibrate against a tachometer. Bridge R50 open |
+| D11 | Ignition | PB5 | 5 | Bridge R53 open |
+| D12 | Starter solenoid | PB14 | 14 | Feedback: 12 V on the solenoid |
+| D13 | Fuel stop solenoid | PC13 | 13 | Feedback. Bridge R47 open |
+| D20 | Gearbox reverse | PA0 | 0 | Reed switch, 12 V while engaged; verified 2026-10-24 |
+| D21 | Gearbox forward | PA1 | 1 | Reed switch, 12 V while engaged; verified 2026-10-24 |
+| D22 | Preheater relay | PA3 | 3 | Feedback of output DO0 |
+| D23 | Reserve 1 | PA7 | 7 | |
+
+The two groups follow the wiring (decided 2026-10-24: the module with the
+gearbox reed switches feeds PA0/PA1/PA3/PA7). Which module has I2C address
+0x48 and which 0x49 is determined with the analog inputs.
 
 Module outputs are low while 12 V is present (the firmware inverts); an
 unplugged module reads "no 12 V". Every input has its own EXTI line, so any
@@ -155,15 +159,15 @@ green on PA2.
 
 | Pin | Use | | Pin | Use |
 | --- | --- | --- | --- | --- |
-| PA0 | D10 rpm | | PB2 | 1-Wire 2 calorifier |
-| PA1 | D11 ignition | | PB4 | D20 gearbox reverse |
-| PA2 | Buzzer | | PB5 | D21 gearbox forward |
-| PA3 | D12 starter solenoid | | PB10 | Button 0 |
-| PA4 | PT100 wet exhaust | | PB11 | Button 1 |
+| PA0 | D20 gearbox reverse | | PB2 | 1-Wire 2 calorifier |
+| PA1 | D21 gearbox forward | | PB4 | D10 rpm |
+| PA2 | Buzzer | | PB5 | D11 ignition |
+| PA3 | D22 preheater relay | | PB10 | Button BF5 |
+| PA4 | PT100 wet exhaust | | PB11 | Button BF6 |
 | PA5 | PT100 alternator | | PB12 | 1-Wire 0 CT1780 |
 | PA6 | PT100 heat exchanger | | PB13 | 1-Wire 1 gearbox oil |
-| PA7 | D13 fuel stop solenoid | | PB14 | D22 preheater relay |
-| PA8 | DO0 preheater | | PC13 | D23 reserve |
+| PA7 | D23 reserve | | PB14 | D12 starter solenoid |
+| PA8 | DO0 preheater | | PC13 | D13 fuel stop solenoid |
 | PA9 | DO1 starter | | | |
 | PA10 | DO2 stop solenoid | | | |
 | PA15 | Status LED (green) | | | |
@@ -221,14 +225,14 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 
 | Pin | Mode (CubeMX signal) | Pull | Initial level | Speed | Label |
 | --- | --- | --- | --- | --- | --- |
-| PA0 | GPIO_Input | Pull-up | | | `DI10_RPM` |
-| PA1 | GPIO_Input | Pull-up | | | `DI11_IGNITION` |
+| PA0 | GPIO_Input | Pull-up | | | `DI20_GEAR_REVERSE` |
+| PA1 | GPIO_Input | Pull-up | | | `DI21_GEAR_FORWARD` |
 | PA2 | TIM15_CH1 (PWM Generation CH1) | | | Low | `BUZZER` |
-| PA3 | GPIO_Input | Pull-up | | | `DI12_STARTER_SOLENOID` |
+| PA3 | GPIO_Input | Pull-up | | | `DI22_PREHEATER_RELAY` |
 | PA4 | ADC1_IN9 (single-ended) | | | | `AI0_WET_EXHAUST` |
 | PA5 | ADC1_IN10 (single-ended) | | | | `AI1_ALTERNATOR` |
 | PA6 | ADC1_IN11 (single-ended) | | | | `AI2_HEAT_EXCHANGER` |
-| PA7 | GPIO_Input | Pull-up | | | `DI13_FUEL_STOP_SOLENOID` |
+| PA7 | GPIO_Input | Pull-up | | | `DI23_RESERVE1` |
 | PA8 | TIM1_CH1 (PWM Generation CH1) | | | Low | `DO0_PREHEATER` |
 | PA9 | TIM1_CH2 (PWM Generation CH2) | | | Low | `DO1_STARTER` |
 | PA10 | TIM1_CH3 (PWM Generation CH3) | | | Low | `DO2_STOP_SOLENOID` |
@@ -241,8 +245,8 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 | PB1 | GPIO_Output, push-pull | No pull | Low (high-speed mode) | Low | `CAN_MUTE` |
 | PB2 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW2_CALORIFIER` |
 | PB3 | SYS_JTDO-SWO | | | | `TRACESWO` |
-| PB4 | GPIO_Input | Pull-up | | | `DI20_GEAR_REVERSE` |
-| PB5 | GPIO_Input | Pull-up | | | `DI21_GEAR_FORWARD` |
+| PB4 | GPIO_Input | Pull-up | | | `DI10_RPM` |
+| PB5 | GPIO_Input | Pull-up | | | `DI11_IGNITION` |
 | PB6 | USART1_TX | | | | `STL_COM_TX` |
 | PB7 | USART1_RX | | | | `STL_COM_RX` |
 | PB8 | I2C1_SCL | | | | `I2C_SCL` |
@@ -251,9 +255,9 @@ in `main.h`; they are upper case, `<FUNCTION><n>_<SIGNAL>`.
 | PB11 | GPIO_Input | No pull (frontend) | | | `BF6` |
 | PB12 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW0_DRY_EXHAUST` |
 | PB13 | GPIO_Output, open-drain | No pull | High (released) | Low | `OW1_GEARBOX_OIL` |
-| PB14 | GPIO_Input | Pull-up | | | `DI22_PREHEATER_RELAY` |
+| PB14 | GPIO_Input | Pull-up | | | `DI12_STARTER_SOLENOID` |
 | PB15 | GPIO_Output, push-pull | No pull | Low (load off) | Low | `HOST_POWER` |
-| PC13 | GPIO_Input | Pull-up | | | `DI23_RESERVE1` |
+| PC13 | GPIO_Input | Pull-up | | | `DI13_FUEL_STOP_SOLENOID` |
 | PC14, PC15 | RCC_OSC32_IN/OUT (LSE crystal) | | | | |
 | PH0, PH1 | RCC_OSC_IN/OUT (HSE crystal) | | | | |
 | PH3 | BOOT0 (GPIO_Input) | | | | `BOOT0` |

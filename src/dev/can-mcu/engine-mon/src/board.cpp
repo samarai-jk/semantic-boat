@@ -18,14 +18,14 @@ struct InputPin {
 };
 
 InputPin inputPins[digitalInputCount]{
-    {GPIOA, GPIO_PIN_0},  // DI0 = D10, rpm
-    {GPIOA, GPIO_PIN_1},  // DI1 = D11, ignition
-    {GPIOA, GPIO_PIN_3},  // DI2 = D12, starter solenoid
-    {GPIOA, GPIO_PIN_7},  // DI3 = D13, fuel stop solenoid
-    {GPIOB, GPIO_PIN_4},  // DI4 = D20, gearbox reverse
-    {GPIOB, GPIO_PIN_5},  // DI5 = D21, gearbox forward
-    {GPIOB, GPIO_PIN_14}, // DI6 = D22, preheater relay
-    {GPIOC, GPIO_PIN_13}, // DI7 = D23, reserve 1
+    {GPIOB, GPIO_PIN_4},  // D10, rpm
+    {GPIOB, GPIO_PIN_5},  // D11, ignition
+    {GPIOB, GPIO_PIN_14}, // D12, starter solenoid
+    {GPIOC, GPIO_PIN_13}, // D13, fuel stop solenoid
+    {GPIOA, GPIO_PIN_0},  // D20, gearbox reverse
+    {GPIOA, GPIO_PIN_1},  // D21, gearbox forward
+    {GPIOA, GPIO_PIN_3},  // D22, preheater relay
+    {GPIOA, GPIO_PIN_7},  // D23, reserve 1
 };
 
 bool configureInput(void* context) {

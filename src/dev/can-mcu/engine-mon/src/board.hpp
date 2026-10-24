@@ -22,9 +22,10 @@ inline constexpr std::size_t analogInputCount = 3u;
 std::array<slstm32::drivers::ButtonConfig, buttonCount> buttons();
 inline constexpr const char* buttonNames[buttonCount]{"BF5", "BF6"};
 
-// DI0..DI7 = module inputs D10..D13, D20..D23: PA0 (rpm), PA1 (ignition),
-// PA3 (starter solenoid), PA7 (fuel stop solenoid), PB4 (gearbox reverse),
-// PB5 (gearbox forward), PB14 (preheater relay), PC13 (reserve 1). Inputs
+// Module inputs D10..D13, D20..D23 as wired (2026-10-24): PB4 (rpm), PB5
+// (ignition), PB14 (starter solenoid), PC13 (fuel stop solenoid), PA0
+// (gearbox reverse), PA1 (gearbox forward), PA3 (preheater relay), PA7
+// (reserve 1). Inputs
 // with pull-up, each on its own EXTI line (any of them can count pulses).
 // Logical value = 12 V present at the module terminal: the 12v-ad-input-iso
 // module drives its output low then (the binding is active low), and an

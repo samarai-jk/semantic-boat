@@ -30,6 +30,7 @@
 #include "semantic_modules/ad_input_iso_12v_calibration.hpp"
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
+#include "n2k/humidity.hpp"
 #include "n2k/temperature.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/build_profile.hpp"
@@ -39,6 +40,7 @@
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
 #include "slstm32/drivers/ct1780.hpp"
+#include "slstm32/drivers/dht20.hpp"
 #include "slstm32/drivers/ds18b20.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/digital_input.hpp"
@@ -307,9 +309,26 @@ slstm32::drivers::OneWireBus oneWire2{runtime, oneWirePin2.hardware()};
 slstm32::drivers::Ds18b20Driver gearboxOilSensor{runtime, oneWire1, logger, &gearboxOilChannel};
 slstm32::drivers::Ds18b20Driver calorifierSensor{runtime, oneWire2, logger, &calorifierChannel};
 
+// Engine room air: DHT20 on I2C1 (0x38). Placeholder alarms: temperature
+// warning above 60 °C, alarm above 70 °C (60 s average); a missing sensor is
+// a warning after 30 s.
+constexpr sensors::AlarmRule engineRoomAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {60u, false}, 10u, 60000, 0, 3000},
+    {ValueFunction::average, Comparison::above, Severity::alarm, false, {60u, false}, 10u, 70000, 0, 3000},
+};
+constexpr sensors::MeasurementConfig engineRoomChannelConfig{
+    "engine-room", sensors::Quantity::temperature, 8u, 10000u, 0u, engineRoomAlarms,
+    sizeof engineRoomAlarms / sizeof engineRoomAlarms[0], {true, Severity::warning, 30u, false}};
+constexpr sensors::MeasurementConfig engineRoomHumidityChannelConfig{
+    "engine-room-rh", sensors::Quantity::relativeHumidity, 0u, 10000u, 0u, nullptr, 0u};
+sensors::Measurement engineRoomChannel{engineRoomChannelConfig};
+sensors::Measurement engineRoomHumidityChannel{engineRoomHumidityChannelConfig};
+slstm32::drivers::Dht20Driver engineRoomSensor{runtime, i2c, logger, &engineRoomChannel, &engineRoomHumidityChannel};
+
 sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &dryExhaustChannel,
                                        &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel,
-                                       &gearboxOilChannel, &calorifierChannel};
+                                       &gearboxOilChannel, &calorifierChannel, &engineRoomChannel,
+                                       &engineRoomHumidityChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -339,6 +358,9 @@ const b1s::ChannelConfig b1sChannels[]{
     {&gearboxOilChannel, 7u, b1s::Publish::b1s, engineRoom, "", "Gearbox oil"},
     {&calorifierChannel, 8u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::TemperatureSource::heatingSystem), "",
      "Calorifier water"},
+    {&engineRoomChannel, 14u, b1s::Publish::b1s, engineRoom, "", "Engine room"},
+    {&engineRoomHumidityChannel, 15u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::HumiditySource::inside), "",
+     "Engine room humidity"},
 };
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
@@ -411,6 +433,7 @@ struct AlternatorSensor;
 struct HeatExchangerSensor;
 struct GearboxOilSensor;
 struct CalorifierSensor;
+struct EngineRoomSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -447,6 +470,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::HeatExchangerSensor>(heatExchangerSensor),
         slstm32::bind<component::GearboxOilSensor>(gearboxOilSensor),
         slstm32::bind<component::CalorifierSensor>(calorifierSensor),
+        slstm32::bind<component::EngineRoomSensor>(engineRoomSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),

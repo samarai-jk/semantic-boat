@@ -39,6 +39,7 @@
 #include "slstm32/drivers/button.hpp"
 #include "slstm32/drivers/can_bus.hpp"
 #include "slstm32/drivers/ct1780.hpp"
+#include "slstm32/drivers/ds18b20.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/digital_input.hpp"
 #include "slstm32/drivers/led.hpp"
@@ -60,6 +61,7 @@
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 extern "C" {
 #include "main.h"
 }
@@ -166,6 +168,9 @@ bool clickPending{};
 // Digital inputs as last logged (12 V present), and the gear position.
 bool inputsLogged[engine_mon::board::digitalInputCount]{};
 bool inputsKnown{};
+// Debug switch for the input change lines (console "inputlog on|off"); off
+// by default, so the log stays readable once the wiring is checked.
+bool inputLogging{};
 enum class Gear : std::uint8_t { neutral, forward, reverse, invalid };
 Gear loggedGear{Gear::neutral};
 
@@ -280,8 +285,31 @@ slstm32::drivers::AnalogSensor heatExchangerSensor{runtime, mcu.inputHardware(2u
                                                    &heatExchangerChannel,
                                                    sensors::Identity::analog(engine_mon::board::analogChannels[2])};
 
+// DS18B20 probes, each on its own 1-Wire bus, one reading every 2 s: gearbox
+// oil on OW1 (PB13), calorifier water on OW2 (PB2). Placeholder alarm:
+// gearbox oil warning above 90 °C over 60 s; a missing probe is a warning
+// after 30 s.
+constexpr sensors::FaultRule ds18b20Fault{true, Severity::warning, 30u, false};
+constexpr sensors::AlarmRule gearboxOilAlarms[]{
+    {ValueFunction::average, Comparison::above, Severity::warning, false, {60u, false}, 10u, 90000, 0, 3000},
+};
+constexpr sensors::MeasurementConfig gearboxOilChannelConfig{
+    "gearbox-oil", sensors::Quantity::temperature, 6u, 10000u, 0u, gearboxOilAlarms,
+    sizeof gearboxOilAlarms / sizeof gearboxOilAlarms[0], ds18b20Fault};
+constexpr sensors::MeasurementConfig calorifierChannelConfig{
+    "calorifier", sensors::Quantity::temperature, 7u, 10000u, 0u, nullptr, 0u, ds18b20Fault};
+sensors::Measurement gearboxOilChannel{gearboxOilChannelConfig};
+sensors::Measurement calorifierChannel{calorifierChannelConfig};
+can_mcu::OneWirePin oneWirePin1{engine_mon::board::oneWire1Port, engine_mon::board::oneWire1Pin};
+can_mcu::OneWirePin oneWirePin2{engine_mon::board::oneWire2Port, engine_mon::board::oneWire2Pin};
+slstm32::drivers::OneWireBus oneWire1{runtime, oneWirePin1.hardware()};
+slstm32::drivers::OneWireBus oneWire2{runtime, oneWirePin2.hardware()};
+slstm32::drivers::Ds18b20Driver gearboxOilSensor{runtime, oneWire1, logger, &gearboxOilChannel};
+slstm32::drivers::Ds18b20Driver calorifierSensor{runtime, oneWire2, logger, &calorifierChannel};
+
 sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &dryExhaustChannel,
-                                       &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel};
+                                       &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel,
+                                       &gearboxOilChannel, &calorifierChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -308,6 +336,9 @@ const b1s::ChannelConfig b1sChannels[]{
      "Wet exhaust"},
     {&alternatorChannel, 5u, b1s::Publish::b1s, engineRoom, "", "Alternator"},
     {&heatExchangerChannel, 6u, b1s::Publish::b1s, engineRoom, "", "Heat exchanger"},
+    {&gearboxOilChannel, 7u, b1s::Publish::b1s, engineRoom, "", "Gearbox oil"},
+    {&calorifierChannel, 8u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::TemperatureSource::heatingSystem), "",
+     "Calorifier water"},
 };
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
@@ -378,6 +409,8 @@ struct DryExhaustSensor;
 struct WetExhaustSensor;
 struct AlternatorSensor;
 struct HeatExchangerSensor;
+struct GearboxOilSensor;
+struct CalorifierSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -412,6 +445,8 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::WetExhaustSensor>(wetExhaustSensor),
         slstm32::bind<component::AlternatorSensor>(alternatorSensor),
         slstm32::bind<component::HeatExchangerSensor>(heatExchangerSensor),
+        slstm32::bind<component::GearboxOilSensor>(gearboxOilSensor),
+        slstm32::bind<component::CalorifierSensor>(calorifierSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),
@@ -511,8 +546,9 @@ void logAnalog(std::size_t index, std::int32_t millivolts) {
 }
 
 // Logs every change of a digital input and every analog change of at least
-// 0.25 V (debug), the gear position from the two gearbox reed switches on
-// change (info), and the state at startup once (info).
+// 0.25 V (debug, only with "inputlog on"), the gear position from the two
+// gearbox reed switches on change (info), and the state at startup once
+// (info).
 void watchInputs() {
     using engine_mon::board::digitalInputCount;
     using engine_mon::board::digitalInputNames;
@@ -520,7 +556,7 @@ void watchInputs() {
     constexpr auto perModule = semantic_modules::AdInputIso12v::channels;
     for (std::size_t index = 0u; index < digitalInputCount; ++index) {
         const bool on = digitalOn(index);
-        if (inputsKnown && on != inputsLogged[index]) {
+        if (inputLogging && inputsKnown && on != inputsLogged[index]) {
             logger.writef(LogLevel::debug, "input: %s %s", digitalInputNames[index], on ? "12 V" : "off");
         }
         inputsLogged[index] = on;
@@ -535,7 +571,7 @@ void watchInputs() {
         if (!inputsKnown || changed) {
             // The first value after startup (or after the module answers
             // again) is not a change.
-            if (inputsKnown && last != analogUnknown) logAnalog(index, value);
+            if (inputLogging && inputsKnown && last != analogUnknown) logAnalog(index, value);
             analogLogged[index] = value;
         }
     }
@@ -552,6 +588,16 @@ void watchInputs() {
         logger.writef(LogLevel::info, "input: D10..D13 D20..D23 = %.4s %.4s (1 = 12 V)", text, text + 4);
         inputsKnown = true;
     }
+}
+
+void inputLogCommand(void*, std::size_t argc, const char* const* argv) {
+    if (argc == 2u && (std::strcmp(argv[1], "on") == 0 || std::strcmp(argv[1], "off") == 0)) {
+        inputLogging = argv[1][1] == 'n';
+    } else if (argc != 1u) {
+        logger.write(LogLevel::error, "usage: inputlog [on|off]");
+        return;
+    }
+    logger.writef(LogLevel::info, "inputlog: input changes are %s", inputLogging ? "logged" : "not logged");
 }
 
 // Status LED: one green LED says how the engine monitor is.
@@ -677,7 +723,9 @@ extern "C" void engine_mon_app_init(void) {
     }
     if (!health.registerCommands(console) || !measurementConsole.registerCommands(console) ||
         !ioConsole.registerCommands(console) || !rtc.registerCommands(console) ||
-        !inputModuleCalibrator.registerCommands(console)) {
+        !inputModuleCalibrator.registerCommands(console) ||
+        !console.add({"inputlog", "inputlog [on|off]  log every change of the AD1/AD2 inputs (debug)",
+                      &inputLogCommand, nullptr})) {
         logger.write(LogLevel::error, "console: commands not registered");
     }
     if (!application.init()) {

@@ -20,6 +20,7 @@ channels, alarms, and settings storage are described in the
 | BMP585 (DFRobot SEN0664 Gravity) | `Bmp585Driver` | I2C 0x47 (0x46) | Verified, read-only (module ignores configuration) |
 | BNO055 + BMP280 (DFRobot SEN0253 10-DOF) | `Bno055Driver`, `Bmp280Driver` | I2C 0x28, 0x76 | Verified (orientation, pressure) |
 | SCD41 CO2 (generic module, sold as "SD40/SD41") | `Scd4xDriver` | I2C 0x62 | Verified |
+| NPI-19 30 psi gauge (Amphenol NovaSensor, I2C output) | `Npi19Driver` | I2C 0x28 | Verified at atmospheric pressure on engine-mon; temperature scaling not yet checked |
 | Engine rpm (12v-ad-input-iso digital input) | `FrequencyInput` | EXTI + cycle counter | Method verified at 750 Hz; driver not yet run on hardware |
 | Speaker (DFRobot FIT0449, 8002 amplifier) | `audio::Synthesizer`, `audio::SoundPlayer`, `can_mcu::DacAudio` | DAC PA4/PA5 | Tested as dev code; library form not yet run on hardware |
 
@@ -58,6 +59,22 @@ channels, alarms, and settings storage are described in the
   0x306D on, 0x3066 off): 60 s heating raised the reading by 3.1 C and lowered
   RH from 51 % to 43 %. Useful to dry an outdoor sensor after fog or dew; not
   used automatically yet (`setHeater()`).
+
+## NPI-19 pressure sensor (I2C 0x28)
+
+Brought up on engine-mon (raw water pressure, NPI-19J-030G2, on a shielded
+cable), not on lab-test-01.
+
+- The datasheet (AAS-920-699G) shows a status byte followed by 16-bit bridge
+  and temperature words. The sensor answers in the ZSSC3123 / Honeywell
+  layout instead: read as five bytes it gave `06 78 64 40 CF`, which is 2
+  status bits (0 = fresh), 14 bits bridge (1656 counts), and 11 bits
+  temperature (802, about 28 °C). The driver reads four bytes in that layout
+  after the 0xAC command; status 2 (stale) is polled again.
+- At atmospheric pressure the bridge reads 1656 counts against the nominal
+  1638: +2.8 hPa, within the ±1 % FSO error band (±20 hPa). Not calibrated.
+- Temperature: 28.5 °C beside a board at 26 °C, with the -50..150 °C scaling
+  of the ZSSC3123. To be checked against a reference (room and water bath).
 
 ## 1-Wire bus (OneWireBus, can_mcu::OneWirePin)
 

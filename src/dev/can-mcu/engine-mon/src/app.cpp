@@ -31,6 +31,7 @@
 #include "n2k/node.hpp"
 #include "n2k/pgn.hpp"
 #include "n2k/humidity.hpp"
+#include "n2k/pressure.hpp"
 #include "n2k/temperature.hpp"
 #include "slstm32/application.hpp"
 #include "slstm32/build_profile.hpp"
@@ -42,6 +43,7 @@
 #include "slstm32/drivers/ct1780.hpp"
 #include "slstm32/drivers/dht20.hpp"
 #include "slstm32/drivers/ds18b20.hpp"
+#include "slstm32/drivers/npi19.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/digital_input.hpp"
 #include "slstm32/drivers/led.hpp"
@@ -325,10 +327,25 @@ sensors::Measurement engineRoomChannel{engineRoomChannelConfig};
 sensors::Measurement engineRoomHumidityChannel{engineRoomHumidityChannelConfig};
 slstm32::drivers::Dht20Driver engineRoomSensor{runtime, i2c, logger, &engineRoomChannel, &engineRoomHumidityChannel};
 
+// Raw water pressure between pump and engine block: NPI-19 30 psi gauge on
+// I2C1 (0x28), 0..207 kPa, one reading per second. Its own temperature
+// follows the raw water while the pump runs (scaling still to be verified,
+// ENGINE-SETUP.md). Alarm thresholds are still to be found; a missing sensor
+// is a warning after 30 s.
+constexpr sensors::MeasurementConfig rawWaterPressureChannelConfig{
+    "raw-water", sensors::Quantity::pressure, 0u, 10000u, 0u, nullptr, 0u, {true, Severity::warning, 30u, false}};
+constexpr sensors::MeasurementConfig rawWaterTemperatureChannelConfig{
+    "raw-water-temp", sensors::Quantity::temperature, 9u, 10000u, 0u, nullptr, 0u};
+sensors::Measurement rawWaterPressureChannel{rawWaterPressureChannelConfig};
+sensors::Measurement rawWaterTemperatureChannel{rawWaterTemperatureChannelConfig};
+slstm32::drivers::Npi19Driver rawWaterSensor{runtime, i2c, logger, &rawWaterPressureChannel,
+                                             &rawWaterTemperatureChannel, 2070000};
+
 sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &dryExhaustChannel,
                                        &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel,
                                        &gearboxOilChannel, &calorifierChannel, &engineRoomChannel,
-                                       &engineRoomHumidityChannel};
+                                       &engineRoomHumidityChannel, &rawWaterPressureChannel,
+                                       &rawWaterTemperatureChannel};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -361,6 +378,9 @@ const b1s::ChannelConfig b1sChannels[]{
     {&engineRoomChannel, 14u, b1s::Publish::b1s, engineRoom, "", "Engine room"},
     {&engineRoomHumidityChannel, 15u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::HumiditySource::inside), "",
      "Engine room humidity"},
+    {&rawWaterPressureChannel, 16u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::PressureSource::water), "",
+     "Raw water pressure"},
+    {&rawWaterTemperatureChannel, 17u, b1s::Publish::b1s, engineRoom, "", "Raw water temperature (sensor)"},
 };
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
@@ -434,6 +454,7 @@ struct HeatExchangerSensor;
 struct GearboxOilSensor;
 struct CalorifierSensor;
 struct EngineRoomSensor;
+struct RawWaterSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -471,6 +492,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::GearboxOilSensor>(gearboxOilSensor),
         slstm32::bind<component::CalorifierSensor>(calorifierSensor),
         slstm32::bind<component::EngineRoomSensor>(engineRoomSensor),
+        slstm32::bind<component::RawWaterSensor>(rawWaterSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),

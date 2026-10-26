@@ -82,13 +82,17 @@ code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
 - 14-bit pressure: 1638 counts at 0 bar, 14746 at 2.07 bar (10..90 % of the
   range), so about 0.16 mbar per count. Total error band ±1 % FSO (about
   ±20 mbar) over the compensated range.
-- Measurement: command 0xAC (full measurement), wait until the status says
-  "not busy", then read status, two bytes of bridge (pressure) data, and two
-  bytes of temperature data. Valid data 8.4 ms after power-on.
+- Measurement: command 0xAC (full measurement), then read. The datasheet
+  shows a status byte and 16-bit bridge and temperature words, but the
+  sensor answers in the ZSSC3123 / Honeywell layout: 2 status bits and 14
+  bits bridge, then 11 bits temperature (bench finding, see
+  [SENSORS.md](../../../lib/slstm32/SENSORS.md#npi-19-pressure-sensor-i2c-0x28)).
+  Valid data 8.4 ms after power-on.
 - **Raw water temperature (to try):** the temperature bytes are the
   sensor's own temperature, which in flowing raw water follows the water: an
-  indirect sea water temperature. The datasheet gives no formula, so the
-  scaling has to be found on the bench (two reference temperatures, e.g.
+  indirect sea water temperature. The datasheet gives no formula; the
+  driver uses the ZSSC3123 scaling (11 bits over -50..150 °C), which gave
+  28.5 °C beside a 26 °C board and still has to be checked on the bench (two reference temperatures, e.g.
   room and a water bath). The value is only meaningful while the raw water
   pump runs (engine on); at rest it drifts towards engine room temperature.
   It is published as an engine channel (B1S channel 17), **not** as the
@@ -96,8 +100,9 @@ code `NPI-19x-030G2` (x = port: A none, J 1/8 NPT, M M12x1.5):
   NMEA 2000 instruments (see B1S README, Standard PGNs).
 - Operating temperature -40..125 °C (ranges from 100 kPa); wetted parts
   316L stainless steel.
-- Needs a new slstm32 driver (`Npi19Driver`): about 100 lines, like the
-  DHT20 driver (command, poll, read, pressure channel).
+- Driver: slstm32 `Npi19Driver`, one reading per second; channels
+  `raw-water` (B1S 16, standard source "water") and `raw-water-temp`
+  (B1S 17). No alarms yet; a missing sensor is a warning after 30 s.
 
 ### Digital inputs (12 V, through the modules)
 
@@ -303,6 +308,9 @@ After regenerating: commit, then pull the firmware changes (the
   while EM is powered (VBAT is a diode-OR of +3V3 and the cell), so a
   weak cell only shows as `rtc: not set` after a power loss. Drift over days
   still to be checked against the Pi.
+- **Raw water pressure (NPI-19): read (2026-10-26).** On a shielded
+  cable made from a USB-C cable: 2.8 hPa at atmospheric
+  pressure (1656 counts, nominal 1638), within the ±1 % FSO error band.
 - **Raw water temperature scaling** of the NPI-19 (see above).
 - **RPM:** pulses per revolution against a tachometer.
 - **Inputs and outputs** once the firmware has the new pin map: each input
@@ -311,8 +319,7 @@ After regenerating: commit, then pull the firmware changes (the
 ## Follow-up work
 
 - CubeMX: as in [CubeMX configuration](#cubemx-configuration).
-- Firmware: the channels above, a new `Npi19Driver` (slstm32) for the raw
-  water pressure, LEDs on TIM2; B1S channel slots and the measurement
+- Firmware: the channels above, LEDs on TIM2; B1S channel slots and the measurement
   channel area enlarged from 16 to 24 (EEPROM still fits: about 30 of 32
   KiB); the window pool reviewed for about 18 channels.
 - B1S: a representation for the digital inputs (switch states). There is no

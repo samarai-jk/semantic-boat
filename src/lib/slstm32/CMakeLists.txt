@@ -29,6 +29,7 @@ add_library(slstm32 STATIC
     src/drivers/i2c_bus.cpp
     src/drivers/latching_relay.cpp
     src/drivers/led.cpp
+    src/drivers/npi19.cpp
     src/drivers/one_wire.cpp
     src/drivers/pwm_led.cpp
     src/drivers/pwm_output.cpp

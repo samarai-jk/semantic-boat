@@ -273,32 +273,46 @@ test('sound meter is read after the station at its own baud rate and published a
   assert.deepEqual(meterValues(fixture.deltas).at(-1), { path: 'environment.inside.saloon.noiseLevel', value: 44.7 });
   const meta = fixture.deltas.find(delta => delta.updates[0].meta?.some(entry => entry.path === 'environment.inside.saloon.noiseLevel'));
   assert.equal(meta.updates[0].meta[0].value.units, 'dB');
-  await fixture.next();
-  assert.deepEqual(fixture.clients.slice(2).map(client => client.settings.baudRate), [4800, 9600]);
+  assert.equal(fixture.clients[1].timeout, 2000);
+  fixture.advance(1000); await fixture.next();
+  assert.equal(fixture.clients.length, 3, 'the meter waits for its 2 s interval');
+  fixture.advance(1000); await fixture.next();
+  assert.deepEqual(fixture.clients.slice(2).map(client => [client.settings.baudRate, client.requests]),
+    [[4800, [[500, 16], [500, 16]]], [9600, [[0, 1]]]]);
   await runtime.stop();
   assert.deepEqual(meterValues(fixture.deltas).at(-1), { path: 'environment.inside.saloon.noiseLevel', value: null });
   assert.ok(fixture.clients.every(client => client.closed));
 });
 
-test('a silent sound meter never affects the station and is retried every 10 s', async () => {
+test('missed meter replies keep the level, three in a row clear it, and a silent meter is retried every 10 s', async () => {
   const fixture = harness();
+  let meterAnswers = true;
   fixture.setRead(async (start, count, client) => {
-    if (client.settings.baudRate === 9600) throw new Error('Timed out');
+    if (client.settings.baudRate === 9600 && !meterAnswers) throw new Error('Timed out');
     return busRead(start, count, client);
   });
   const runtime = new StationRuntime(fixture.app, meterOptions, fixture.dependencies);
   runtime.start(); await runtime.inflight;
+  assert.equal(runtime.snapshot().soundMeter.value, 44.7);
+  meterAnswers = false;
+  for (const misses of [1, 2]) {
+    fixture.advance(2000); await fixture.next();
+    assert.equal(runtime.snapshot().soundMeter.consecutiveMisses, misses);
+    assert.equal(runtime.snapshot().soundMeter.value, 44.7);
+    assert.equal(meterValues(fixture.deltas).at(-1).value, 44.7);
+  }
+  fixture.advance(2000); await fixture.next();
   assert.equal(runtime.snapshot().available, true);
   assert.equal(runtime.snapshot().soundMeter.available, false);
-  assert.equal(runtime.snapshot().soundMeter.failedReads, 1);
+  assert.equal(runtime.snapshot().soundMeter.error, 'Timed out');
   assert.equal(meterValues(fixture.deltas).at(-1).value, null);
   const opened = fixture.clients.length;
-  fixture.advance(1000); await fixture.next();
+  fixture.advance(2000); await fixture.next();
   assert.equal(fixture.clients.length, opened + 1, 'only the station port is opened while the meter waits');
-  assert.equal(runtime.snapshot().soundMeter.failedReads, 1);
-  fixture.setRead(busRead);
-  fixture.advance(9000); await fixture.next();
+  meterAnswers = true;
+  fixture.advance(8000); await fixture.next();
   assert.equal(runtime.snapshot().soundMeter.value, 44.7);
+  assert.equal(runtime.snapshot().soundMeter.consecutiveMisses, 0);
   assert.equal(runtime.snapshot().available, true);
   await runtime.stop();
 });
@@ -325,7 +339,7 @@ test('sound meter settings and readings are validated', () => {
   assert.throws(() => decodeSoundLevel([1, 2]), /1 unsigned/);
   for (const soundMeter of [{ path: 'navigation.noise' }, { path: 'environment.wind.noise' },
     { path: 'environment.weather.noise' }, { path: 'environment' }, { path: 'environment.inside.' },
-    { address: 0 }, { baudRate: 115200 }, { enabled: true, baudRate: 4800, address: 1 }]) {
+    { address: 0 }, { baudRate: 115200 }, { enabled: true, baudRate: 4800, address: 1 }, { timeoutMs: 100 }, { intervalMs: 70000 }]) {
     assert.throws(() => validateOptions({ path: '/dev/weather', soundMeter }), /Sound meter|sound meter/);
   }
   assert.equal(validateOptions({ path: '/dev/weather' }).soundMeter.enabled, false);

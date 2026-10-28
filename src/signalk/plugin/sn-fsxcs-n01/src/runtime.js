@@ -3,15 +3,21 @@
 const { prefix, metadata, decode, unavailable } = require('./measurements');
 
 // RS485 sound meter (docs: ../semantic-boat-devices-rs485/docs/sound-meter.md)
-// on the station's bus: function 03, register 0, dB(A) * 10.
+// on the station's bus: function 03, register 0, dB(A) * 10. In slow mode
+// (jumper open) it answers up to 1.5 s late, so its timeout is its own.
 const meterRetryMs = 10000;
+// Consecutive failed reads before the level is published as unavailable and
+// the meter is retried only every meterRetryMs.
+const meterMaxMisses = 3;
 
 function validateSoundMeter(options = {}, station) {
   const meter = {
     enabled: options.enabled ?? false,
     address: options.address ?? 1,
     baudRate: options.baudRate ?? 9600,
-    path: options.path ?? 'environment.inside.noiseLevel'
+    path: options.path ?? 'environment.inside.noiseLevel',
+    intervalMs: options.intervalMs ?? 2000,
+    timeoutMs: options.timeoutMs ?? 2000
   };
   if (typeof meter.path !== 'string' || !/^environment(?:\.[a-zA-Z][a-zA-Z0-9]*)+$/.test(meter.path)) {
     throw new Error('Sound meter path must be a Signal K path under environment with letter/digit segments');
@@ -21,6 +27,9 @@ function validateSoundMeter(options = {}, station) {
   }
   if (!Number.isInteger(meter.address) || meter.address < 1 || meter.address > 247) throw new Error('Sound meter Modbus address must be 1-247');
   if (![2400, 4800, 9600].includes(meter.baudRate)) throw new Error('Unsupported sound meter baud rate');
+  for (const name of ['intervalMs', 'timeoutMs']) {
+    if (!Number.isInteger(meter[name]) || meter[name] < 250 || meter[name] > 60000) throw new Error(`Sound meter ${name} must be 250-60000 ms`);
+  }
   // At the same baud rate both devices would answer the same address.
   if (meter.enabled && meter.baudRate === station.baudRate && meter.address === station.address) {
     throw new Error('Sound meter and station share baud rate and address');
@@ -81,8 +90,8 @@ class StationRuntime {
     this.successfulReads = 0;
     this.failedReads = 0;
     this.attempts = 0;
-    this.meter = { available: false, value: null, raw: null, lastReadAt: null, nextAt: 0,
-      successfulReads: 0, failedReads: 0, error: null };
+    this.meter = { available: false, value: null, raw: null, lastReadAt: null, nextAt: 0, misses: 0,
+      successfulReads: 0, failedReads: 0, error: null, lastResponseMs: null, maxResponseMs: null };
   }
 
   publish(update, src = this.options.stationId) {
@@ -133,22 +142,22 @@ class StationRuntime {
   }
 
   // One port, reopened when the next device uses another baud rate.
-  async open(baudRate, address) {
+  async open(baudRate, address, timeoutMs) {
     if (!this.client?.isOpen || this.clientBaudRate !== baudRate) {
       await this.disconnect();
       this.client = this.createClient();
       await this.client.connectRTUBuffered(this.options.path, { baudRate, dataBits: 8, parity: 'none', stopBits: 1 });
       this.clientBaudRate = baudRate;
-      this.client.setTimeout(this.options.timeoutMs);
     }
     this.client.setID(address);
+    this.client.setTimeout(timeoutMs);
   }
 
   async cycle() {
     const startedAt = this.now();
     this.attempts += 1;
     try {
-      await this.open(this.options.baudRate, this.options.address);
+      await this.open(this.options.baudRate, this.options.address, this.options.timeoutMs);
       if (!this.running) return;
       const result = await this.client.readHoldingRegisters(500, 16);
       const values = decode(result.data, this.options.rootPath);
@@ -177,26 +186,37 @@ class StationRuntime {
     }
   }
 
-  // A failure here never affects the station's data; a missing meter is
-  // retried every 10 s so it does not slow down the station's polling.
+  // A failure here never affects the station's data. A single missed reply
+  // keeps the last level; after meterMaxMisses in a row the level becomes
+  // unavailable and a missing meter is retried every 10 s, so it does not
+  // slow down the station's polling.
   async readMeter() {
     const meter = this.meter;
-    const { enabled, baudRate, address } = this.options.soundMeter;
-    if (!enabled || this.now() < meter.nextAt) return;
+    const { enabled, baudRate, address, intervalMs, timeoutMs } = this.options.soundMeter;
+    const startedAt = this.now();
+    if (!enabled || startedAt < meter.nextAt) return;
+    meter.nextAt = startedAt + intervalMs;
     try {
-      await this.open(baudRate, address);
+      await this.open(baudRate, address, timeoutMs);
       if (!this.running) return;
+      const requestedAt = this.now();
       const result = await this.client.readHoldingRegisters(0, 1);
       const value = decodeSoundLevel(result.data);
       if (!this.running) return;
-      Object.assign(meter, { available: true, value, raw: [...result.data], lastReadAt: this.now(), error: null });
+      meter.lastResponseMs = this.now() - requestedAt;
+      meter.maxResponseMs = Math.max(meter.maxResponseMs ?? 0, meter.lastResponseMs);
+      Object.assign(meter, { available: true, value, raw: [...result.data], lastReadAt: this.now(), error: null, misses: 0 });
       meter.successfulReads += 1;
       this.publishMeter(value);
     } catch (error) {
       if (!this.running) return;
-      Object.assign(meter, { available: false, value: null, error: error.message, nextAt: this.now() + meterRetryMs });
+      meter.error = error.message;
       meter.failedReads += 1;
-      this.publishMeter(null);
+      meter.misses += 1;
+      if (meter.misses >= meterMaxMisses) {
+        Object.assign(meter, { available: false, value: null, nextAt: this.now() + meterRetryMs });
+        this.publishMeter(null);
+      }
       await this.disconnect();
     }
   }
@@ -223,7 +243,8 @@ class StationRuntime {
         value: this.meter.available ? this.meter.value : null,
         lastSuccessfulRead: this.meter.lastReadAt === null ? null : new Date(this.meter.lastReadAt).toISOString(),
         successfulReads: this.meter.successfulReads, failedReads: this.meter.failedReads,
-        error: this.meter.error, rawRegisters: this.meter.raw ? [...this.meter.raw] : null },
+        error: this.meter.error, consecutiveMisses: this.meter.misses,
+        lastResponseMs: this.meter.lastResponseMs, maxResponseMs: this.meter.maxResponseMs, rawRegisters: this.meter.raw ? [...this.meter.raw] : null },
       measurements: this.raw ? decode(this.raw, this.options.rootPath).map(entry => ({ ...entry, value: this.available ? entry.value : null })) : unavailable(this.options.rootPath) };
   }
 }

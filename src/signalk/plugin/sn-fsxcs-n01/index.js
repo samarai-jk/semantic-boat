@@ -34,7 +34,9 @@ module.exports = (app, dependencies) => {
             enabled: { type: 'boolean', default: false, title: 'Read the sound meter' },
             path: { type: 'string', pattern: '^environment(?:\\.[a-zA-Z][a-zA-Z0-9]*)+$', default: 'environment.inside.noiseLevel', title: 'Signal K path of the sound level (dB(A))' },
             address: { type: 'integer', minimum: 1, maximum: 247, default: 1, title: 'Existing Modbus address of the meter' },
-            baudRate: { type: 'integer', enum: [2400, 4800, 9600], default: 9600, title: 'Existing baud rate of the meter (the port switches per device)' }
+            baudRate: { type: 'integer', enum: [2400, 4800, 9600], default: 9600, title: 'Existing baud rate of the meter (the port switches per device)' },
+            intervalMs: { type: 'integer', minimum: 250, maximum: 60000, default: 2000, title: 'Sound meter polling interval (ms)' },
+            timeoutMs: { type: 'integer', minimum: 250, maximum: 60000, default: 2000, title: 'Sound meter response timeout (ms; slow mode answers up to 1.5 s late)' }
           }
         }
       }

@@ -101,12 +101,18 @@ baud rate needs its own address; the same baud rate and address are rejected.
 | `soundMeter.path` | `environment.inside.noiseLevel` | Signal K path of the sound level (dB, A-weighted); any `environment` path outside the station root and `environment.wind` |
 | `soundMeter.address` | 1 | Existing Modbus address of the meter |
 | `soundMeter.baudRate` | 9600 | Existing baud rate of the meter |
+| `soundMeter.intervalMs` | 2000 | Polling interval of the meter |
+| `soundMeter.timeoutMs` | 2000 | Response timeout of the meter |
 
 The level is published with source `sn-fsxcs-n01.soundMeter`; readings outside
-20..140 dB become `null`. A failed meter read publishes `null` and is retried
-after 10 s, so a missing meter costs the station at most one timeout per 10 s;
-it never marks the station unavailable. `GET /plugins/sn-fsxcs-n01/state`
-includes the meter's counters, last error and raw register.
+20..140 dB become `null`. With the 1 s station timeout the meter missed about
+every fourth reply on the bench; in slow mode (jumper open) it may answer up
+to 1.5 s late, hence its own 2 s timeout and interval. A single missed reply
+keeps the last level; three in a row publish `null` and the meter is then
+retried every 10 s, so a missing meter costs the station at most one timeout
+per 10 s. It never marks the station unavailable. A slow meter reply delays
+the station's next read. `GET /plugins/sn-fsxcs-n01/state` includes the
+meter's counters, last error, response times, and raw register.
 
 ## Configuration And Startup
 

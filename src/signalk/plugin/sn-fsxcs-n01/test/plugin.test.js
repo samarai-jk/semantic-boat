@@ -65,6 +65,9 @@ test('signed temperature, high-word light, rain conversion and invalid data are 
 const { StationRuntime, validateOptions } = require('../src/runtime');
 const createPlugin = require('../index');
 
+// Lets pending port and read promises run (the cycle awaits several steps).
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
 function harness() {
   const deltas = [];
   const errors = [];
@@ -72,13 +75,14 @@ function harness() {
   const clients = [];
   let read = async () => ({ data: [...liveSample] });
   let openingError = null;
+  let time = Date.parse('2026-10-13T12:00:00Z');
   const app = { handleMessage: (_id, delta) => deltas.push(delta), setPluginStatus() {}, setPluginError: message => errors.push(message) };
   const dependencies = {
     createClient: () => {
       const client = { isOpen: false, requests: [], closed: false,
         async connectRTUBuffered(path, settings) { this.path = path; this.settings = settings; if (openingError) throw openingError; this.isOpen = true; },
         setID(address) { this.address = address; }, setTimeout(timeout) { this.timeout = timeout; },
-        async readHoldingRegisters(start, count) { this.requests.push([start, count]); return read(); },
+        async readHoldingRegisters(start, count) { this.requests.push([start, count]); return read(start, count, this); },
         close(callback) { this.isOpen = false; this.closed = true; callback(); }
       };
       clients.push(client);
@@ -86,10 +90,11 @@ function harness() {
     },
     schedule: (callback, delay) => { const entry = { callback, delay }; scheduled.add(entry); return entry; },
     cancel: entry => scheduled.delete(entry),
-    now: () => Date.parse('2026-10-13T12:00:00Z')
+    now: () => time
   };
   return { app, dependencies, deltas, errors, clients, scheduled,
     setRead: handler => { read = handler; }, setOpeningError: error => { openingError = error; },
+    advance: ms => { time += ms; },
     async next() { const entry = scheduled.values().next().value; assert.ok(entry); scheduled.delete(entry); await entry.callback(); }
   };
 }
@@ -148,7 +153,7 @@ test('shutdown waits for an in-flight read, publishes no late sample, and closes
   fixture.setRead(() => new Promise(resolve => { resolveRead = resolve; }));
   const runtime = new StationRuntime(fixture.app, { path: '/dev/weather' }, fixture.dependencies);
   runtime.start();
-  await Promise.resolve();
+  await settle();
   const stopping = runtime.stop();
   resolveRead({ data: [...liveSample] });
   await stopping;
@@ -219,7 +224,7 @@ test('Signal K plugin lifecycle exposes read-only diagnostics and releases owner
   routes.get('/state')({}, response);
   assert.equal(response.code, 503);
   await plugin.start({ path: '/dev/weather' });
-  await Promise.resolve();
+  await settle();
   routes.get('/state')({}, response);
   assert.equal(snapshot.model, 'SN-*-FSXCS-N01');
   await plugin.start({ path: '/dev/weather' });
@@ -233,10 +238,10 @@ test('changing the configured root invalidates old measurements before publishin
   const fixture = harness();
   const plugin = createPlugin(fixture.app, fixture.dependencies);
   await plugin.start({ path: '/dev/weather' });
-  await Promise.resolve();
+  await settle();
   const previousCount = fixture.deltas.length;
   await plugin.start({ path: '/dev/weather', rootPath: 'environment.weatherStations.deck' });
-  await Promise.resolve();
+  await settle();
   const updates = fixture.deltas.slice(previousCount).map(delta => delta.updates[0]);
   const oldUpdates = updates.filter(update => update.values?.some(entry => entry.path.startsWith('environment.weather.')));
   assert.equal(oldUpdates.length, 1);
@@ -244,4 +249,85 @@ test('changing the configured root invalidates old measurements before publishin
   assert.ok(updates.some(update => update.values?.some(entry => entry.path === 'environment.weatherStations.deck.air.temperature' && entry.value === 298.15)));
   assert.equal(fixture.clients[0].closed, true);
   await plugin.stop();
+});
+// Station at 4800 and the sound meter at its verified 9600 baud, both address 1.
+const meterOptions = { path: '/dev/weather', soundMeter: { enabled: true, path: 'environment.inside.saloon.noiseLevel' } };
+const busRead = async (start, count, client) => {
+  if (client.settings.baudRate === 4800 && start === 500 && count === 16) return { data: [...liveSample] };
+  if (client.settings.baudRate === 9600 && start === 0 && count === 1) return { data: [447] };
+  throw new Error('Timed out');
+};
+const meterValues = deltas => deltas.flatMap(delta => delta.updates[0].source.src === 'soundMeter'
+  ? (delta.updates[0].values ?? []) : []);
+
+test('sound meter is read after the station at its own baud rate and published at its configured path', async () => {
+  const fixture = harness();
+  fixture.setRead(busRead);
+  const runtime = new StationRuntime(fixture.app, meterOptions, fixture.dependencies);
+  runtime.start(); await runtime.inflight;
+  assert.deepEqual(fixture.clients.map(client => [client.settings.baudRate, client.address, client.requests]),
+    [[4800, 1, [[500, 16]]], [9600, 1, [[0, 1]]]]);
+  assert.equal(fixture.clients[0].closed, true);
+  assert.equal(runtime.snapshot().available, true);
+  assert.equal(runtime.snapshot().soundMeter.value, 44.7);
+  assert.deepEqual(meterValues(fixture.deltas).at(-1), { path: 'environment.inside.saloon.noiseLevel', value: 44.7 });
+  const meta = fixture.deltas.find(delta => delta.updates[0].meta?.some(entry => entry.path === 'environment.inside.saloon.noiseLevel'));
+  assert.equal(meta.updates[0].meta[0].value.units, 'dB');
+  await fixture.next();
+  assert.deepEqual(fixture.clients.slice(2).map(client => client.settings.baudRate), [4800, 9600]);
+  await runtime.stop();
+  assert.deepEqual(meterValues(fixture.deltas).at(-1), { path: 'environment.inside.saloon.noiseLevel', value: null });
+  assert.ok(fixture.clients.every(client => client.closed));
+});
+
+test('a silent sound meter never affects the station and is retried every 10 s', async () => {
+  const fixture = harness();
+  fixture.setRead(async (start, count, client) => {
+    if (client.settings.baudRate === 9600) throw new Error('Timed out');
+    return busRead(start, count, client);
+  });
+  const runtime = new StationRuntime(fixture.app, meterOptions, fixture.dependencies);
+  runtime.start(); await runtime.inflight;
+  assert.equal(runtime.snapshot().available, true);
+  assert.equal(runtime.snapshot().soundMeter.available, false);
+  assert.equal(runtime.snapshot().soundMeter.failedReads, 1);
+  assert.equal(meterValues(fixture.deltas).at(-1).value, null);
+  const opened = fixture.clients.length;
+  fixture.advance(1000); await fixture.next();
+  assert.equal(fixture.clients.length, opened + 1, 'only the station port is opened while the meter waits');
+  assert.equal(runtime.snapshot().soundMeter.failedReads, 1);
+  fixture.setRead(busRead);
+  fixture.advance(9000); await fixture.next();
+  assert.equal(runtime.snapshot().soundMeter.value, 44.7);
+  assert.equal(runtime.snapshot().available, true);
+  await runtime.stop();
+});
+
+test('a sound meter at the station baud rate shares one open port', async () => {
+  const fixture = harness();
+  fixture.setRead(async (start, count, client) => start === 0 ? { data: [406] } : busRead(start, count, client));
+  const runtime = new StationRuntime(fixture.app, { path: '/dev/weather',
+    soundMeter: { enabled: true, address: 2, baudRate: 4800 } }, fixture.dependencies);
+  runtime.start(); await runtime.inflight;
+  assert.equal(fixture.clients.length, 1);
+  assert.deepEqual(fixture.clients[0].requests, [[500, 16], [0, 1]]);
+  assert.equal(fixture.clients[0].address, 2);
+  assert.equal(runtime.snapshot().soundMeter.value, 40.6);
+  assert.equal(runtime.snapshot().soundMeter.path, 'environment.inside.noiseLevel');
+  await runtime.stop();
+});
+
+test('sound meter settings and readings are validated', () => {
+  const { decodeSoundLevel } = require('../src/runtime');
+  assert.equal(decodeSoundLevel([447]), 44.7);
+  assert.equal(decodeSoundLevel([0]), null);
+  assert.equal(decodeSoundLevel([1500]), null);
+  assert.throws(() => decodeSoundLevel([1, 2]), /1 unsigned/);
+  for (const soundMeter of [{ path: 'navigation.noise' }, { path: 'environment.wind.noise' },
+    { path: 'environment.weather.noise' }, { path: 'environment' }, { path: 'environment.inside.' },
+    { address: 0 }, { baudRate: 115200 }, { enabled: true, baudRate: 4800, address: 1 }]) {
+    assert.throws(() => validateOptions({ path: '/dev/weather', soundMeter }), /Sound meter|sound meter/);
+  }
+  assert.equal(validateOptions({ path: '/dev/weather' }).soundMeter.enabled, false);
+  assert.equal(validateOptions({ path: '/dev/weather', soundMeter: { enabled: false, baudRate: 4800 } }).soundMeter.baudRate, 4800);
 });

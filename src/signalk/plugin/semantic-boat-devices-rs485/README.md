@@ -106,8 +106,9 @@ firmware with the polled bus. The current addressed adapter requires 115200 baud
 
 The [sound meter commissioning notes](docs/sound-meter.md) contain the verified
 Modbus settings, measurement conversion, supplied wiring/specifications, and
-limits of the discovery. Sensor decoding/publishing is not implemented by the
-current display adapters.
+limits of the discovery. The display adapters do not read sensors: the meter
+shares the sensor channel with the weather station and is read by the
+[weather station plugin](../sn-fsxcs-n01/README.md#sound-meter-on-the-same-bus).
 
 For the upcoming weather station test:
 

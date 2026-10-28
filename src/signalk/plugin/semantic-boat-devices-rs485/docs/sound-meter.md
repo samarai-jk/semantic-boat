@@ -98,8 +98,9 @@ The TTL variant uses 0-3.3 V signals and is not an RS485 interface.
   jumper state. Faster polling does not necessarily yield a new measurement.
 - Preserve dB(A) semantics: this is an A-weighted logarithmic sound-pressure
   level, not pressure in pascals or a linear quantity.
-- Select an appropriate Signal K path and unit metadata before publishing.
-  No Signal K sensor integration has been implemented yet.
+- Signal K integration: the weather station plugin reads the meter on the
+  shared sensor channel and publishes it at a configurable path
+  ([sn-fsxcs-n01](../../sn-fsxcs-n01/README.md#sound-meter-on-the-same-bus)).
 - On timeout, CRC failure, or exception, report unavailable/stale data rather
   than a fabricated zero sound level.
 - The display bus currently requires 115200 baud. This meter has no documented

@@ -83,6 +83,31 @@ Out-of-range readings become `null` using documented ranges where available.
 Zero is not taken as proof that a sensor is present, absent, or faulty. The manual
 does not document invalid-value sentinels or per-sensor health flags.
 
+## Sound Meter On The Same Bus
+
+The plugin owns the RS485 channel, so it also reads the RS485 sound meter
+described in [sound-meter.md](../semantic-boat-devices-rs485/docs/sound-meter.md)
+when `soundMeter.enabled` is set: after each station read, function 03,
+register 0, one word, dB(A) = raw / 10. The meter keeps its own address and
+baud rate; the plugin reopens the port at the meter's rate when it differs
+from the station's (verified meter: address 1, 9600 baud; station: address 1,
+4800 baud). Devices at different baud rates do not decode each other's
+frames, so the shared address 1 does not collide. A meter at the station's
+baud rate needs its own address; the same baud rate and address are rejected.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `soundMeter.enabled` | `false` | Read the meter |
+| `soundMeter.path` | `environment.inside.noiseLevel` | Signal K path of the sound level (dB, A-weighted); any `environment` path outside the station root and `environment.wind` |
+| `soundMeter.address` | 1 | Existing Modbus address of the meter |
+| `soundMeter.baudRate` | 9600 | Existing baud rate of the meter |
+
+The level is published with source `sn-fsxcs-n01.soundMeter`; readings outside
+20..140 dB become `null`. A failed meter read publishes `null` and is retried
+after 10 s, so a missing meter costs the station at most one timeout per 10 s;
+it never marks the station unavailable. `GET /plugins/sn-fsxcs-n01/state`
+includes the meter's counters, last error and raw register.
+
 ## Configuration And Startup
 
 Configure under Signal K's plugin settings, using the stable USB identifier:
@@ -124,11 +149,10 @@ PM) are not guaranteed update intervals or a reliable startup-ready flag. A
 successful reply does not certify stabilized readings after sensor power-up.
 
 Use a sensor channel separate from the 115200-baud display channel. Only one
-plugin/master may own a serial port. While this station occupies the current
-adapter, the display gateway must remain disabled. Before reconnecting displays
-to that adapter, disable this plugin and move it to the new sensor adapter. Future
-other-sensor plugins need separate ports or an explicitly coordinated bus owner;
-this plugin must not be opened alongside another independent master on its port.
+plugin/master may own a serial port: this plugin is the master of the sensor
+channel (station and sound meter). Further sensors on that channel belong in
+this plugin's polling cycle; it must not be opened alongside another
+independent master on its port.
 
 Diagnostic API (subject to Signal K's normal access controls):
 

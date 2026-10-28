@@ -17,7 +17,7 @@ module.exports = (app, dependencies) => {
   return {
     id: 'sn-fsxcs-n01',
     name: 'SN-*-FSXCS-N01 Weather Station',
-    description: 'Read-only Modbus acquisition for the particulate variant; isolated from navigation and N2K paths.',
+    description: 'Read-only Modbus acquisition for the particulate variant, and an optional RS485 sound meter on the same bus; isolated from navigation and N2K paths.',
     schema: {
       type: 'object', required: ['path'], additionalProperties: false,
       properties: {
@@ -27,7 +27,16 @@ module.exports = (app, dependencies) => {
         address: { type: 'integer', minimum: 1, maximum: 247, default: 1, title: 'Existing Modbus address (does not change the station)' },
         baudRate: { type: 'integer', enum: [2400, 4800, 9600], default: 4800, title: 'Existing station baud rate (does not change the station)' },
         pollIntervalMs: { type: 'integer', minimum: 250, maximum: 60000, default: 1000, title: 'Polling interval (ms)' },
-        timeoutMs: { type: 'integer', minimum: 250, maximum: 60000, default: 1000, title: 'Response timeout (ms)' }
+        timeoutMs: { type: 'integer', minimum: 250, maximum: 60000, default: 1000, title: 'Response timeout (ms)' },
+        soundMeter: {
+          type: 'object', title: 'RS485 sound meter on the same bus', additionalProperties: false,
+          properties: {
+            enabled: { type: 'boolean', default: false, title: 'Read the sound meter' },
+            path: { type: 'string', pattern: '^environment(?:\\.[a-zA-Z][a-zA-Z0-9]*)+$', default: 'environment.inside.noiseLevel', title: 'Signal K path of the sound level (dB(A))' },
+            address: { type: 'integer', minimum: 1, maximum: 247, default: 1, title: 'Existing Modbus address of the meter' },
+            baudRate: { type: 'integer', enum: [2400, 4800, 9600], default: 9600, title: 'Existing baud rate of the meter (the port switches per device)' }
+          }
+        }
       }
     },
     start: (options = {}) => transition(async () => {

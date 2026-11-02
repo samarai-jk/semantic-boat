@@ -283,8 +283,9 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
   keel. The four histories use the whole 1024-byte budget; the configuration
   is about 8.3 of 10 KB, so it needs display firmware from November 2026.
   Values that stop updating stay on screen with their age (`OLD 12s`,
-  `outdated_ms`) instead of disappearing (no `stale_ms`); values Signal K
-  reports as unavailable still show `--` at once.
+  `outdated_ms`, 10 s; COG 60 s and position 30 s, as the GPS sends COG
+  only every 10..30 s while the boat does not move) instead of disappearing
+  (no `stale_ms`); values Signal K reports as unavailable show `--` at once.
 - `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
 - `electrics.json`: 12 V house/starter batteries and port alternator voltage.
   Battery paths use the conventional `electrical.batteries.house` and `starter`

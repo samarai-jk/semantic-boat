@@ -17,6 +17,8 @@ namespace remote_a {
 struct ConfigurationActions {
     void* context{};
     void (*reset)(void* context){};
+    // The data LED flickers while a list or app is transferred, whatever the LED mode.
+    void (*indicateTransfer)(void* context, bool active){};
 };
 
 class ConfigurationService final : public slstm32::Service {
@@ -76,6 +78,7 @@ private:
     void configEnd(std::uint16_t transferId);
     void loadDefault();
     bool compileAndStore(std::string_view source);
+    void indicateTransfer(bool active);
     void transferError(const char* message);
 
     slstm32::Runtime runtime_;
@@ -106,6 +109,10 @@ private:
     std::uint32_t initialReceiveErrors_{};
     std::uint32_t initialDecodeErrors_{};
     bool listActive_{};
+    // The app to request once its INSTALLING screen is on the panel (the
+    // transfer borrows the framebuffer, so the screen must be drawn first).
+    std::size_t requestIndex_{};
+    bool requestWhenShown_{};
     bool listRequestPending_{};
     bool listRequestTimedOut_{};
     bool configRequestPending_{};

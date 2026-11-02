@@ -129,6 +129,8 @@ public:
     bool selectionVisible() const { return selection_.visible; }
     bool alertVisible() const { return alert_.visible; }
     bool sleeping() const { return sleeping_; }
+    // A change waits to be drawn or the panel is still updating.
+    bool updatePending() const { return dirty_ || activeUpdate_; }
     bool sleepActive() const { return sleeping_ || sleepRequested_; }
     std::uint32_t partialRefreshCount() const { return partialRefreshCount_; }
     bool graphMode() const { return graphMode_; }

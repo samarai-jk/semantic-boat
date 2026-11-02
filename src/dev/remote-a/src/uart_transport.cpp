@@ -7,6 +7,8 @@ namespace remote_a {
 namespace {
 
 constexpr std::uint32_t activityLedPulseMs = 1u;
+// During a transfer: clearly visible, whatever the LED mode.
+constexpr std::uint32_t transferLedPulseMs = 20u;
 
 } // namespace
 
@@ -114,7 +116,8 @@ void UartTransport::onError(UART_HandleTypeDef* uart) {
 void UartTransport::run() {
     if (!activity_) return;
     activity_ = false;
-    if (activityIndicatorEnabled_) activityLed_.pulse(activityLedPulseMs);
+    if (transferIndication_) activityLed_.pulse(transferLedPulseMs);
+    else if (activityIndicatorEnabled_) activityLed_.pulse(activityLedPulseMs);
 }
 
 } // namespace remote_a

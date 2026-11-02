@@ -58,7 +58,9 @@ class ControlServer {
     try {
       if (request.command === 'devices') {
         send({ event: 'done', devices: this.runtime.devices().map(device => ({
-          id: device.id, label: device.label, address: device.address, online: device.online })) });
+          id: device.id, label: device.label, address: device.address, online: device.online,
+          queuedFrames: device.detail?.queuedFrames, sentFrames: device.detail?.sentFrames,
+          subscriptions: device.detail?.subscriptions?.length })) });
       } else if (request.command === 'bus') {
         send({ event: 'done', buses: this.runtime.busStates() });
       } else if (request.command === 'install-config') {

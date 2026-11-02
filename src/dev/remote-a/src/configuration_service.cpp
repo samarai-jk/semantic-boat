@@ -7,7 +7,7 @@ namespace remote_a {
 namespace {
 
 constexpr std::uint32_t transferTimeoutMs = 10000u;
-constexpr std::uint32_t requestTimeoutMs = 3000u;
+constexpr std::uint32_t requestTimeoutMs = 10000u;
 constexpr char localDefaultName[] = "DEFAULT (LOCAL)";
 
 void copyName(char* destination, std::size_t capacity, std::string_view source) {
@@ -34,12 +34,35 @@ bool ConfigurationService::init() {
     return true;
 }
 
+void ConfigurationService::indicateTransfer(bool active) {
+    if (actions_.indicateTransfer) actions_.indicateTransfer(actions_.context, active);
+}
+
 void ConfigurationService::run() {
     const auto now = runtime_.millis();
+    if (requestWhenShown_ && !display_.updatePending()) {
+        requestWhenShown_ = false;
+        initialDroppedBytes_ = link_.droppedBytes();
+        initialReceiveErrors_ = link_.receiveErrors();
+        initialDecodeErrors_ = link_.decodeErrors();
+        display_.setRenderingPaused(true);
+        if (!link_.requestConfig(names_[requestIndex_].bytes)) {
+            display_.setRenderingPaused(false);
+            display_.dismissTransientModal();
+            indicateTransfer(false);
+            display_.showModal("LINK ERROR", "CONFIGURATION REQUEST FAILED.",
+                               semantic_display::ModalSeverity::error);
+        } else {
+            configRequestPending_ = true;
+            configRequestedAt_ = now;
+        }
+    }
     if (listRequestPending_ &&
         static_cast<std::uint32_t>(now - listRequestedAt_) >= requestTimeoutMs) {
         listRequestPending_ = false;
         listRequestTimedOut_ = true;
+        display_.dismissTransientModal();
+        indicateTransfer(false);
         display_.showModal("LINK ERROR", "APP LIST REQUEST TIMED OUT.",
                            semantic_display::ModalSeverity::error);
     }
@@ -48,6 +71,8 @@ void ConfigurationService::run() {
         configRequestPending_ = false;
         configRequestTimedOut_ = true;
         display_.setRenderingPaused(false);
+        display_.dismissTransientModal();
+        indicateTransfer(false);
         display_.showModal("LINK ERROR", "APP REQUEST TIMED OUT.",
                            semantic_display::ModalSeverity::error);
     }
@@ -72,6 +97,8 @@ void ConfigurationService::requestList() {
     }
     listRequestPending_ = true;
     listRequestedAt_ = runtime_.millis();
+    display_.showTransientModal("APPS", "LOADING THE LIST OF APPS FROM THE SERVER.", "PLEASE WAIT");
+    indicateTransfer(true);
 }
 
 void ConfigurationService::receiveListBegin(void* context, std::uint16_t listId,
@@ -130,6 +157,8 @@ void ConfigurationService::listItem(std::uint16_t listId, std::uint16_t,
 void ConfigurationService::listEnd(std::uint16_t listId) {
     if (!listActive_ || listId != listId_) return;
     listActive_ = false;
+    display_.dismissTransientModal();
+    indicateTransfer(false);
     (void)display_.showSelection("APPS",
         {this, nameCount_, &selectionItem, &selectionCompleted});
 }
@@ -161,18 +190,18 @@ void ConfigurationService::selectionCompleted(
                                 semantic_display::ModalSeverity::error);
         return;
     }
-    self.initialDroppedBytes_ = self.link_.droppedBytes();
-    self.initialReceiveErrors_ = self.link_.receiveErrors();
-    self.initialDecodeErrors_ = self.link_.decodeErrors();
-    self.display_.setRenderingPaused(true);
-    if (!self.link_.requestConfig(self.names_[index].bytes)) {
-        self.display_.setRenderingPaused(false);
-        self.display_.showModal("LINK ERROR", "CONFIGURATION REQUEST FAILED.",
-                                semantic_display::ModalSeverity::error);
-        return;
+    // Show what happens first; run() sends the request once it is on the panel.
+    char message[128]{};
+    const auto name = selectionItem(&self, index);
+    std::snprintf(message, sizeof message, "RECEIVING %.*s. THE DISPLAY RESTARTS WHEN IT IS INSTALLED.",
+                  static_cast<int>(name.size()), name.data());
+    for (auto* cursor = message; *cursor; ++cursor) {
+        if (*cursor >= 'a' && *cursor <= 'z') *cursor = static_cast<char>(*cursor - 'a' + 'A');
     }
-    self.configRequestPending_ = true;
-    self.configRequestedAt_ = self.runtime_.millis();
+    self.display_.showTransientModal("INSTALLING APP", message, "PLEASE WAIT");
+    self.indicateTransfer(true);
+    self.requestIndex_ = index;
+    self.requestWhenShown_ = true;
 }
 
 void ConfigurationService::loadDefault() {
@@ -264,6 +293,7 @@ bool ConfigurationService::compileAndStore(std::string_view source) {
 
 void ConfigurationService::transferError(const char* message) {
     transferActive_ = false;
+    indicateTransfer(false);
     display_.setRenderingPaused(false);
     display_.dismissTransientModal();
     display_.showModal("CONFIG ERROR", message,

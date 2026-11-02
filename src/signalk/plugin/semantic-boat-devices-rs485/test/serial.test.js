@@ -80,3 +80,22 @@ test('gateway waits for the complete subscription snapshot before transmitting',
   assert.equal(link.port.writes.length, 2);
   await link.stop();
 });
+test('control frames go ahead of queued values in their own order', async () => {
+  const protocol = await import('../../../../tools/disp-sim/src/protocol.js');
+  const link = new SerialLink({ app: { getSelfPath: () => undefined, subscriptionmanager: { subscribe() {} } },
+    bus: { id: 'bus', type: 'rs485-addressed', path: '/dev/fake', baudRate: 115200 }, device: { id: 'test', address: 2 },
+    protocol, catalog: {}, mappings: {}, onError() {}, Port: FakePort });
+  link.running = true; link.port.isOpen = true; link.sending = true; // a frame is on its way
+  const sends = [
+    link.send(protocol.MessageType.VALUE_NUMBER, protocol.numberValuePayload(0, 1)),
+    link.send(protocol.MessageType.VALUE_NUMBER, protocol.numberValuePayload(1, 1)),
+    link.send(protocol.MessageType.CONFIG_LIST_BEGIN, Buffer.alloc(4)),
+    link.send(protocol.MessageType.CONFIG_LIST_ITEM, Buffer.from([0, 0, 0, 0, 1, 0x61])),
+    link.send(protocol.MessageType.VALUE_NUMBER, protocol.numberValuePayload(2, 1)),
+  ];
+  assert.deepEqual(link.queue.map(entry => entry.type), [protocol.MessageType.CONFIG_LIST_BEGIN,
+    protocol.MessageType.CONFIG_LIST_ITEM, protocol.MessageType.VALUE_NUMBER, protocol.MessageType.VALUE_NUMBER,
+    protocol.MessageType.VALUE_NUMBER]);
+  link.running = false; link.cancelQueue();
+  await Promise.allSettled(sends);
+});

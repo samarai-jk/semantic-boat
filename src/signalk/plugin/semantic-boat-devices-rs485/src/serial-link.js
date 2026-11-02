@@ -6,6 +6,7 @@ const { DeviceSession } = require('./session');
 class SerialLink {
   constructor({ app, bus, device, protocol, catalog, mappings, onError, Port = SerialPort }) {
     this.bus = bus;
+    this.addressed = bus.type === 'rs485-addressed';
     this.protocol = protocol;
     // The display configuration catalog of the Semantic Boat Devices hub, or
     // a function returning it (null while the hub is not running).
@@ -100,8 +101,14 @@ class SerialLink {
       if (pending) {
         pending.resolve(false);
         Object.assign(pending, { type, payload, resolve, reject, generation: this.session.generation });
-      } else this.queue.push({ type, payload, resolve, reject, valueFrame, index,
-        generation: this.session.generation });
+      } else {
+        const entry = { type, payload, resolve, reject, valueFrame, index, generation: this.session.generation };
+        // Control frames (lists, configurations, pings) go ahead of queued
+        // values, in their own order: a list of ten frames must not wait
+        // behind every value of the display, once per frame.
+        const firstValue = valueFrame ? -1 : this.queue.findIndex(queued => queued.valueFrame);
+        if (firstValue < 0) this.queue.push(entry); else this.queue.splice(firstValue, 0, entry);
+      }
       this.pump();
     });
   }
@@ -129,8 +136,11 @@ class SerialLink {
       const complete = error => {
         if (error) entry.reject(error);
         else { this.sentFrames += 1; entry.resolve(true); }
+        // On an addressed bus the master grants the display one frame per
+        // turn, which already paces it; a point-to-point display needs time
+        // to process each value.
         if (this.running) this.paceTimer = setTimeout(() => { this.sending = false; this.pump(); },
-          entry.valueFrame ? 250 : 30);
+          entry.valueFrame && !this.addressed ? 250 : 30);
       };
       if (writeError) complete(writeError);
       else this.port.drain(complete);

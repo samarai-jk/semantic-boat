@@ -196,12 +196,16 @@ void requestReset(void* context) {
     static_cast<remote_a::DeviceShutdownService*>(context)->requestReset();
 }
 
+void indicateTransfer(void*, bool active) {
+    dataTransport.setTransferIndication(active);
+}
+
 remote_a::ConfigurationService configurationService{
     runtime, displayLink, display, configCompiler, configStore,
     frameBuffer.data(), installationPackageCapacity,
     reinterpret_cast<char*>(frameBuffer.data() + installationPackageCapacity),
     installationSourceCapacity, &remote_a::factoryDisplayConfiguration,
-    {&deviceShutdown, &requestReset}};
+    {&deviceShutdown, &requestReset, &indicateTransfer}};
 remote_a::DeviceMetricsService deviceMetrics{
     runtime, displayPackage, dataStore, historyStore, display, events,
     dataTransport, displayLink};

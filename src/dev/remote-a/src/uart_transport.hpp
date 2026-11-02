@@ -21,6 +21,8 @@ public:
     void run() override;
     void setSleeping(bool sleeping);
     void setActivityIndicatorEnabled(bool enabled);
+    // A transfer is running: the data LED flickers visibly, whatever the LED mode.
+    void setTransferIndication(bool active) { transferIndication_ = active; }
     std::size_t read(std::uint8_t* data, std::size_t capacity,
                      std::uint32_t* receivedAt = nullptr);
     bool addressed() const { return addressed_; }
@@ -53,6 +55,7 @@ private:
     volatile bool activity_{};
     bool sleeping_{};
     bool activityIndicatorEnabled_{true};
+    bool transferIndication_{};
     bool addressed_{};
     std::uint8_t address_{1u};
 };

@@ -5,7 +5,7 @@
     {"id": "depth", "path": "environment.depth.belowKeel", "unit": "m", "outdated_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "minimum"}},
     {"id": "tws", "path": "environment.wind.speedTrue", "unit": "m/s", "outdated_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "maximum"}},
     {"id": "twd", "path": "environment.wind.directionTrue", "unit": "rad", "outdated_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "last"}},
-    {"id": "cog", "path": "navigation.courseOverGroundTrue", "unit": "rad", "outdated_ms": 10000},
+    {"id": "cog", "path": "navigation.courseOverGroundTrue", "unit": "rad", "outdated_ms": 60000},
     {"id": "hdg", "path": "navigation.headingTrue", "unit": "rad", "outdated_ms": 10000}
   ],
   "sections": [
@@ -15,7 +15,7 @@
         {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "outdated_ms": 10000},
         {"id": "hdgm", "provider": "signalk", "path": "navigation.headingMagnetic", "unit": "rad", "outdated_ms": 10000},
         {"id": "state", "provider": "signalk", "path": "navigation.state", "outdated_ms": 30000},
-        {"id": "position", "provider": "signalk", "path": "navigation.position", "outdated_ms": 10000, "subscribe": {"period_ms": 1000}},
+        {"id": "position", "provider": "signalk", "path": "navigation.position", "outdated_ms": 30000, "subscribe": {"period_ms": 1000}},
         {"id": "sats", "provider": "signalk", "path": "navigation.gnss.satellites", "outdated_ms": 30000},
         {"id": "hdop", "provider": "signalk", "path": "navigation.gnss.horizontalDilution", "outdated_ms": 30000}
       ],

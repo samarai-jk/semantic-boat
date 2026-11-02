@@ -46,6 +46,7 @@ void FirmwareService::enterBootloaderThunk(void* context) {
     if (self.bootloaderRequested_) return;
     self.bootloaderRequested_ = true;
     self.bootloaderAt_ = self.runtime_.millis() + bootloaderDelayMs;
+    self.transport_.setTransferIndication(true);
     self.display_.showTransientModal("FIRMWARE UPDATE", "THE NEW FIRMWARE IS BEING INSTALLED. "
                                      "THE DISPLAY RESTARTS WHEN IT IS DONE.", "PLEASE WAIT");
 }

@@ -282,6 +282,9 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
   the wind crosses north); the true wind direction alone; minimum depth below
   keel. The four histories use the whole 1024-byte budget; the configuration
   is about 8.3 of 10 KB, so it needs display firmware from November 2026.
+  Values that stop updating stay on screen with their age (`OLD 12s`,
+  `outdated_ms`) instead of disappearing (no `stale_ms`); values Signal K
+  reports as unavailable still show `--` at once.
 - `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
 - `electrics.json`: 12 V house/starter batteries and port alternator voltage.
   Battery paths use the conventional `electrical.batteries.house` and `starter`

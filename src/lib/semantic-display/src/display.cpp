@@ -405,6 +405,8 @@ void DisplayService::requestSleep() {
     if (sleepActive()) return;
     sleepRequested_ = true;
     dirty_ = true;
+    // A full refresh: partial updates leave ghosts of the last page.
+    forceFullRefresh_ = true;
     cancelObsoleteTransfer();
 }
 
@@ -1090,8 +1092,9 @@ void DisplayService::renderSelection() {
     }
 }
 
-// Tiles in a grid of up to three columns and three visible rows: outlined,
-// the cursor filled black, the current section or page marked with a bar.
+// Entries in a grid of up to three columns and three visible rows, laid out
+// like a page's widgets: the content area divided by separator lines, the
+// cursor's cell filled black.
 void DisplayService::renderPageMenu() {
     const auto count = pageMenuCount();
     const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
@@ -1102,7 +1105,7 @@ void DisplayService::renderPageMenu() {
     const auto cursorRow = static_cast<std::uint16_t>(pageMenu_.cursor / columns);
     const auto firstRow = cursorRow >= shownRows ? static_cast<std::uint16_t>(cursorRow - shownRows + 1u) : 0u;
 
-    char title[48]{"GO TO"};
+    char title[48]{"MENU"};
     if (pageMenu_.section != noIndex) {
         SectionView section{};
         if (sectionByIndex(pageMenu_.section, section)) copyView(title, sizeof title, section.title);
@@ -1110,10 +1113,10 @@ void DisplayService::renderPageMenu() {
     const char* labels[4]{"<", ">", pageMenu_.section == noIndex ? "CLOSE" : "BACK", "OPEN"};
     renderBars(title, labels, cursorRow != 0u, cursorRow + 1u < rows);
 
-    constexpr std::uint16_t margin = 8u;
-    constexpr std::uint16_t gap = 8u;
+    constexpr std::uint16_t gap = widgetSeparatorWidth;
+    const auto areaTop = static_cast<std::uint16_t>(headerHeight + outerGap);
     const auto areaWidth = static_cast<std::uint16_t>(canvas_.width() - 2u * horizontalSafeMargin);
-    const auto areaHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight - 2u * margin);
+    const auto areaHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight - 2u * outerGap);
     const auto tileWidth = static_cast<std::uint16_t>((areaWidth - (columns - 1u) * gap) / columns);
     const auto tileHeight = static_cast<std::uint16_t>((areaHeight - (shownRows - 1u) * gap) / shownRows);
     const auto textWidth = static_cast<std::uint16_t>(tileWidth - 12u);
@@ -1161,11 +1164,17 @@ void DisplayService::renderPageMenu() {
             std::uint16_t section{}, page{}, pages{};
             if (!pageMenuEntry(index, section, page, pages)) continue;
             const auto x = static_cast<std::uint16_t>(horizontalSafeMargin + column * (tileWidth + gap));
-            const auto y = static_cast<std::uint16_t>(headerHeight + margin + row * (tileHeight + gap));
+            const auto y = static_cast<std::uint16_t>(areaTop + row * (tileHeight + gap));
             const bool selected = index == pageMenu_.cursor;
-            const bool current = pageMenu_.section == noIndex ? section == activeSection_ : page == activePage_;
             if (selected) canvas_.fillRect(x, y, tileWidth, tileHeight, true);
-            else canvas_.drawRect(x, y, tileWidth, tileHeight, true, 2u);
+            // Separators to the right and below, where a neighbour exists.
+            if (column + 1u < columns && index + 1u < count) {
+                canvas_.fillRect(static_cast<std::uint16_t>(x + tileWidth), y, gap, tileHeight, true);
+            }
+            if (row + 1u < shownRows && index + columns < count) {
+                canvas_.fillRect(x, static_cast<std::uint16_t>(y + tileHeight),
+                                 static_cast<std::uint16_t>(tileWidth + (column + 1u < columns ? gap : 0u)), gap, true);
+            }
 
             char name[48]{}, detail[16]{};
             entryName(section, page, name, sizeof name);
@@ -1189,11 +1198,6 @@ void DisplayService::renderPageMenu() {
             }
             if (*detail) {
                 drawCentered(x, tileWidth, static_cast<std::uint16_t>(textY + lineHeight + 6u), detail, !selected, 2u);
-            }
-            if (current) {
-                canvas_.fillRect(static_cast<std::uint16_t>(x + 8u),
-                                 static_cast<std::uint16_t>(y + tileHeight - 9u),
-                                 static_cast<std::uint16_t>(tileWidth - 16u), 4u, !selected);
             }
         }
     }
@@ -1543,6 +1547,13 @@ void DisplayService::render() {
     // packages: every widget/source lookup and separator scan used to run on
     // each menu movement. Apart from wasting CPU, that delayed the cooperative
     // tone driver and stretched a 40 ms key click into an audible long beep.
+    // The device's transient screens (switch-off countdown, firmware update)
+    // come before any menu or list they interrupt.
+    if (transientModal_.visible) {
+        canvas_.clear(false);
+        renderModal(transientModal_);
+        return;
+    }
     if (selection_.visible) {
         canvas_.clear(false);
         renderSelection();
@@ -1551,11 +1562,6 @@ void DisplayService::render() {
     if (pageMenu_.visible) {
         canvas_.clear(false);
         renderPageMenu();
-        return;
-    }
-    if (transientModal_.visible) {
-        canvas_.clear(false);
-        renderModal(transientModal_);
         return;
     }
     if (modal_.visible) {

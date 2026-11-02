@@ -73,18 +73,8 @@ void DisplayInputService::onButton(std::uint8_t id) {
         else if (id == 5u) display_.handle(InputAction::action2);
         return;
     }
-    if ((display_.selectionVisible() || display_.pageMenuVisible()) && (id == 0u || id == 1u)) {
-        // Selection lists and the page menu use the vertical buttons only for
-        // cursor movement.
-        // Act on the press edge so the sleep/configuration hold gestures do
-        // not add a one-second delay to each move.
-        upHoldPending_ = false;
-        downHoldPending_ = false;
-        upHoldStage_ = 0u;
-        display_.handle(id == 0u ? InputAction::previousSection
-                                 : InputAction::nextSection);
-        return;
-    }
+    // B0, B1, and B5 act when released, everywhere (pages, menus, dialogs),
+    // so their long presses (switch off, setup, refresh) work everywhere too.
     if (id != 0u && upHoldPending_) {
         upHoldPending_ = false;
         upHoldStage_ = 0u;
@@ -106,14 +96,8 @@ void DisplayInputService::onButton(std::uint8_t id) {
     case 3u: display_.handle(InputAction::nextPage); break;
     case 4u: display_.handle(InputAction::action1); break;
     case 5u:
-        // In dialogs B5 selects or dismisses at once; on a page it waits for
-        // the release (menu) or the hold (refresh).
-        if (display_.modalVisible()) {
-            display_.handle(InputAction::action2);
-        } else {
-            menuPressedAt_ = runtime_.millis();
-            menuHoldPending_ = true;
-        }
+        menuPressedAt_ = runtime_.millis();
+        menuHoldPending_ = true;
         break;
     default: break;
     }
@@ -142,6 +126,7 @@ void DisplayInputService::run() {
             display_.handle(semantic_display::InputAction::nextSection);
         } else if (elapsed >= setupHoldMs && buttons_.pressed(1u)) {
             downHoldPending_ = false;
+            display_.dismissPageMenu();
             if (actions_.openSetup) {
                 actions_.openSetup(actions_.context);
             }
@@ -174,6 +159,7 @@ void DisplayInputService::run() {
     buttons_.resetDebounce();
     feedback_.setSleeping(true);
     display_.dismissTransientModal();
+    display_.dismissPageMenu();
     display_.requestSleep();
 }
 

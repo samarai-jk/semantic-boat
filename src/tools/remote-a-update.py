@@ -8,6 +8,7 @@ Python 3 (no packages). One-step build and update: script/remote-a-update.sh.
     remote-a-update.py list                    displays known to the plugin
     remote-a-update.py status remote-a-1       running firmware (or bootloader)
     remote-a-update.py bus                     RS485 bus counters (replies, timeouts, errors)
+    remote-a-update.py install remote-a-1 navigation.json   install a catalog configuration ('all' too)
     remote-a-update.py update remote-a-1 [remote-a-2 ...] [--image remote-a.bin]
     remote-a-update.py update all              every display that is online
 
@@ -97,6 +98,9 @@ def main():
     commands.add_parser("bus", help="RS485 bus counters")
     status = commands.add_parser("status", help="running firmware of a display")
     status.add_argument("device")
+    install = commands.add_parser("install", help="install a catalog configuration ('all': every display online)")
+    install.add_argument("device")
+    install.add_argument("name")
     run = commands.add_parser("update", help="update displays ('all': every display online)")
     run.add_argument("devices", nargs="+")
     run.add_argument("--image", default=DEFAULT_IMAGE, type=pathlib.Path)
@@ -109,6 +113,13 @@ def main():
             print(f"{device['id']:16} {device['address']:20} {state:8} {device['label']}")
     elif arguments.command == "bus":
         print(json.dumps(single(socket_path, {"command": "bus"})["buses"], indent=2))
+    elif arguments.command == "install":
+        devices = [arguments.device]
+        if arguments.device == "all":
+            devices = [device["id"] for device in single(socket_path, {"command": "devices"})["devices"] if device["online"]]
+        for device in devices:
+            single(socket_path, {"command": "install-config", "device": device, "name": arguments.name})
+            print(f"{device}: {arguments.name} sent; the display compiles it and restarts")
     elif arguments.command == "status":
         print(f"{arguments.device}: {describe(single(socket_path, {'command': 'firmware-status', 'device': arguments.device})['status'])}")
     else:

@@ -1,23 +1,23 @@
 {
   "schema": "semantic-display/v1", "name": "Navigation",
   "permanent_sources": [
-    {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "mean"}},
-    {"id": "depth", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "minimum"}},
-    {"id": "tws", "path": "environment.wind.speedTrue", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "maximum"}},
-    {"id": "twd", "path": "environment.wind.directionTrue", "unit": "rad", "stale_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "last"}},
-    {"id": "cog", "path": "navigation.courseOverGroundTrue", "unit": "rad", "stale_ms": 10000},
-    {"id": "hdg", "path": "navigation.headingTrue", "unit": "rad", "stale_ms": 10000}
+    {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s", "outdated_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "mean"}},
+    {"id": "depth", "path": "environment.depth.belowKeel", "unit": "m", "outdated_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "minimum"}},
+    {"id": "tws", "path": "environment.wind.speedTrue", "unit": "m/s", "outdated_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "maximum"}},
+    {"id": "twd", "path": "environment.wind.directionTrue", "unit": "rad", "outdated_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "last"}},
+    {"id": "cog", "path": "navigation.courseOverGroundTrue", "unit": "rad", "outdated_ms": 10000},
+    {"id": "hdg", "path": "navigation.headingTrue", "unit": "rad", "outdated_ms": 10000}
   ],
   "sections": [
     {
       "id": "navigation", "title": "NAVIGATION", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "stale_ms": 10000},
-        {"id": "hdgm", "provider": "signalk", "path": "navigation.headingMagnetic", "unit": "rad", "stale_ms": 10000},
-        {"id": "state", "provider": "signalk", "path": "navigation.state", "stale_ms": 30000},
-        {"id": "position", "provider": "signalk", "path": "navigation.position", "stale_ms": 36000000, "outdated_ms": 10000, "subscribe": {"period_ms": 1000}},
-        {"id": "sats", "provider": "signalk", "path": "navigation.gnss.satellites", "stale_ms": 30000},
-        {"id": "hdop", "provider": "signalk", "path": "navigation.gnss.horizontalDilution", "stale_ms": 30000}
+        {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "outdated_ms": 10000},
+        {"id": "hdgm", "provider": "signalk", "path": "navigation.headingMagnetic", "unit": "rad", "outdated_ms": 10000},
+        {"id": "state", "provider": "signalk", "path": "navigation.state", "outdated_ms": 30000},
+        {"id": "position", "provider": "signalk", "path": "navigation.position", "outdated_ms": 10000, "subscribe": {"period_ms": 1000}},
+        {"id": "sats", "provider": "signalk", "path": "navigation.gnss.satellites", "outdated_ms": 30000},
+        {"id": "hdop", "provider": "signalk", "path": "navigation.gnss.horizontalDilution", "outdated_ms": 30000}
       ],
       "pages": [
         {"id": "main", "title": "OVERVIEW", "history_plot": {"source": "sog", "title": "SPEED OVER GROUND", "display_unit": "kn", "decimals": 1}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
@@ -46,9 +46,9 @@
     {
       "id": "wind", "title": "WIND", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "aws", "provider": "signalk", "path": "environment.wind.speedApparent", "unit": "m/s", "stale_ms": 10000},
-        {"id": "awa", "provider": "signalk", "path": "environment.wind.angleApparent", "unit": "rad", "stale_ms": 10000},
-        {"id": "twa", "provider": "signalk", "path": "environment.wind.angleTrueWater", "unit": "rad", "stale_ms": 10000}
+        {"id": "aws", "provider": "signalk", "path": "environment.wind.speedApparent", "unit": "m/s", "outdated_ms": 10000},
+        {"id": "awa", "provider": "signalk", "path": "environment.wind.angleApparent", "unit": "rad", "outdated_ms": 10000},
+        {"id": "twa", "provider": "signalk", "path": "environment.wind.angleTrueWater", "unit": "rad", "outdated_ms": 10000}
       ],
       "pages": [
         {"id": "wind", "title": "WIND", "history_plot": {"source": "tws", "title": "TRUE WIND GUSTS", "display_unit": "kn", "decimals": 0, "series": [{"source": "twd", "title": "TRUE DIRECTION", "display_unit": "deg", "decimals": 0, "circular": true}]}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
@@ -69,8 +69,8 @@
     {
       "id": "depth", "title": "DEPTH", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "surface", "provider": "signalk", "path": "environment.depth.belowSurface", "unit": "m", "stale_ms": 10000},
-        {"id": "xdcr", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "stale_ms": 10000}
+        {"id": "surface", "provider": "signalk", "path": "environment.depth.belowSurface", "unit": "m", "outdated_ms": 10000},
+        {"id": "xdcr", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "outdated_ms": 10000}
       ],
       "pages": [
         {"id": "depth", "title": "DEPTH", "history_plot": {"source": "depth", "title": "MIN DEPTH BELOW KEEL", "display_unit": "m", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
@@ -83,14 +83,14 @@
     {
       "id": "course", "title": "COURSE", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "dtw", "provider": "signalk", "path": "navigation.course.calcValues.distance", "unit": "m", "stale_ms": 10000},
-        {"id": "btw", "provider": "signalk", "path": "navigation.course.calcValues.bearingTrue", "unit": "rad", "stale_ms": 10000},
-        {"id": "xte", "provider": "signalk", "path": "navigation.course.calcValues.crossTrackError", "unit": "m", "stale_ms": 10000},
-        {"id": "vmg", "provider": "signalk", "path": "navigation.course.calcValues.velocityMadeGood", "unit": "m/s", "stale_ms": 10000},
-        {"id": "ttg", "provider": "signalk", "path": "navigation.course.calcValues.timeToGo", "unit": "s", "stale_ms": 10000},
-        {"id": "eta", "provider": "signalk", "path": "navigation.course.calcValues.estimatedTimeOfArrival", "stale_ms": 10000},
-        {"id": "pilot", "provider": "signalk", "path": "steering.autopilot.state", "stale_ms": 10000},
-        {"id": "target", "provider": "signalk", "path": "steering.autopilot.target.headingMagnetic", "unit": "rad", "stale_ms": 10000}
+        {"id": "dtw", "provider": "signalk", "path": "navigation.course.calcValues.distance", "unit": "m", "outdated_ms": 10000},
+        {"id": "btw", "provider": "signalk", "path": "navigation.course.calcValues.bearingTrue", "unit": "rad", "outdated_ms": 10000},
+        {"id": "xte", "provider": "signalk", "path": "navigation.course.calcValues.crossTrackError", "unit": "m", "outdated_ms": 10000},
+        {"id": "vmg", "provider": "signalk", "path": "navigation.course.calcValues.velocityMadeGood", "unit": "m/s", "outdated_ms": 10000},
+        {"id": "ttg", "provider": "signalk", "path": "navigation.course.calcValues.timeToGo", "unit": "s", "outdated_ms": 10000},
+        {"id": "eta", "provider": "signalk", "path": "navigation.course.calcValues.estimatedTimeOfArrival", "outdated_ms": 10000},
+        {"id": "pilot", "provider": "signalk", "path": "steering.autopilot.state", "outdated_ms": 10000},
+        {"id": "target", "provider": "signalk", "path": "steering.autopilot.target.headingMagnetic", "unit": "rad", "outdated_ms": 10000}
       ],
       "pages": [
         {"id": "wpt", "title": "TO WAYPOINT", "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [

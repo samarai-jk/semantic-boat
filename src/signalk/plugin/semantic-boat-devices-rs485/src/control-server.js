@@ -9,6 +9,7 @@
 //   {"command": "devices"}
 //   {"command": "bus"}  (counters of the RS485 buses: replies, timeouts, errors)
 //   {"command": "firmware-status", "device": "<id>"}
+//   {"command": "install-config", "device": "<id>", "name": "<catalog file, e.g. navigation.json>"}
 //   {"command": "firmware-update", "device": "<id>", "image": "<absolute path of remote-a.bin>"}
 // Replies: JSON lines; an update streams {"event": "progress", ...} and ends
 // with {"event": "done", ...} or {"event": "error", "message": ...}.
@@ -60,6 +61,10 @@ class ControlServer {
           id: device.id, label: device.label, address: device.address, online: device.online })) });
       } else if (request.command === 'bus') {
         send({ event: 'done', buses: this.runtime.busStates() });
+      } else if (request.command === 'install-config') {
+        // Sends a catalog configuration; the display compiles, stores, and restarts.
+        await this.runtime.install(request.device, request.name);
+        send({ event: 'done' });
       } else if (request.command === 'firmware-status') {
         const status = await this.runtime.firmware(request.device).status();
         send({ event: 'done', status });

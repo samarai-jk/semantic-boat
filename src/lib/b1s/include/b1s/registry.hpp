@@ -129,6 +129,7 @@ enum class Service : std::uint8_t {
 // Boards of firmware images (FIRMWARE.md).
 enum class Board : std::uint16_t {
     canMcuV1 = 1u,
+    remoteA = 2u,
 };
 
 // Parameters for configuration over CAN (scope, type, unit: registry).

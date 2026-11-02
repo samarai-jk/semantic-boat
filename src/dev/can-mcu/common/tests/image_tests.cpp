@@ -1,6 +1,6 @@
 // Host tests of the firmware image header and CRC (src/lib/b1s/FIRMWARE.md).
 // From the repository root:
-//   g++ -std=c++17 -Wall -Wextra -Isrc/dev/can-mcu/common/include
+//   g++ -std=c++17 -Wall -Wextra -Isrc/dev/can-mcu/common/include -Isrc/lib/b1s/include
 //       src/dev/can-mcu/common/tests/image_tests.cpp -o build/image_tests
 //   build/image_tests [stamped image .bin ...]
 #include <cassert>

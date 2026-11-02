@@ -2,7 +2,9 @@
 
 Part of [B1S](README.md). Decided 2026-10-18: one application slot and a
 small bootloader that speaks B1S (two slots would leave too little room:
-the network display needs about 110..115 KB). remote-a has no bootloader.
+the network display needs about 110..115 KB). remote-a (board `remoteA`)
+uses the same layout, image header, and boot rules with its own bootloader,
+updated over RS485 ([remote-a-bootloader](../../dev/remote-a-bootloader/README.md)).
 
 **Status:** implemented and tested on LT1 (2026-10-18): bootloader
 [`src/dev/can-mcu/can-mcu-bootloader`](../../dev/can-mcu/can-mcu-bootloader/README.md)

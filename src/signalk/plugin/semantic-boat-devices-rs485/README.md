@@ -102,6 +102,21 @@ firmware with the polled bus. The current addressed adapter requires 115200 baud
 - The gateway is read-only with respect to Signal K data. Alert forwarding,
   alert-action handling, and actuator commands are not implemented in this phase.
 
+## Firmware Updates And The Control Socket
+
+The plugin owns the serial port, so firmware updates of remote-a displays run
+in it (`src/firmware-update.js`; messages in
+[PROTOCOL.md, "Firmware update"](../../../lib/semantic-link/PROTOCOL.md#firmware-update)).
+Tools on this computer reach it through a Unix socket in the plugin's data
+directory, `~/.signalk/plugin-config-data/semantic-boat-devices-rs485/control.sock`
+(owner only; JSON lines, `src/control-server.js`): `devices`, `bus` (counters),
+`firmware-status`, `firmware-update`. The client is
+[`src/tools/remote-a-update.py`](../../../tools/remote-a-update.py); one-step
+build and update: `script/remote-a-update.sh <display id | all>`.
+
+During an update the display's session is paused; firmware requests get every
+other bus turn, and displays that stopped answering are not probed meanwhile.
+
 ## Sensor Commissioning
 
 The [sound meter commissioning notes](docs/sound-meter.md) contain the verified

@@ -199,6 +199,7 @@ records:
 # header names the board an image is built for.
 boards:
   - {code: 1, id: canMcuV1, description: "can-mcu V1.0 (STM32L431CC): bootloader 16 KB at 0x08000000, application 224 KB at 0x08004000"}
+  - {code: 2, id: remoteA, description: "remote-a display (STM32L431CC, RS485): same layout, remote-a bootloader updated over RS485 (semantic-link)"}
 
 # Device types. product_code: 126996; preferred_address: start address of
 # the claim; device_class/device_function: NMEA 2000 NAME table;

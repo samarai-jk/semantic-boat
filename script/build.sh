@@ -5,13 +5,14 @@ usage() {
     printf '%s\n' \
         'Usage: script/build.sh <firmware> [debug|release] [refresh] [flash|update|flash-all] [rescue]' \
         '' \
-        '  firmware - directory name below src/dev or src/dev/<board>, for example'         '             remote-a or lab-test-01' \
+        '  firmware - directory name below src/dev or src/dev/<board>, for example'         '             remote-a or lab-test-01; remote-a-rs485 is remote-a with its' \
+        '             display data on RS485 (the build for the boat displays)' \
         '  debug    - use the <firmware>-debug CMake preset' \
         '  release  - use the <firmware>-release CMake preset (default)' \
         '  refresh  - incremental build; otherwise perform a clean build' \
         '  flash    - flash the ELF after a successful build' \
         '  update   - shorthand for refresh + flash' \
-        '  flash-all - can-mcu devices: build the bootloader too and flash both' \
+        '  flash-all - can-mcu devices and remote-a: build the bootloader too and flash both' \
         '             (new boards, after a chip erase; src/lib/b1s/FIRMWARE.md)' \
         '  rescue   - flash with connect under reset (NRST), for firmware that' \
         '             disables the debug pins or sleeps right after start' \
@@ -38,8 +39,14 @@ cd -- "$repo_root"
 firmware="$1"
 shift
 [[ "$firmware" =~ ^[a-zA-Z0-9_-]+$ ]] || fail "Invalid firmware name: $firmware"
+# Build variants share the sources of a firmware (remote-a-rs485: remote-a with
+# its display data on RS485 instead of the ST-Link virtual COM port).
+source_firmware="$firmware"
+case "$firmware" in
+    remote-a-rs485) source_firmware=remote-a ;;
+esac
 firmware_dir=""
-for candidate in "src/dev/$firmware" src/dev/*/"$firmware"; do
+for candidate in "src/dev/$source_firmware" src/dev/*/"$source_firmware"; do
     if [[ -f "$candidate/CMakeLists.txt" ]]; then
         firmware_dir="$candidate"
         break
@@ -70,7 +77,7 @@ for tool in cmake ninja arm-none-eabi-gcc arm-none-eabi-g++ arm-none-eabi-objcop
 done
 
 preset="$firmware-$build_type"
-elf_path="build/$firmware/$build_type/$firmware_dir/$firmware.elf"
+elf_path="build/$firmware/$build_type/$firmware_dir/$source_firmware.elf"
 printf '[build.sh] Firmware: %s | type: %s | refresh=%s | flash=%s\n' \
     "$firmware" "$build_type" "$do_refresh" "$do_flash"
 # A clean build also configures from scratch, so a stale cache (old compiler
@@ -90,16 +97,23 @@ printf '[build.sh] Build succeeded: %s\n' "$elf_path"
 
 if [[ "$do_flash" -eq 1 ]]; then
     case "$firmware" in
-        remote-a|lab-test-01|engine-mon|can-mcu-bootloader) openocd_target=target/stm32l4x.cfg ;;
+        remote-a|remote-a-rs485|remote-a-bootloader|lab-test-01|engine-mon|can-mcu-bootloader)
+            openocd_target=target/stm32l4x.cfg ;;
         *) fail "No OpenOCD target is configured for $firmware; add its mapping to script/build.sh." ;;
     esac
     images=()
     if [[ "$do_flash_all" -eq 1 ]]; then
-        # can-mcu applications start from the can-mcu bootloader.
-        [[ "$firmware_dir" == src/dev/can-mcu/* && "$firmware" != can-mcu-bootloader ]] ||
-            fail "flash-all is for can-mcu applications (bootloader + application)"
-        "$repo_root/script/build.sh" can-mcu-bootloader release refresh
-        images+=("build/can-mcu-bootloader/release/src/dev/can-mcu/can-mcu-bootloader/can-mcu-bootloader.elf")
+        # can-mcu applications start from the can-mcu bootloader, remote-a from
+        # the remote-a bootloader.
+        if [[ "$source_firmware" == remote-a ]]; then
+            "$repo_root/script/build.sh" remote-a-bootloader release refresh
+            images+=("build/remote-a-bootloader/release/src/dev/remote-a-bootloader/remote-a-bootloader.elf")
+        else
+            [[ "$firmware_dir" == src/dev/can-mcu/* && "$firmware" != can-mcu-bootloader ]] ||
+                fail "flash-all is for applications (bootloader + application)"
+            "$repo_root/script/build.sh" can-mcu-bootloader release refresh
+            images+=("build/can-mcu-bootloader/release/src/dev/can-mcu/can-mcu-bootloader/can-mcu-bootloader.elf")
+        fi
     fi
     images+=("$elf_path")
     openocd="${OPENOCD:-openocd}"

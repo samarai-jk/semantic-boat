@@ -162,6 +162,12 @@ product code, model strings, device class and function).
   application at 0x08004000, [FIRMWARE.md](src/lib/b1s/FIRMWARE.md)).
   `build.sh <device> flash` writes the application only; `flash-all` writes
   bootloader and application; `rescue` connects under reset.
+- remote-a displays (on the boat RS485 bus) are updated over RS485, not with
+  the ST-Link: `script/remote-a-update.sh <display id | all>` builds the
+  RS485 release and installs it (about 70 s per display; display ids:
+  `python3 src/tools/remote-a-update.py list`). It needs Signal K running with
+  the RS485 plugin. A display gets the bootloader once with
+  `script/build.sh remote-a-rs485 release flash-all` (ST-Link).
 - **Never write the option bytes from firmware or tools, and never set
   readout protection level 2**: level 2 locks out the ST-Link permanently,
   the only way to brick a device for good.

@@ -22,6 +22,44 @@
       }
     },
     {
+      "name": "remote-a-rs485-debug",
+      "inherits": "remote-a-debug",
+      "displayName": "remote-a on RS485 (Debug)",
+      "binaryDir": "${sourceDir}/build/remote-a-rs485/debug",
+      "cacheVariables": {
+        "REMOTE_A_USE_STLINK_DATA_LINK": "OFF"
+      }
+    },
+    {
+      "name": "remote-a-rs485-release",
+      "inherits": "remote-a-rs485-debug",
+      "displayName": "remote-a on RS485 (Release)",
+      "binaryDir": "${sourceDir}/build/remote-a-rs485/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "remote-a-bootloader-debug",
+      "displayName": "remote-a-bootloader (Debug)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/remote-a-bootloader/debug",
+      "toolchainFile": "${sourceDir}/src/dev/remote-a-bootloader/cmake/gcc-arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SEMANTIC_BOAT_DEVICE": "remote-a-bootloader"
+      }
+    },
+    {
+      "name": "remote-a-bootloader-release",
+      "inherits": "remote-a-bootloader-debug",
+      "displayName": "remote-a-bootloader (Release)",
+      "binaryDir": "${sourceDir}/build/remote-a-bootloader/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "lab-test-01-debug",
       "displayName": "lab-test-01 (Debug)",
       "generator": "Ninja",
@@ -90,6 +128,22 @@
     {
       "name": "remote-a-release",
       "configurePreset": "remote-a-release"
+    },
+    {
+      "name": "remote-a-rs485-debug",
+      "configurePreset": "remote-a-rs485-debug"
+    },
+    {
+      "name": "remote-a-rs485-release",
+      "configurePreset": "remote-a-rs485-release"
+    },
+    {
+      "name": "remote-a-bootloader-debug",
+      "configurePreset": "remote-a-bootloader-debug"
+    },
+    {
+      "name": "remote-a-bootloader-release",
+      "configurePreset": "remote-a-bootloader-release"
     },
     {
       "name": "lab-test-01-debug",

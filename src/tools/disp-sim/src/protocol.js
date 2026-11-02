@@ -27,6 +27,13 @@ export const MessageType = Object.freeze({
   ALERT_SILENCE: 0x43,
   BUS_POLL: 0x50,
   BUS_IDLE: 0x51,
+  FIRMWARE_QUERY: 0x60,
+  FIRMWARE_STATUS: 0x61,
+  FIRMWARE_ENTER_BOOTLOADER: 0x62,
+  FIRMWARE_BEGIN: 0x63,
+  FIRMWARE_DATA: 0x64,
+  FIRMWARE_END: 0x65,
+  FIRMWARE_RESTART: 0x66,
 });
 
 export function crc16Ccitt(data) {
@@ -250,5 +257,17 @@ export function parseSubscription(payload) {
     ...((payload[6] & 2) !== 0 ? { ageSupported: true } : {}),
     provider: payload.subarray(9, 9 + providerLength).toString('utf8'),
     path: payload.subarray(9 + providerLength).toString('utf8'),
+  };
+}
+
+export const FirmwareMode = Object.freeze({ APPLICATION: 1, BOOTLOADER: 2 });
+export const FIRMWARE_CHUNK_BYTES = 232;
+
+export function parseFirmwareStatus(payload) {
+  if (payload.length < 18 || payload.length !== 18 + payload[17]) throw new Error('Malformed firmware status');
+  return {
+    result: payload[0], mode: payload[1], board: payload.readUInt16LE(2), nextOffset: payload.readUInt32LE(4),
+    imageCrc: payload.readUInt32LE(8), version: payload.readUInt32LE(12),
+    unconfirmed: (payload[16] & 1) !== 0, text: payload.subarray(18).toString('utf8')
   };
 }

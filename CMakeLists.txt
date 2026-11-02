@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 set(SEMANTIC_BOAT_DEVICE "remote-a" CACHE STRING "Firmware device to build")
-set_property(CACHE SEMANTIC_BOAT_DEVICE PROPERTY STRINGS remote-a lab-test-01 engine-mon can-mcu-bootloader)
+set_property(CACHE SEMANTIC_BOAT_DEVICE PROPERTY STRINGS remote-a remote-a-bootloader lab-test-01 engine-mon can-mcu-bootloader)
 
 string(REPLACE "-" "_" SEMANTIC_BOAT_DEVICE_TARGET "${SEMANTIC_BOAT_DEVICE}")
 project(semantic_boat_${SEMANTIC_BOAT_DEVICE_TARGET} LANGUAGES C CXX ASM)
@@ -23,6 +23,8 @@ add_subdirectory(src/lib/semantic-display)
 
 if(SEMANTIC_BOAT_DEVICE STREQUAL "remote-a")
     add_subdirectory(src/dev/remote-a)
+elseif(SEMANTIC_BOAT_DEVICE STREQUAL "remote-a-bootloader")
+    add_subdirectory(src/dev/remote-a-bootloader)
 elseif(SEMANTIC_BOAT_DEVICE STREQUAL "lab-test-01")
     add_subdirectory(src/dev/can-mcu/lab-test-01)
 elseif(SEMANTIC_BOAT_DEVICE STREQUAL "engine-mon")

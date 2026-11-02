@@ -37,7 +37,7 @@ def stamp(image):
         sys.exit("image too short for a header")
     magic, version = struct.unpack_from("<IH", image, HEADER_OFFSET)
     if magic != MAGIC or version != 1:
-        sys.exit("no B1S image header at offset 0x200 (can_mcu::image::Header in section .image_header)")
+        sys.exit("no B1S image header at offset 0x200 (b1s/firmware_image.hpp Header in section .image_header)")
     if len(image) > MAX_SIZE:
         sys.exit(f"image of {len(image)} bytes exceeds the {MAX_SIZE}-byte application slot")
     struct.pack_into("<I", image, HEADER_OFFSET + 12, len(image))

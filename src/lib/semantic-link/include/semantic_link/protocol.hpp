@@ -41,7 +41,28 @@ enum class MessageType : std::uint8_t {
     alertSilence = 0x43u,
     busPoll = 0x50u,
     busIdle = 0x51u,
+    // Firmware update (PROTOCOL.md, "Firmware update"): gateway requests,
+    // each answered with firmwareStatus.
+    firmwareQuery = 0x60u,
+    firmwareStatus = 0x61u,
+    firmwareEnterBootloader = 0x62u,
+    firmwareBegin = 0x63u,
+    firmwareData = 0x64u,
+    firmwareEnd = 0x65u,
+    firmwareRestart = 0x66u,
 };
+
+enum class FirmwareMode : std::uint8_t { application = 1u, bootloader = 2u };
+
+// Status codes as in B1S (src/lib/b1s/FIRMWARE.md).
+enum class FirmwareResult : std::uint8_t {
+    done = 0u, unknown = 1u, invalidValue = 3u, busy = 5u, wrongBoard = 7u, tooLarge = 8u,
+    flashError = 9u, unexpectedOffset = 10u, crcMismatch = 11u,
+};
+
+// Image bytes per firmwareData message (offset u32 + data, a multiple of 8).
+inline constexpr std::size_t firmwareChunkBytes = 232u;
+inline constexpr std::uint8_t firmwareUnconfirmed = 1u; // firmwareStatus flags
 
 enum class AlertAction : std::uint8_t {
     acknowledge = 0u,
@@ -140,6 +161,28 @@ inline void writeU32(std::uint8_t* data, std::uint32_t value) {
     data[1] = static_cast<std::uint8_t>(value >> 8u);
     data[2] = static_cast<std::uint8_t>(value >> 16u);
     data[3] = static_cast<std::uint8_t>(value >> 24u);
+}
+
+// firmwareStatus payload: result, mode, board u16, next offset u32, image
+// CRC u32, version u32, flags, text length, text (version or the reason the
+// bootloader stays). Returns the size, or 0 if it does not fit.
+inline std::size_t encodeFirmwareStatus(std::uint8_t* output, std::size_t capacity, FirmwareResult result,
+                                        FirmwareMode mode, std::uint16_t board, std::uint32_t nextOffset,
+                                        std::uint32_t imageCrc, std::uint32_t version, std::uint8_t flags,
+                                        const char* text) {
+    std::size_t length = 0u;
+    while (text && text[length] != '\0' && length < 64u) ++length;
+    if (!output || capacity < 18u + length) return 0u;
+    output[0] = static_cast<std::uint8_t>(result);
+    output[1] = static_cast<std::uint8_t>(mode);
+    writeU16(output + 2u, board);
+    writeU32(output + 4u, nextOffset);
+    writeU32(output + 8u, imageCrc);
+    writeU32(output + 12u, version);
+    output[16] = flags;
+    output[17] = static_cast<std::uint8_t>(length);
+    for (std::size_t index = 0u; index < length; ++index) output[18u + index] = static_cast<std::uint8_t>(text[index]);
+    return 18u + length;
 }
 
 } // namespace semantic_link

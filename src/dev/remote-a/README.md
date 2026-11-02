@@ -118,6 +118,22 @@ observed peak stack usage in KiB. The measurement is allocation-free. Stack
 painting is scanned only when Developer mode is enabled or the active page
 subscribes to a local memory metric.
 
+## Firmware
+
+remote-a starts from the [remote-a bootloader](../remote-a-bootloader/README.md):
+bootloader in the first 16 KB, the application at 0x08004000 with a B1S image
+header (board `remoteA`, version 0.2.0; `firmware_service.cpp`). The boat
+displays use the RS485 build:
+
+```sh
+script/build.sh remote-a-rs485 release flash-all   # once per display, ST-Link: bootloader + application
+script/remote-a-update.sh remote-a-1               # then: build and update over RS485 (about 70 s)
+```
+
+On "enter bootloader" the display shows a full-screen FIRMWARE UPDATE notice
+(the E-paper keeps it during the update) and restarts about 3 s later. A new
+image confirms itself after 10 s of normal running.
+
 ## Installing applications
 
 The active compiled package occupies a fixed 8 KiB RAM2 buffer. Download and

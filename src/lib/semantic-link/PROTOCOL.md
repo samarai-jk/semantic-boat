@@ -204,11 +204,40 @@ without removing the visual alert. The gateway broadcasts `Alert silence` for
 that ID so every display stops sounding it. A local-only Hide action is never
 sent on the wire.
 
+## Firmware update
+
+Addressed RS485 (version 2) only. The gateway updates a remote-a display's
+firmware with these requests; every one is answered with `Firmware status`.
+The image is a B1S firmware image (header at offset 0x200, board `remoteA`,
+[FIRMWARE.md](../b1s/FIRMWARE.md)); the display has the remote-a bootloader
+([src/dev/remote-a-bootloader](../../dev/remote-a-bootloader/README.md)).
+
+| Type | Message | Direction | Payload |
+| --- | --- | --- | --- |
+| `0x60` | Firmware query | Gateway to device | — |
+| `0x61` | Firmware status | Device to gateway | result `u8`, mode `u8` (1 application, 2 bootloader), board `u16`, next offset `u32`, image CRC `u32`, version `u32`, flags `u8` (bit 0: not yet confirmed), text length `u8`, text (version, or the bootloader's version, the reason it stays, and its counters: requests, retries, late replies, decode errors) |
+| `0x62` | Enter bootloader | Gateway to device | — (the application shows "FIRMWARE UPDATE" and restarts into the bootloader about 3 s later) |
+| `0x63` | Firmware begin | Gateway to device | the 64-byte image header; the bootloader erases the first page |
+| `0x64` | Firmware data | Gateway to device | offset `u32`, up to 232 image bytes (a multiple of 8), in order |
+| `0x65` | Firmware end | Gateway to device | — (CRC checked; on success the device starts the new image 200 ms after the reply) |
+| `0x66` | Firmware restart | Gateway to device | — (the bootloader restarts, starting the application if it is valid) |
+
+Results are the B1S status codes: 0 done, 3 invalid value, 7 wrong board, 8
+image too large, 9 flash error, 10 unexpected offset (the status carries the
+offset the device expects), 11 CRC mismatch. An application answers a query
+and the enter request, queued behind older messages; the bootloader answers
+every request at once. A retried request (same token) gets the cached reply,
+so a chunk is never written twice; a lost reply after an applied chunk shows
+as unexpected offset and the gateway resumes at the reported offset. A new
+image starts unconfirmed (flag bit 0) and confirms itself after 10 s of
+normal running; three starts without confirmation leave the device in its
+bootloader. The gateway pauses the display's session during an update.
+
 ## Limits and behavior
 
 - Maximum decoded payload: 240 bytes.
-- Remote-A currently accepts Semantic Link configuration JSON up to 8,192
-  bytes, lists up to
+- Remote-A currently accepts Semantic Link configuration JSON up to 10,240
+  bytes (8,192 before November 2026), lists up to
   16 files, and filenames up to 47 UTF-8 bytes. These are implementation limits,
   not framing limits. Its separate SWD staging area accepts up to 16,368 bytes.
 - Provider and path lengths are each encoded in one byte, but their combined

@@ -7,7 +7,9 @@
 // configurations through it. Without the hub the displays keep their live
 // values and installed configurations.
 
+const path = require('node:path');
 const { Rs485Runtime } = require('./src/runtime');
+const { ControlServer } = require('./src/control-server');
 
 // Contract: src/signalk/plugin/semantic-boat-devices/README.md, "Transports".
 const hubProperty = 'semanticBoatDevicesHub';
@@ -18,6 +20,7 @@ module.exports = app => {
   let registration = null;
   let unsubscribeHub = null;
   let statusTimer = null;
+  let control = null;
   let transition = Promise.resolve();
   const serialize = action => {
     transition = transition.then(action).catch(error => app.setPluginError(error.message));
@@ -47,6 +50,8 @@ module.exports = app => {
     clearInterval(statusTimer); statusTimer = null;
     registration?.(); registration = null;
     unsubscribeHub?.(); unsubscribeHub = null;
+    const previousControl = control; control = null;
+    await previousControl?.stop();
     const previous = runtime; runtime = null;
     if (previous) await previous.stop();
   };
@@ -88,6 +93,13 @@ module.exports = app => {
       runtime = instance;
       try {
         await instance.start(options);
+        // Local control socket for tools on this computer (firmware updates:
+        // src/tools/remote-a-update.py).
+        if (app.getDataDirPath) {
+          control = new ControlServer({ path: path.join(app.getDataDirPath(), 'control.sock'), runtime: instance,
+            log: message => app.debug?.(message) });
+          await control.start();
+        }
       } catch (error) { await stop(); throw error; }
       // The hub publishes itself (or null when it stops) as a property value;
       // late subscribers receive all values so far, the last one counts.

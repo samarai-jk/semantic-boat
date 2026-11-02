@@ -27,12 +27,14 @@ target_sources(${REMOTE_A_TARGET} PRIVATE
     src/display_input_service.cpp
     src/display_link_service.cpp
     src/feedback_service.cpp
+    src/firmware_service.cpp
     src/hal_eeprom.cpp
     src/hal_epd_transport.cpp
     src/setup_service.cpp
     src/uart_transport.cpp
 )
-target_include_directories(${REMOTE_A_TARGET} PRIVATE include src)
+# b1s: only the header-only firmware image format (b1s/firmware_image.hpp).
+target_include_directories(${REMOTE_A_TARGET} PRIVATE include src ../../lib/b1s/include)
 
 # Product firmware: a Release build must not contain development tools
 # (AGENTS.md). remote-a has no dev-only sources yet.
@@ -43,9 +45,14 @@ target_compile_definitions(${REMOTE_A_TARGET} PRIVATE
 target_link_libraries(${REMOTE_A_TARGET} semantic_display semantic_link slstm32 stm32cubemx)
 target_link_options(${REMOTE_A_TARGET} PRIVATE -Wl,-Map=$<TARGET_FILE_DIR:${REMOTE_A_TARGET}>/remote-a.map)
 
+# The application starts from the remote-a bootloader (src/dev/remote-a-bootloader):
+# stamp size and CRC into its image header (src/lib/b1s/FIRMWARE.md); remote-a.bin
+# is the image sent over RS485 (script/remote-a-update.sh).
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_custom_command(TARGET ${REMOTE_A_TARGET} POST_BUILD
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../../lib/b1s/tools/stamp_image.py --objcopy ${CMAKE_OBJCOPY}
+        $<TARGET_FILE:${REMOTE_A_TARGET}> $<TARGET_FILE_DIR:${REMOTE_A_TARGET}>/remote-a.bin
     COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${REMOTE_A_TARGET}> $<TARGET_FILE_DIR:${REMOTE_A_TARGET}>/remote-a.hex
-    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${REMOTE_A_TARGET}> $<TARGET_FILE_DIR:${REMOTE_A_TARGET}>/remote-a.bin
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${REMOTE_A_TARGET}>
     VERBATIM
 )

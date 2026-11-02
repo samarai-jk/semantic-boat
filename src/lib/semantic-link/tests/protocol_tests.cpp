@@ -94,5 +94,19 @@ int main() {
     poll.flags = 2u;
     assert(second.request(poll, 1100u, 1100u));
     assert(second.reply(1100u, frame.data(), frame.size()) != 0u);
+    {
+        // Firmware status: fixed fields, then the text.
+        std::uint8_t status[semantic_link::maxPayloadSize]{};
+        const auto size = semantic_link::encodeFirmwareStatus(
+            status, sizeof status, semantic_link::FirmwareResult::unexpectedOffset,
+            semantic_link::FirmwareMode::bootloader, 2u, 0x1234u, 0xCAFEF00Du, 0x01000000u,
+            semantic_link::firmwareUnconfirmed, "bootloader 1.0.0");
+        assert(size == 18u + 16u);
+        assert(status[0] == 10u && status[1] == 2u && semantic_link::readU16(status + 2u) == 2u);
+        assert(semantic_link::readU32(status + 4u) == 0x1234u && semantic_link::readU32(status + 8u) == 0xCAFEF00Du);
+        assert(status[16] == 1u && status[17] == 16u && status[18] == 'b');
+        assert(semantic_link::encodeFirmwareStatus(status, 20u, semantic_link::FirmwareResult::done,
+            semantic_link::FirmwareMode::application, 2u, 0u, 0u, 0u, 0u, "too long for twenty") == 0u);
+    }
     return 0;
 }

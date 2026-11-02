@@ -26,6 +26,14 @@ struct ConfigMessageReceiver {
     void (*configEnd)(void* context, std::uint16_t transferId){};
 };
 
+// Firmware update requests (semantic-link PROTOCOL.md, "Firmware update").
+struct FirmwareMessageReceiver {
+    void* context{};
+    // Writes the firmwareStatus payload; returns its size.
+    std::size_t (*status)(void* context, std::uint8_t* output, std::size_t capacity){};
+    void (*enterBootloader)(void* context){};
+};
+
 struct AlertMessageReceiver {
     void* context{};
     void (*update)(void* context, std::uint8_t level, std::uint32_t occurrence,
@@ -49,6 +57,7 @@ public:
     void transportRestored();
     void setConfigReceiver(ConfigMessageReceiver receiver) { configReceiver_ = receiver; }
     void setAlertReceiver(AlertMessageReceiver receiver) { alertReceiver_ = receiver; }
+    void setFirmwareReceiver(FirmwareMessageReceiver receiver) { firmwareReceiver_ = receiver; }
     bool requestConfigList();
     bool requestConfig(std::string_view name);
     bool sendAlertAction(semantic_link::AlertAction action, std::uint32_t occurrence,
@@ -85,6 +94,7 @@ private:
     std::uint8_t address_{};
     ConfigMessageReceiver configReceiver_{};
     AlertMessageReceiver alertReceiver_{};
+    FirmwareMessageReceiver firmwareReceiver_{};
     std::uint16_t subscribedSection_{semantic_display::noIndex};
     std::uint32_t lastAnnouncementAt_{};
     std::uint32_t lastPeerAt_{};

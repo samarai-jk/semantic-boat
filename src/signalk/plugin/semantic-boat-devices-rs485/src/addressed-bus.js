@@ -68,6 +68,27 @@ class AddressedBus {
       this.reconnect();
     });
   }
+  // One request to a device outside its display session (firmware updates):
+  // resolves with the reply message, rejects after three unanswered tries.
+  // Retries keep the token, so the device replays its reply instead of
+  // applying the request twice.
+  exchange(address, type, payload = Buffer.alloc(0)) {
+    const device = this.devices.find(entry => entry.address === address);
+    if (!device) return Promise.reject(new Error(`No device at RS485 address ${address}`));
+    if (device.exchange) return Promise.reject(new Error(`RS485 address ${address} is busy`));
+    return new Promise((resolve, reject) => {
+      device.exchange = { message: { type, payload }, resolve, reject };
+      this.schedule(0);
+    });
+  }
+  // A paused device is polled only for exchanges; its display session waits.
+  pause(address, paused) {
+    const device = this.devices.find(entry => entry.address === address);
+    if (!device) return;
+    device.paused = paused;
+    if (paused && device.request && !device.request.exchange && this.current !== device.request) device.request = null;
+    if (!paused) this.schedule(0);
+  }
   devicePort(address) {
     if (this.devices.some(device => device.address === address)) throw new Error('Duplicate address on RS485 bus');
     const device = new DevicePort(this, address); this.devices.push(device); return device;
@@ -96,16 +117,29 @@ class AddressedBus {
   }
   poll() {
     if (!this.running || !this.port.isOpen || this.current) return;
+    // A waiting exchange (firmware update) gets every other turn; meanwhile
+    // devices that stopped answering are not probed, as each probe costs
+    // three response timeouts.
     let device;
-    for (let count = 0; count < this.devices.length; count += 1) {
+    const exchanging = this.devices.find(candidate => candidate.exchange);
+    if (exchanging && !this.exchangeTurn) device = exchanging;
+    for (let count = 0; !device && count < this.devices.length; count += 1) {
       const candidate = this.devices[this.cursor++ % this.devices.length];
-      if (candidate.isOpen && Date.now() >= (candidate.probeAt ?? 0)) { device = candidate; break; }
+      if (exchanging && candidate.lastError && !candidate.exchange) continue;
+      if (candidate.exchange || (candidate.isOpen && !candidate.paused && Date.now() >= (candidate.probeAt ?? 0))) {
+        device = candidate;
+      }
     }
+    if (!device && exchanging) device = exchanging;
+    this.exchangeTurn = Boolean(device?.exchange);
     if (!device) { this.schedule(100); return; }
+    if (device.exchange && !device.request?.exchange) device.request = null;
     if (!device.request) {
-      const message = device.pending?.message ?? { type: this.protocol.MessageType.BUS_POLL, payload: Buffer.alloc(0) };
+      const exchange = device.exchange ?? null;
+      const message = exchange?.message ?? device.pending?.message ??
+        { type: this.protocol.MessageType.BUS_POLL, payload: Buffer.alloc(0) };
       const sequence = this.sequence++ & 255;
-      device.request = { device, sequence, attempts: 0, pending: device.pending,
+      device.request = { device, sequence, attempts: 0, exchange, pending: exchange ? null : device.pending,
         frame: this.protocol.encodeFrame(message.type, sequence, message.payload, device.address, this.protocol.ADDRESSED_PROTOCOL_VERSION) };
     }
     const request = device.request; request.attempts += 1; request.drained = false; request.response = null;
@@ -139,6 +173,13 @@ class AddressedBus {
     const request = this.current; if (!request) return;
     clearTimeout(this.responseTimer); this.current = null;
     const device = request.device; device.request = null;
+    if (request.exchange) {
+      device.exchange = null;
+      if (error) request.exchange.reject(error);
+      else { device.receivedFrames += 1; request.exchange.resolve(request.response); }
+      this.schedule();
+      return;
+    }
     if (error) { device.lastError = error.message; device.probeAt = Date.now() + 1000; }
     else {
       device.lastError = null; device.probeAt = 0; device.receivedFrames += 1;
@@ -157,6 +198,7 @@ class AddressedBus {
     if (this.current?.device === device) { clearTimeout(this.responseTimer); this.current = null; }
     device.request = null;
     if (device.pending) { const pending = device.pending; device.pending = null; pending.callback(new Error('RS485 bus session ended')); }
+    if (device.exchange) { const exchange = device.exchange; device.exchange = null; exchange.reject(new Error('RS485 bus session ended')); }
   }
   async stop() {
     this.running = false;

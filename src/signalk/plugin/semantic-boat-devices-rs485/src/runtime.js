@@ -7,6 +7,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { SerialLink } = require('./serial-link');
 const { AddressedBus } = require('./addressed-bus');
+const { FirmwareUpdate } = require('./firmware-update');
 
 function validateOptions(options) {
   const buses = options.buses ?? [];
@@ -55,6 +56,7 @@ class Rs485Runtime {
   async start(options) {
     const { buses, devices, mappings } = validateOptions(structuredClone(options));
     const protocol = await import(pathToFileURL(path.join(__dirname, '../../../../tools/disp-sim/src/protocol.js')));
+    this.protocol = protocol;
     const masters = new Map();
     for (const bus of buses.filter(entry => entry.type === 'rs485-addressed')) {
       const master = new AddressedBus({ bus, protocol, onError: this.onError });
@@ -94,6 +96,16 @@ class Rs485Runtime {
   }
 
   busStates() { return this.buses.map(bus => bus.snapshot()); }
+
+  // Firmware of a display on an addressed RS485 bus (firmware-update.js).
+  firmware(id) {
+    const link = this.links.find(entry => entry.session.device.id === id);
+    if (!link) throw new Error(`Unknown display ${id}`);
+    const { bus, address } = link.session.device;
+    const master = this.buses.find(entry => entry.bus.id === bus);
+    if (!master) throw new Error(`${id} is not on an addressed RS485 bus`);
+    return new FirmwareUpdate({ master, address, protocol: this.protocol });
+  }
 
   install(id, name) {
     const link = this.links.find(entry => entry.session.device.id === id);

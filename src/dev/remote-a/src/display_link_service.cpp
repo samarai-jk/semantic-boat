@@ -173,6 +173,19 @@ bool DisplayLinkService::accepts(std::uint16_t sourceIndex) const {
 void DisplayLinkService::handle(const semantic_link::MessageView& message) {
     const auto* payload = message.payload;
     const auto size = message.payloadSize;
+    // Firmware requests answer with the firmware status and leave the
+    // display session alone (the gateway pauses it during an update).
+    if ((message.type == semantic_link::MessageType::firmwareQuery ||
+         message.type == semantic_link::MessageType::firmwareEnterBootloader) && firmwareReceiver_.status) {
+        std::uint8_t status[semantic_link::maxPayloadSize]{};
+        const auto statusSize = firmwareReceiver_.status(firmwareReceiver_.context, status, sizeof status);
+        if (statusSize != 0u) (void)send(semantic_link::MessageType::firmwareStatus, status, statusSize);
+        if (message.type == semantic_link::MessageType::firmwareEnterBootloader &&
+            firmwareReceiver_.enterBootloader) {
+            firmwareReceiver_.enterBootloader(firmwareReceiver_.context);
+        }
+        return;
+    }
     const auto firstPeerFrame = !peerSeen_;
     peerSeen_ = true;
     lastPeerAt_ = runtime_.millis();

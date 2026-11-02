@@ -400,6 +400,7 @@ void DisplayService::requestFullRefresh() {
 void DisplayService::requestSleep() {
     if (sleepActive()) return;
     sleepRequested_ = true;
+    dirty_ = true;
     cancelObsoleteTransfer();
 }
 
@@ -530,6 +531,79 @@ void DisplayService::dismissSelection() {
     if (!selection_.visible) return;
     selection_.visible = false;
     invalidate(0u);
+}
+
+bool DisplayService::pageByOrder(std::size_t order, PageView& result,
+                                 std::size_t& pagesInSection) const {
+    std::size_t index{};
+    bool found{};
+    RecordView record{};
+    if (!package_.first(record)) return false;
+    do {
+        PageView page{};
+        if (!package_.page(record, page)) continue;
+        if (index++ == order) { result = page; found = true; break; }
+    } while (package_.next(record));
+    if (!found || !package_.first(record)) return false;
+    pagesInSection = 0u;
+    do {
+        PageView page{};
+        if (package_.page(record, page) && page.sectionIndex == result.sectionIndex) ++pagesInSection;
+    } while (package_.next(record));
+    return true;
+}
+
+std::string_view DisplayService::pageMenuItem(void* context, std::size_t index) {
+    auto& self = *static_cast<DisplayService*>(context);
+    PageView page{};
+    SectionView section{};
+    std::size_t pagesInSection{};
+    if (!self.pageByOrder(index, page, pagesInSection) ||
+        !self.sectionByIndex(page.sectionIndex, section)) return {};
+    char sectionTitle[22]{}, pageTitle[22]{};
+    copyView(sectionTitle, sizeof sectionTitle, section.title);
+    copyView(pageTitle, sizeof pageTitle, page.title);
+    // A section with one page is named by the section alone.
+    if (pagesInSection == 1u || page.title.empty() || page.title == section.title) {
+        copyText(self.pageMenuText_, sizeof self.pageMenuText_, sectionTitle);
+    } else {
+        std::snprintf(self.pageMenuText_, sizeof self.pageMenuText_, "%s - %s",
+                      sectionTitle, pageTitle);
+    }
+    return self.pageMenuText_;
+}
+
+void DisplayService::pageMenuCompleted(void* context, SelectionResult result, std::size_t index) {
+    auto& self = *static_cast<DisplayService*>(context);
+    PageView page{};
+    std::size_t pagesInSection{};
+    if (result != SelectionResult::selected || !self.pageByOrder(index, page, pagesInSection)) return;
+    if (page.pageIndex == self.activePage_) return;
+    self.activeSection_ = page.sectionIndex;
+    self.activePage_ = page.pageIndex;
+    self.graphMode_ = false;
+    if (self.navigationNotification_.changed) {
+        self.navigationNotification_.changed(self.navigationNotification_.context,
+                                             self.activeSection_, self.activePage_);
+    }
+    self.invalidate(0u);
+}
+
+bool DisplayService::showPageMenu() {
+    const auto count = package_.info().pageCount;
+    if (count == 0u) return false;
+    std::size_t current{};
+    RecordView record{};
+    if (package_.first(record)) {
+        std::size_t index{};
+        do {
+            PageView page{};
+            if (!package_.page(record, page)) continue;
+            if (page.pageIndex == activePage_) current = index;
+            ++index;
+        } while (package_.next(record));
+    }
+    return showSelection("GO TO PAGE", {this, count, &pageMenuItem, &pageMenuCompleted}, current);
 }
 
 void DisplayService::showAlert(const char* title, const char* message, AlertLevel level,
@@ -738,16 +812,20 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     const auto textDigits = static_cast<std::uint8_t>(latitudeDigits > longitudeDigits ? latitudeDigits : longitudeDigits);
     const auto digits = value && value->type == ValueType::text && textDigits > widget.maxDigits
         ? textDigits : widget.maxDigits;
-    const auto lineHeight = longitudeText ? static_cast<std::uint16_t>((valueHeight - 2u) / 2u) : valueHeight;
+    // Latitude and longitude on two lines, a little apart so they read as two values.
+    constexpr std::uint16_t positionLineGap = 7u;
+    const auto lineHeight = longitudeText
+        ? static_cast<std::uint16_t>(valueHeight > positionLineGap ? (valueHeight - positionLineGap) / 2u : 1u)
+        : valueHeight;
     const auto scale = fittedValueScale(innerWidth, lineHeight, digits);
     fitText(valueText, sizeof valueText, innerWidth, scale);
     if (longitudeText) fitText(longitudeText, std::strlen(longitudeText) + 1u, innerWidth, scale);
-    const auto blockHeight = longitudeText ? 14u * scale + 2u : 7u * scale;
+    const auto blockHeight = longitudeText ? 14u * scale + positionLineGap : 7u * scale;
     const auto valueY = valueHeight > blockHeight
         ? static_cast<std::uint16_t>(valueTop + (valueHeight - blockHeight) / 2u)
         : valueTop;
     drawCentered(x, width, valueY, valueText, true, scale);
-    if (longitudeText) drawCentered(x, width, static_cast<std::uint16_t>(valueY + 7u * scale + 2u), longitudeText, true, scale);
+    if (longitudeText) drawCentered(x, width, static_cast<std::uint16_t>(valueY + 7u * scale + positionLineGap), longitudeText, true, scale);
     if (*unitText) {
         const auto unitY = static_cast<std::uint16_t>(
             y + height - widgetVerticalPadding - auxiliaryTextHeight -
@@ -834,29 +912,57 @@ void DisplayService::renderWidgetSeparators(const PageView& page,
     } while (package_.next(leftRecord));
 }
 
-void DisplayService::renderModal(const ModalState& modal) {
-    const auto width = static_cast<std::uint16_t>(canvas_.width() > 360u ? 360u : canvas_.width() - 20u);
-    const auto height = static_cast<std::uint16_t>(canvas_.height() > 190u ? 190u : canvas_.height() - 20u);
-    const auto x = static_cast<std::uint16_t>((canvas_.width() - width) / 2u);
-    const auto y = static_cast<std::uint16_t>((canvas_.height() - height) / 2u);
-    // render() already cleared the full dialog screen. Avoid repainting this
-    // large white rectangle pixel-by-pixel on the MCU.
-    canvas_.drawRect(x, y, width, height, true, 3u);
-    canvas_.fillRect(static_cast<std::uint16_t>(x + 3u), static_cast<std::uint16_t>(y + 3u),
-                     static_cast<std::uint16_t>(width - 6u), 28u, true);
-    drawCentered(x, width, static_cast<std::uint16_t>(y + 9u), modal.title, false, 2u);
+// Dialogs use the whole screen with the same header and footer bars as the
+// pages: the title in the header, button captions (or a prompt) in the footer
+// above the buttons they belong to, and arrows for the vertical buttons.
+void DisplayService::renderBars(const char* title, const char* const (&labels)[4],
+                                bool upArrow, bool downArrow) {
+    canvas_.fillRect(0u, 0u, canvas_.width(), headerHeight, true);
+    canvas_.fillRect(0u, static_cast<std::uint16_t>(canvas_.height() - footerHeight),
+                     canvas_.width(), footerHeight, true);
+    const auto safeWidth = static_cast<std::uint16_t>(canvas_.width() - 2u * horizontalSafeMargin);
+    const auto statusWidth = static_cast<std::uint16_t>(safeWidth - sectionIndicatorWidth);
+    char heading[48]{};
+    copyText(heading, sizeof heading, title);
+    fitText(heading, sizeof heading, statusWidth, 2u);
+    drawCentered(horizontalSafeMargin, statusWidth, 7u, heading, false, 2u);
+    const auto footerY = static_cast<std::uint16_t>(canvas_.height() - footerHeight + 7u);
+    const auto buttonWidth = static_cast<std::uint16_t>(statusWidth / 4u);
+    for (std::uint8_t index = 0u; index < 4u; ++index) {
+        const auto x = static_cast<std::uint16_t>(horizontalSafeMargin + index * buttonWidth);
+        const auto width = index == 3u ? static_cast<std::uint16_t>(statusWidth - 3u * buttonWidth)
+                                       : buttonWidth;
+        drawCentered(x, width, footerY, labels[index], false, 2u);
+    }
+    const auto indicatorX = static_cast<std::uint16_t>(
+        canvas_.width() - horizontalSafeMargin - sectionIndicatorWidth / 2u);
+    if (upArrow) drawVerticalArrow(canvas_, indicatorX, 10u, true);
+    if (downArrow) {
+        drawVerticalArrow(canvas_, indicatorX,
+                          static_cast<std::uint16_t>(canvas_.height() - footerHeight + 9u), false);
+    }
+}
 
+void DisplayService::renderModal(const ModalState& modal) {
+    constexpr const char* noLabels[4]{"", "", "", ""};
+    renderBars(modal.title, noLabels, false, false);
+    if (*modal.prompt) {
+        const auto footerY = static_cast<std::uint16_t>(canvas_.height() - footerHeight + 7u);
+        drawCentered(0u, canvas_.width(), footerY, modal.prompt, false, 2u);
+    }
+
+    // Wrap the message at word boundaries and centre the block in the body.
     constexpr std::uint8_t messageScale = 2u;
     constexpr std::uint16_t messageHeight = 7u * messageScale;
-    constexpr std::uint16_t lineAdvance = 18u;
-    constexpr std::uint16_t promptAreaHeight = 32u;
-    // At scale 2, 28 characters occupy 334 pixels and remain inside the
-    // 360-pixel modal with comfortable horizontal padding.
-    constexpr std::size_t lineCapacity = 29u;
+    constexpr std::uint16_t lineAdvance = 22u;
+    constexpr std::size_t maximumLines = 8u;
+    const auto textWidth = static_cast<std::uint16_t>(canvas_.width() - 4u * horizontalSafeMargin);
+    const auto lineCapacity = static_cast<std::size_t>((textWidth + 2u) / (6u * messageScale)) + 1u;
+    const char* starts[maximumLines]{};
+    std::size_t lengths[maximumLines]{};
+    std::size_t lines{};
     const char* cursor = modal.message;
-    std::uint16_t lineY = static_cast<std::uint16_t>(y + 42u);
-    while (*cursor && lineY + messageHeight <= y + height - promptAreaHeight) {
-        char line[lineCapacity]{};
+    while (*cursor && lines < maximumLines) {
         std::size_t length{};
         std::size_t lastSpace{};
         while (cursor[length] && length + 1u < lineCapacity) {
@@ -864,70 +970,62 @@ void DisplayService::renderModal(const ModalState& modal) {
             ++length;
         }
         if (cursor[length] && lastSpace != 0u) length = lastSpace;
-        std::memcpy(line, cursor, length);
-        line[length] = '\0';
-        drawCentered(x, width, lineY, line, true, messageScale);
+        starts[lines] = cursor;
+        lengths[lines++] = length;
         cursor += length;
         while (*cursor == ' ') ++cursor;
-        lineY = static_cast<std::uint16_t>(lineY + lineAdvance);
     }
-    if (*modal.prompt) {
-        drawCentered(x, width, static_cast<std::uint16_t>(y + height - 22u),
-                     modal.prompt, true, 2u);
+    const auto bodyTop = headerHeight;
+    const auto bodyHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight);
+    const auto blockHeight = static_cast<std::uint16_t>(
+        lines == 0u ? 0u : (lines - 1u) * lineAdvance + messageHeight);
+    auto lineY = static_cast<std::uint16_t>(
+        bodyTop + (bodyHeight > blockHeight ? (bodyHeight - blockHeight) / 2u : 0u));
+    for (std::size_t index = 0u; index < lines; ++index) {
+        char line[64]{};
+        const auto length = lengths[index] < sizeof line - 1u ? lengths[index] : sizeof line - 1u;
+        std::memcpy(line, starts[index], length);
+        drawCentered(0u, canvas_.width(), lineY, line, true, messageScale);
+        lineY = static_cast<std::uint16_t>(lineY + lineAdvance);
     }
 }
 
 void DisplayService::renderSelection() {
-    const auto width = static_cast<std::uint16_t>(
-        canvas_.width() > 420u ? 420u : canvas_.width() - 20u);
-    const auto height = static_cast<std::uint16_t>(
-        canvas_.height() > 240u ? 240u : canvas_.height() - 20u);
-    const auto x = static_cast<std::uint16_t>((canvas_.width() - width) / 2u);
-    const auto y = static_cast<std::uint16_t>((canvas_.height() - height) / 2u);
-    constexpr std::uint16_t header = 36u;
-    constexpr std::uint16_t footer = 31u;
     constexpr std::uint16_t rowHeight = 30u;
-    const auto visibleRows = static_cast<std::uint16_t>((height - header - footer) / rowHeight);
+    const auto bodyHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight);
+    const auto visibleRows = static_cast<std::uint16_t>(bodyHeight / rowHeight);
     const auto selected = static_cast<std::size_t>(selection_.selected);
-    const auto first = selected >= visibleRows
-        ? selected - visibleRows + 1u : 0u;
+    const auto first = selected >= visibleRows ? selected - visibleRows + 1u : 0u;
+    const auto top = static_cast<std::uint16_t>(
+        headerHeight + (bodyHeight - visibleRows * rowHeight) / 2u);
 
-    // render() already cleared the full dialog screen. Avoid repainting this
-    // large white rectangle pixel-by-pixel on every selection movement.
-    canvas_.drawRect(x, y, width, height, true, 3u);
-    canvas_.fillRect(static_cast<std::uint16_t>(x + 3u),
-                     static_cast<std::uint16_t>(y + 3u),
-                     static_cast<std::uint16_t>(width - 6u), 28u, true);
-    drawCentered(x, width, static_cast<std::uint16_t>(y + 9u),
-                 selection_.title, false, 2u);
+    constexpr const char* labels[4]{"", "", "CANCEL", "SELECT"};
+    renderBars(selection_.title, labels, selected != 0u, selected + 1u < selection_.list.count);
 
+    const auto rowX = horizontalSafeMargin;
+    const auto rowWidth = static_cast<std::uint16_t>(canvas_.width() - 2u * horizontalSafeMargin);
     for (std::uint16_t row = 0u; row < visibleRows; ++row) {
         const auto index = first + row;
         if (index >= selection_.list.count) break;
-        const auto rowY = static_cast<std::uint16_t>(y + header + row * rowHeight);
+        const auto rowY = static_cast<std::uint16_t>(top + row * rowHeight);
         const bool active = index == selected;
         if (active) {
-            canvas_.fillRect(static_cast<std::uint16_t>(x + 10u),
-                             static_cast<std::uint16_t>(rowY + 3u),
-                             static_cast<std::uint16_t>(width - 20u),
-                             static_cast<std::uint16_t>(rowHeight - 6u), true);
+            canvas_.fillRect(rowX, static_cast<std::uint16_t>(rowY + 2u), rowWidth,
+                             static_cast<std::uint16_t>(rowHeight - 4u), true);
         }
         char label[48]{};
-        copyView(label, sizeof label,
-                 selection_.list.item(selection_.list.context, index));
-        fitText(label, sizeof label, static_cast<std::uint16_t>(width - 28u), 2u);
-        drawCentered(static_cast<std::uint16_t>(x + 14u),
-                     static_cast<std::uint16_t>(width - 28u),
-                     static_cast<std::uint16_t>(rowY + 8u), label, !active, 2u);
+        copyView(label, sizeof label, selection_.list.item(selection_.list.context, index));
+        fitText(label, sizeof label, static_cast<std::uint16_t>(rowWidth - 16u), 2u);
+        drawCentered(rowX, rowWidth, static_cast<std::uint16_t>(rowY + 8u), label, !active, 2u);
     }
+}
 
-    const char* labels[]{"", "", "CANCEL", "SELECT"};
-    const auto footerWidth = static_cast<std::uint16_t>((width - 16u) / 4u);
-    for (std::uint8_t index = 0u; index < 4u; ++index) {
-        drawCentered(static_cast<std::uint16_t>(x + 8u + index * footerWidth),
-                     footerWidth, static_cast<std::uint16_t>(y + height - 22u),
-                     labels[index], true, 2u);
-    }
+// Switched off: an otherwise blank screen, so the retained E-paper image does
+// not look like live data.
+void DisplayService::renderSleepScreen() {
+    canvas_.clear(false);
+    drawCentered(0u, canvas_.width(), static_cast<std::uint16_t>((canvas_.height() - 14u) / 2u),
+                 "OFF - PRESS ANY BUTTON", true, 2u);
 }
 
 void DisplayService::renderAlert() {
@@ -1132,6 +1230,10 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
 }
 
 void DisplayService::render() {
+    if (sleepRequested_ && !shutdownRequested_) {
+        renderSleepScreen();
+        return;
+    }
     if (alert_.visible) {
         renderAlert();
         return;

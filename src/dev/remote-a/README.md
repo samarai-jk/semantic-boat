@@ -67,7 +67,9 @@ The communication LED remains an activity indicator and is not used for
 alarms. An automatic day/night LED mode is intentionally deferred until server
 data can provide the required ambient state.
 
-Action 2 remains the full-display **Refresh** action in the factory application.
+B5 (Action 2) is **Menu** in every application: a press opens the page menu
+(B0/B1 move, B5 or B3 select, B4 or B2 cancel), holding it for one second
+forces a full display refresh.
 
 ## Local metrics
 

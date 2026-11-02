@@ -131,8 +131,11 @@ supported configuration continue to work. Structurally invalid JSON, bad source
 references, duplicate IDs in the same scope, out-of-grid widgets, and
 overlapping widget cells are compile errors.
 
-Modals are runtime UI, not config widgets. `showModal()` displays an
-acknowledgeable information, warning, error, or alarm overlay. The optional
+Modals are runtime UI, not config widgets. Every dialog (modal, transient
+modal, selection, alert) is a full screen with the same black header and
+footer bars as the pages: the title in the header, the prompt or button
+captions in the footer. `showModal()` displays an acknowledgeable information,
+warning, error, or alarm screen. The optional
 `ModalNotification::changed` callback reports visibility changes immediately;
 `ModalNotification::presented` fires after the EPD update containing the modal
 has completed. These callbacks let device policy drive an LED or buzzer without
@@ -152,10 +155,18 @@ transient modal may supply its own bottom prompt.
 browsers and simple settings menus. The caller supplies a `SelectionList` with
 an item count, an item-text callback, and a completion callback; item strings
 remain owned by the caller. Previous Section and Next Section move the cursor
-up and down without wrapping. Previous Page is an unlabelled alternative
+up and down without wrapping; arrows in the header and footer show whether
+there is more above or below. Previous Page is an unlabelled alternative
 Cancel, and Next Page is an unlabelled alternative Select. Action 1 always
 cancels and Action 2 always selects. Only the Cancel and Select action-button
 captions are drawn.
+
+`showPageMenu()` uses it to list every page of the configuration in order
+(`SECTION - PAGE`, or the section title alone for a one-page section) with
+the current page selected; selecting one shows it.
+
+`requestSleep()` renders a blank screen with one small line,
+`OFF - PRESS ANY BUTTON`, before the panel sleeps.
 
 The completion callback receives exactly one terminal result:
 `SelectionResult::selected` with the selected index, or

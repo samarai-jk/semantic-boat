@@ -280,10 +280,11 @@ int main() {
     assert(modalPresentedCalls == 0u);
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::prepared);
-    // A modal is rendered as an independent screen. The normal page's black
-    // status bars must not survive outside the dialog bounds.
-    assert(!logicalPixelIsBlack(frame, 464u, 16u));
-    assert(!logicalPixelIsBlack(frame, 464u, 262u));
+    // A modal is a full screen with its own header and footer bars and no
+    // section arrows.
+    assert(logicalPixelIsBlack(frame, 464u, 16u));
+    assert(logicalPixelIsBlack(frame, 464u, 262u));
+    assert(!logicalPixelIsBlack(frame, 464u, 140u));
     assert(modalPresentedCalls == 0u);
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::refreshing);
@@ -327,7 +328,9 @@ int main() {
     assert(display.selectionVisible());
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::prepared);
-    assert(!logicalPixelIsBlack(frame, 464u, 16u));
+    // Full-screen list on the first of three items: no up arrow in the header,
+    // a down arrow in the footer.
+    assert(logicalPixelIsBlack(frame, 464u, 16u));
     assert(!logicalPixelIsBlack(frame, 464u, 262u));
     display.handle(semantic_display::InputAction::nextSection);
     display.handle(semantic_display::InputAction::nextSection);
@@ -417,11 +420,13 @@ int main() {
 
     const auto sectionBeforeSleep = display.activeSection();
     const auto pageBeforeSleep = display.activePage();
-    display.showTransientModal("SLEEPING", "", "PRESS ANY BUTTON TO WAKE UP");
     display.requestSleep();
     display.run();
     assert(!display.sleeping());
     assert(panel.state == slstm32::epd::UpdateState::prepared);
+    // Switched off: a blank screen with one line of text in the middle.
+    assert(!logicalPixelIsBlack(frame, 464u, 16u));
+    assert(!logicalPixelIsBlack(frame, 464u, 262u));
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::refreshing);
     panel.state = slstm32::epd::UpdateState::idle;
@@ -434,7 +439,6 @@ int main() {
     assert(display.activePage() == pageBeforeSleep);
 
     assert(display.wake());
-    display.dismissTransientModal();
     assert(!display.sleeping());
     assert(panel.initCalls == 1u);
     display.run();
@@ -442,6 +446,25 @@ int main() {
     assert(panel.lastMode == slstm32::epd::RefreshMode::full);
     display.run();
     assert(panel.state == slstm32::epd::UpdateState::refreshing);
+    panel.state = slstm32::epd::UpdateState::idle;
+    display.run();
+
+    // Page menu: every page in order, the current one preselected; selecting
+    // shows that page in its section.
+    assert(display.activeSection() == 0u && display.activePage() == 0u);
+    assert(display.showPageMenu());
+    assert(display.selectionVisible());
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::action2);
+    assert(!display.selectionVisible());
+    assert(display.activeSection() == 1u && display.activePage() == 2u);
+    assert(display.showPageMenu());
+    display.handle(semantic_display::InputAction::previousSection);
+    display.handle(semantic_display::InputAction::action1);
+    assert(display.activeSection() == 1u && display.activePage() == 2u);
+    display.run();
     panel.state = slstm32::epd::UpdateState::idle;
     display.run();
 

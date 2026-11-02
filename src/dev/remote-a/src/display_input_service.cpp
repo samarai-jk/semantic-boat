@@ -10,6 +10,8 @@ constexpr std::uint32_t sleepPromptMs = 1000u;
 constexpr std::uint32_t sleepCountdownMs = 2000u;
 constexpr std::uint32_t sleepHoldMs = 3000u;
 constexpr std::uint32_t setupHoldMs = 1000u;
+// B5: a press opens the page menu, holding it refreshes the whole display.
+constexpr std::uint32_t refreshHoldMs = 1000u;
 
 } // namespace
 
@@ -31,6 +33,7 @@ void DisplayInputService::onButton(std::uint8_t id) {
     if (display_.sleepActive()) {
         upHoldPending_ = false;
         downHoldPending_ = false;
+        menuHoldPending_ = false;
         upHoldStage_ = 0u;
         if (display_.wake()) {
             // Consume the whole physical wake press. In particular, do not
@@ -87,6 +90,7 @@ void DisplayInputService::onButton(std::uint8_t id) {
         display_.dismissTransientModal();
     }
     if (id != 1u) downHoldPending_ = false;
+    if (id != 5u) menuHoldPending_ = false;
     switch (id) {
     case 0u:
         upPressedAt_ = runtime_.millis();
@@ -100,7 +104,16 @@ void DisplayInputService::onButton(std::uint8_t id) {
     case 2u: display_.handle(InputAction::previousPage); break;
     case 3u: display_.handle(InputAction::nextPage); break;
     case 4u: display_.handle(InputAction::action1); break;
-    case 5u: display_.handle(InputAction::action2); break;
+    case 5u:
+        // In dialogs B5 selects or dismisses at once; on a page it waits for
+        // the release (menu) or the hold (refresh).
+        if (display_.modalVisible()) {
+            display_.handle(InputAction::action2);
+        } else {
+            menuPressedAt_ = runtime_.millis();
+            menuHoldPending_ = true;
+        }
+        break;
     default: break;
     }
 }
@@ -111,6 +124,16 @@ void DisplayInputService::run() {
         return;
     }
     if (display_.sleepActive()) return;
+    if (menuHoldPending_) {
+        const auto elapsed = static_cast<std::uint32_t>(runtime_.millis() - menuPressedAt_);
+        if (elapsed >= releaseSettleMs && !buttons_.pressed(5u)) {
+            menuHoldPending_ = false;
+            display_.handle(semantic_display::InputAction::action2);
+        } else if (elapsed >= refreshHoldMs && buttons_.pressed(5u)) {
+            menuHoldPending_ = false;
+            display_.requestFullRefresh();
+        }
+    }
     if (downHoldPending_) {
         const auto elapsed = static_cast<std::uint32_t>(runtime_.millis() - downPressedAt_);
         if (elapsed >= releaseSettleMs && !buttons_.pressed(1u)) {
@@ -149,8 +172,7 @@ void DisplayInputService::run() {
     if (actions_.setSleeping && !actions_.setSleeping(actions_.context, true)) return;
     buttons_.resetDebounce();
     feedback_.setSleeping(true);
-    display_.showTransientModal("SLEEPING", "",
-                                "PRESS ANY BUTTON TO WAKE UP");
+    display_.dismissTransientModal();
     display_.requestSleep();
 }
 

@@ -38,8 +38,10 @@ private:
     DisplayInputActions actions_;
     std::uint32_t upPressedAt_{};
     std::uint32_t downPressedAt_{};
+    std::uint32_t menuPressedAt_{};
     bool upHoldPending_{};
     bool downHoldPending_{};
+    bool menuHoldPending_{};
     bool wakeReleasePending_{};
     std::uint8_t upHoldStage_{};
     std::uint8_t wakeButtonId_{};

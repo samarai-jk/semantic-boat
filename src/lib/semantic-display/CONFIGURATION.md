@@ -173,13 +173,13 @@ The remote-a mapping is:
 | B0 / B1 | Previous / next section; hold B0 for three seconds to sleep |
 | B2 / B3 | Previous / next page |
 | B4 | Action 1: toggle GRAPH / VALUES when the page assigns a history plot |
-| B5 | Action 2: force a full display refresh |
+| B5 | Action 2 (`MENU`): press for the page menu, hold one second for a full display refresh |
 
 After B0 has been held for one second, remote-a displays a two-second countdown
 and asks the user to keep holding it. Releasing B0 cancels the countdown and
 performs the normal previous-section action. At shutdown it sounds one long
-beep. Once asleep, the retained E-paper image says `SLEEPING` and asks for any
-button press. The MCU uses Stop 2, the RGB LED is off, and remote-a's USART2
+beep. Once asleep, the retained E-paper image is blank apart from one small
+line, `OFF - PRESS ANY BUTTON`. The MCU uses Stop 2, the RGB LED is off, and remote-a's USART2
 receive path is suspended. That wake press is consumed without also performing
 the button's normal action and produces three short beeps. The active section,
 page, values, history, and application-modal state are retained. The system
@@ -197,8 +197,8 @@ The optional `action_1` and `action_2` strings name application actions, but a
 caption is shown only when the firmware has installed an executable and
 currently available `ActionHandler` for that action. A firmware-supplied action
 label takes precedence over the configured label; remote-a uses this to expose
-its permanent development `REFRESH` action even when an uploaded configuration
-has no `button_labels`. A label in JSON alone does not imply behavior. When no
+its permanent `MENU` action even when an uploaded configuration has no
+`button_labels`. A label in JSON alone does not imply behavior. When no
 per-button labels or available actions exist, a larger generic previous
 page/next page help line is shown. Up/down section controls are intentionally
 not shown in this bottom-button footer. When multiple sections exist, the right
@@ -258,7 +258,7 @@ Each page may assign one numeric history source using `history_plot`, independen
 of its widgets. B4, the third button in the bottom row, toggles between the normal
 page and a full-page line graph. Its label changes from `GRAPH` to `VALUES`.
 Navigating to another page or section returns to normal mode. Pages without a
-plot retain their existing Action 1 behavior; B5 still refreshes the display.
+plot retain their existing Action 1 behavior; B5 still opens the page menu.
 
 | Field | Meaning |
 | --- | --- |

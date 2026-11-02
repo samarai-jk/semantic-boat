@@ -170,13 +170,14 @@ bool displayActionAvailable(void*, semantic_display::InputAction action,
 
 bool executeDisplayAction(void*, semantic_display::InputAction action,
                           std::uint16_t, std::uint16_t) {
-    if (action == semantic_display::InputAction::action2) display.requestFullRefresh();
+    // Short press: page menu. Holding B5 refreshes (DisplayInputService).
+    if (action == semantic_display::InputAction::action2) (void)display.showPageMenu();
     return false;
 }
 
 std::string_view displayActionLabel(void*, semantic_display::InputAction action,
                                     std::uint16_t, std::uint16_t) {
-    if (action == semantic_display::InputAction::action2) return "REFRESH";
+    if (action == semantic_display::InputAction::action2) return "MENU";
     return {};
 }
 

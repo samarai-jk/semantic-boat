@@ -106,6 +106,9 @@ public:
     void dismissTransientModal();
     bool showSelection(const char* title, SelectionList list, std::size_t selectedIndex = 0u);
     void dismissSelection();
+    // A selection list of every page (grouped by section, current page
+    // preselected); selecting one shows it.
+    bool showPageMenu();
     void showAlert(const char* title, const char* message, AlertLevel level,
                    std::uint8_t position, std::uint8_t count,
                    std::uint16_t overflowCount, AlertHandler handler);
@@ -178,6 +181,11 @@ private:
     void renderWidgetSeparators(const PageView& page, std::uint16_t contentX,
                                 std::uint16_t contentY, std::uint16_t cellWidth,
                                 std::uint16_t cellHeight, std::uint16_t gap);
+    static std::string_view pageMenuItem(void* context, std::size_t index);
+    static void pageMenuCompleted(void* context, SelectionResult result, std::size_t index);
+    bool pageByOrder(std::size_t order, PageView& page, std::size_t& position) const;
+    void renderBars(const char* title, const char* const (&labels)[4], bool upArrow, bool downArrow);
+    void renderSleepScreen();
     void renderModal(const ModalState& modal);
     void renderSelection();
     void renderAlert();
@@ -201,6 +209,7 @@ private:
     ModalState transientModal_{};
     SelectionState selection_{};
     AlertState alert_{};
+    char pageMenuText_[48]{};
     std::uint16_t activeSection_{noIndex};
     std::uint16_t activePage_{noIndex};
     std::uint32_t renderAt_{};

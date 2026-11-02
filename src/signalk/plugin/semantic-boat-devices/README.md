@@ -269,7 +269,16 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
 ## Bundled Configurations
 
 - `environment.json`: apparent/true wind, air/sea temperature, air pressure.
-- `navigation.json`: SOG/STW, true course/heading, vessel state, depth references.
+- `navigation.json`: four sections. Navigation: SOG/STW, true course, true and
+  magnetic heading, vessel state, position, GNSS satellites and HDOP. Wind (the
+  boat's instruments under `environment.wind`, never the weather station):
+  apparent and true speed and angle, true direction. Depth references. Course
+  (`navigation.course.calcValues`, only with an active destination): distance,
+  bearing, XTE, VMG, time to go, ETA, and the autopilot state and target.
+  Graphs: SOG, true wind gusts (30 s maximum), true wind direction (30 s
+  samples, 0..360, jumps when the wind crosses north), minimum depth below
+  keel; the four histories use the whole 1024-byte budget, and the
+  configuration is 8186 of 8192 bytes, so additions need something removed.
 - `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
 - `electrics.json`: 12 V house/starter batteries and port alternator voltage.
   Battery paths use the conventional `electrical.batteries.house` and `starter`

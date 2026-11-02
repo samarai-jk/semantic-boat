@@ -59,7 +59,7 @@ test('history plots require storage, valid ranges and the device RAM budget', ()
 
 test('navigation and weather templates provide permanent plot examples within RAM limits', async () => {
   const catalog = new Catalog('/tmp');
-  for (const [name, plotCount, expectedBytes] of [['navigation.json', 3, 960], ['weather-station.json', 4, 1024]]) {
+  for (const [name, plotCount, expectedBytes] of [['navigation.json', 4, 1024], ['weather-station.json', 4, 1024]]) {
     const configuration = JSON.parse(await fs.readFile(path.join(__dirname, '../configs', name), 'utf8'));
     assert.ok(catalog.validate(configuration));
     const histories = configuration.permanent_sources.filter(source => source.history);

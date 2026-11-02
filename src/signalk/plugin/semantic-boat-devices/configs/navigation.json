@@ -1,48 +1,111 @@
 {
   "schema": "semantic-display/v1", "name": "Navigation",
   "permanent_sources": [
-    {"id": "sog", "provider": "signalk", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "mean"}},
-    {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "mean"}},
-    {"id": "depth", "provider": "signalk", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000, "history": {"interval_ms": 10000, "points": 72, "reducer": "minimum"}}
+    {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "mean"}},
+    {"id": "depth", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000, "history": {"interval_ms": 15000, "points": 56, "reducer": "minimum"}},
+    {"id": "tws", "path": "environment.wind.speedTrue", "unit": "m/s", "stale_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "maximum"}},
+    {"id": "twd", "path": "environment.wind.directionTrue", "unit": "rad", "stale_ms": 10000, "history": {"interval_ms": 30000, "points": 56, "reducer": "last"}},
+    {"id": "cog", "path": "navigation.courseOverGroundTrue", "unit": "rad", "stale_ms": 10000},
+    {"id": "hdg", "path": "navigation.headingTrue", "unit": "rad", "stale_ms": 10000}
   ],
   "sections": [
     {
       "id": "navigation", "title": "NAVIGATION", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "cog", "provider": "signalk", "path": "navigation.courseOverGroundTrue", "unit": "rad", "stale_ms": 10000},
-        {"id": "heading", "provider": "signalk", "path": "navigation.headingTrue", "unit": "rad", "stale_ms": 10000},
-        {"id": "state", "provider": "signalk", "path": "navigation.state", "stale_ms": 30000}
+        {"id": "stw", "provider": "signalk", "path": "navigation.speedThroughWater", "unit": "m/s", "stale_ms": 10000},
+        {"id": "hdgm", "provider": "signalk", "path": "navigation.headingMagnetic", "unit": "rad", "stale_ms": 10000},
+        {"id": "state", "provider": "signalk", "path": "navigation.state", "stale_ms": 30000},
+        {"id": "position", "provider": "signalk", "path": "navigation.position", "stale_ms": 36000000, "outdated_ms": 10000, "subscribe": {"period_ms": 1000}},
+        {"id": "sats", "provider": "signalk", "path": "navigation.gnss.satellites", "stale_ms": 30000},
+        {"id": "hdop", "provider": "signalk", "path": "navigation.gnss.horizontalDilution", "stale_ms": 30000}
       ],
       "pages": [
-        {"id": "overview", "title": "OVERVIEW", "history_plot": {"source": "sog", "title": "SPEED OVER GROUND", "display_unit": "kn", "decimals": 1, "y_min": 0, "y_max": 20}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"id": "main", "title": "OVERVIEW", "history_plot": {"source": "sog", "title": "SPEED OVER GROUND", "display_unit": "kn", "decimals": 1}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
           {"type": "value", "source": "sog", "label": "SOG", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
           {"type": "value", "source": "cog", "label": "COG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
-          {"type": "value", "source": "depth", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}}
+          {"type": "value", "source": "hdg", "label": "HDG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "depth", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "tws", "label": "TRUE WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 2, "row": 1}}
         ]},
-        {"id": "motion", "title": "MOTION", "history_plot": {"source": "stw", "title": "SPEED THROUGH WATER", "display_unit": "kn", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"id": "motion", "title": "MOTION", "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
           {"type": "value", "source": "sog", "label": "SOG", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
           {"type": "value", "source": "stw", "label": "STW", "display_unit": "kn", "decimals": 1, "cell": {"column": 1, "row": 0}},
-          {"type": "value", "source": "cog", "label": "COG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 1}},
-          {"type": "value", "source": "heading", "label": "HEADING TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}
+          {"type": "value", "source": "cog", "label": "COG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "hdg", "label": "HDG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "hdgm", "label": "HDG MAG", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "state", "label": "STATE", "max_digits": 8, "cell": {"column": 2, "row": 1}}
         ]},
-        {"id": "status", "title": "VESSEL STATUS", "grid": {"columns": 2, "rows": 1, "gap": 4}, "widgets": [
-          {"type": "value", "source": "state", "label": "STATE", "cell": {"column": 0, "row": 0}},
-          {"type": "local-clock", "label": "LOCAL TIME", "cell": {"column": 1, "row": 0}}
+        {"id": "fix", "title": "POSITION", "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "position", "label": "POSITION", "cell": {"column": 0, "row": 0, "column_span": 3}, "position_format": "DDM"},
+          {"type": "value", "source": "sats", "label": "SATELLITES", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "hdop", "label": "HDOP", "decimals": 1, "cell": {"column": 1, "row": 1}},
+          {"type": "local-clock", "label": "LOCAL TIME", "cell": {"column": 2, "row": 1}}
+        ]}
+      ]
+    },
+    {
+      "id": "wind", "title": "WIND", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "aws", "provider": "signalk", "path": "environment.wind.speedApparent", "unit": "m/s", "stale_ms": 10000},
+        {"id": "awa", "provider": "signalk", "path": "environment.wind.angleApparent", "unit": "rad", "stale_ms": 10000},
+        {"id": "twa", "provider": "signalk", "path": "environment.wind.angleTrueWater", "unit": "rad", "stale_ms": 10000}
+      ],
+      "pages": [
+        {"id": "wind", "title": "WIND", "history_plot": {"source": "tws", "title": "TRUE WIND GUSTS", "display_unit": "kn", "decimals": 0}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "aws", "label": "APPARENT", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "awa", "label": "APP ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "twa", "label": "TRUE ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "tws", "label": "TRUE WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "twd", "label": "TRUE DIR", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "hdg", "label": "HDG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 1}}
+        ]},
+        {"id": "dir", "title": "WIND DIRECTION", "history_plot": {"source": "twd", "title": "TRUE WIND DIRECTION", "display_unit": "deg", "decimals": 0, "y_min": 0, "y_max": 360}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "twd", "label": "TRUE DIR", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "tws", "label": "TRUE WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "awa", "label": "APP ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}
         ]}
       ]
     },
     {
       "id": "depth", "title": "DEPTH", "button_labels": {"action_2": "REFRESH"},
       "sources": [
-        {"id": "keel", "provider": "signalk", "path": "environment.depth.belowKeel", "unit": "m", "stale_ms": 10000},
         {"id": "surface", "provider": "signalk", "path": "environment.depth.belowSurface", "unit": "m", "stale_ms": 10000},
-        {"id": "transducer", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "stale_ms": 10000}
+        {"id": "xdcr", "provider": "signalk", "path": "environment.depth.belowTransducer", "unit": "m", "stale_ms": 10000}
       ],
-      "pages": [{"id": "depth", "title": "DEPTH REFERENCES", "history_plot": {"source": "depth", "title": "MINIMUM DEPTH BELOW KEEL", "display_unit": "m", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
-        {"type": "value", "source": "keel", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
-        {"type": "value", "source": "surface", "label": "BELOW SURFACE", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 0}},
-        {"type": "value", "source": "transducer", "label": "BELOW TRANSDUCER", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}}
-      ]}]
+      "pages": [
+        {"id": "depth", "title": "DEPTH", "history_plot": {"source": "depth", "title": "MIN DEPTH BELOW KEEL", "display_unit": "m", "decimals": 1}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "depth", "label": "BELOW KEEL", "display_unit": "m", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "surface", "label": "BELOW SURFACE", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "xdcr", "label": "BELOW XDCR", "display_unit": "m", "decimals": 1, "cell": {"column": 1, "row": 1}}
+        ]}
+      ]
+    },
+    {
+      "id": "course", "title": "COURSE", "button_labels": {"action_2": "REFRESH"},
+      "sources": [
+        {"id": "dtw", "provider": "signalk", "path": "navigation.course.calcValues.distance", "unit": "m", "stale_ms": 10000},
+        {"id": "btw", "provider": "signalk", "path": "navigation.course.calcValues.bearingTrue", "unit": "rad", "stale_ms": 10000},
+        {"id": "xte", "provider": "signalk", "path": "navigation.course.calcValues.crossTrackError", "unit": "m", "stale_ms": 10000},
+        {"id": "vmg", "provider": "signalk", "path": "navigation.course.calcValues.velocityMadeGood", "unit": "m/s", "stale_ms": 10000},
+        {"id": "ttg", "provider": "signalk", "path": "navigation.course.calcValues.timeToGo", "unit": "s", "stale_ms": 10000},
+        {"id": "eta", "provider": "signalk", "path": "navigation.course.calcValues.estimatedTimeOfArrival", "stale_ms": 10000},
+        {"id": "pilot", "provider": "signalk", "path": "steering.autopilot.state", "stale_ms": 10000},
+        {"id": "target", "provider": "signalk", "path": "steering.autopilot.target.headingMagnetic", "unit": "rad", "stale_ms": 10000}
+      ],
+      "pages": [
+        {"id": "wpt", "title": "TO WAYPOINT", "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "dtw", "label": "DISTANCE NM", "display_unit": "nm", "decimals": 2, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "btw", "label": "BEARING TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "xte", "label": "XTE NM", "display_unit": "nm", "decimals": 2, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "vmg", "label": "VMG WPT", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "ttg", "label": "TIME TO GO H", "display_unit": "h", "decimals": 1, "cell": {"column": 1, "row": 1, "column_span": 2}}
+        ]},
+        {"id": "pilot", "title": "PILOT AND ETA", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "eta", "label": "ETA UTC", "max_digits": 24, "cell": {"column": 0, "row": 0, "column_span": 2}},
+          {"type": "value", "source": "pilot", "label": "AUTOPILOT", "max_digits": 8, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "target", "label": "TARGET HDG MAG", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]}
+      ]
     }
   ]
 }

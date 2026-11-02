@@ -13,15 +13,66 @@ namespace {
 constexpr std::uint16_t deviceAddress = eepromI2cAddress << 1u;
 constexpr std::uint32_t ioTimeoutMs = 250u;
 constexpr std::uint32_t writeCycleTimeoutMs = 10u;
+// The HAL takes the timeout's start tick once per call, so it limits the whole
+// transfer: at 100 kHz a byte takes 90 us, and one 250 ms read ended after
+// about 2.7 KiB. A larger configuration package then timed out on every boot
+// and left the peripheral holding the bus. Each chunk (about 23 ms) gets its
+// own timeout.
+constexpr std::size_t readChunkBytes = 256u;
 EepromIoError lastError = EepromIoError::none;
 
-bool read(void*, std::uint16_t address, std::uint8_t* data, std::size_t size) {
-    if (HAL_I2C_Mem_Read(&hi2c2, deviceAddress, address, I2C_MEMADD_SIZE_16BIT,
-                         data, static_cast<std::uint16_t>(size), ioTimeoutMs) == HAL_OK) {
-        return true;
+void delayMicroseconds(std::uint32_t microseconds) {
+    const auto cycles = SystemCoreClock / 1000000u * microseconds / 4u;
+    for (volatile std::uint32_t count = 0u; count < cycles; ++count) {
     }
-    lastError = EepromIoError::readFailed;
-    return false;
+}
+
+// After a failed transfer the peripheral may still stretch SCL, or the EEPROM
+// may hold SDA low in the middle of a byte; either blocks every later access
+// until power is removed. Reset the peripheral, clock out a stuck slave (up to
+// nine SCL pulses, then a STOP), and initialize the peripheral as CubeMX does.
+void recoverBus() {
+    HAL_I2C_DeInit(&hi2c2);
+    GPIO_InitTypeDef gpio{};
+    gpio.Pin = MCU_I2C_SCL_Pin | MCU_I2C_SDA_Pin;
+    gpio.Mode = GPIO_MODE_OUTPUT_OD;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_WritePin(MCU_I2C_SDA_GPIO_Port, MCU_I2C_SDA_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(MCU_I2C_SCL_GPIO_Port, MCU_I2C_SCL_Pin, GPIO_PIN_SET);
+    HAL_GPIO_Init(MCU_I2C_SCL_GPIO_Port, &gpio);
+    for (unsigned pulse = 0u; pulse < 9u &&
+         HAL_GPIO_ReadPin(MCU_I2C_SDA_GPIO_Port, MCU_I2C_SDA_Pin) == GPIO_PIN_RESET; ++pulse) {
+        HAL_GPIO_WritePin(MCU_I2C_SCL_GPIO_Port, MCU_I2C_SCL_Pin, GPIO_PIN_RESET);
+        delayMicroseconds(5u);
+        HAL_GPIO_WritePin(MCU_I2C_SCL_GPIO_Port, MCU_I2C_SCL_Pin, GPIO_PIN_SET);
+        delayMicroseconds(5u);
+    }
+    HAL_GPIO_WritePin(MCU_I2C_SDA_GPIO_Port, MCU_I2C_SDA_Pin, GPIO_PIN_RESET);
+    delayMicroseconds(5u);
+    HAL_GPIO_WritePin(MCU_I2C_SDA_GPIO_Port, MCU_I2C_SDA_Pin, GPIO_PIN_SET);
+    delayMicroseconds(5u);
+    HAL_GPIO_DeInit(MCU_I2C_SCL_GPIO_Port, MCU_I2C_SCL_Pin | MCU_I2C_SDA_Pin);
+    if (HAL_I2C_Init(&hi2c2) == HAL_OK) {
+        HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE);
+        HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0u);
+    }
+}
+
+bool read(void*, std::uint16_t address, std::uint8_t* data, std::size_t size) {
+    while (size != 0u) {
+        const auto amount = size < readChunkBytes ? size : readChunkBytes;
+        if (HAL_I2C_Mem_Read(&hi2c2, deviceAddress, address, I2C_MEMADD_SIZE_16BIT,
+                             data, static_cast<std::uint16_t>(amount), ioTimeoutMs) != HAL_OK) {
+            lastError = EepromIoError::readFailed;
+            recoverBus();
+            return false;
+        }
+        address = static_cast<std::uint16_t>(address + amount);
+        data += amount;
+        size -= amount;
+    }
+    return true;
 }
 
 bool writePage(void*, std::uint16_t address, const std::uint8_t* data, std::size_t size) {
@@ -29,6 +80,7 @@ bool writePage(void*, std::uint16_t address, const std::uint8_t* data, std::size
                           const_cast<std::uint8_t*>(data), static_cast<std::uint16_t>(size),
                           ioTimeoutMs) != HAL_OK) {
         lastError = EepromIoError::writeFailed;
+        recoverBus();
         return false;
     }
 
@@ -56,6 +108,7 @@ bool writePage(void*, std::uint16_t address, const std::uint8_t* data, std::size
         HAL_I2C_Mem_Read(&hi2c2, deviceAddress, address, I2C_MEMADD_SIZE_16BIT,
                          verification, static_cast<std::uint16_t>(size), ioTimeoutMs) != HAL_OK) {
         lastError = EepromIoError::verifyReadFailed;
+        recoverBus();
         return false;
     }
     if (std::memcmp(data, verification, size) != 0) {

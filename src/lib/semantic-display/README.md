@@ -164,7 +164,8 @@ captions are drawn.
 `showPageMenu()` is a separate full-screen menu: the sections as tiles in a
 grid (up to three columns, the current one marked with a bar, the cursor
 filled black), then the pages of the chosen section the same way; a one-page
-section opens directly. Previous/next section move the cursor up/down,
+section opens directly. Previous/next section move the cursor up/down
+(past the last tile of a column on to the top of the next column, wrapping),
 previous/next page left/right, action 1 goes back (or closes), action 2 opens.
 
 `requestSleep()` renders a blank screen with one small line,

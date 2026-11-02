@@ -612,11 +612,20 @@ void DisplayService::handlePageMenu(InputAction action) {
     switch (action) {
     case InputAction::previousPage: cursor = static_cast<std::uint16_t>(cursor == 0u ? count - 1u : cursor - 1u); break;
     case InputAction::nextPage: cursor = static_cast<std::uint16_t>(cursor + 1u >= count ? 0u : cursor + 1u); break;
-    case InputAction::previousSection: if (cursor >= columns) cursor = static_cast<std::uint16_t>(cursor - columns); break;
-    case InputAction::nextSection:
-        if (cursor / columns < (count - 1u) / columns) {
-            cursor = static_cast<std::uint16_t>(std::min<std::uint32_t>(cursor + columns, count - 1u));
+    // Up/down walk the columns: past the last tile of a column they continue
+    // at the top of the next one (the bottom of the previous one), wrapping.
+    case InputAction::previousSection:
+        if (cursor >= columns) {
+            cursor = static_cast<std::uint16_t>(cursor - columns);
+        } else {
+            const auto column = static_cast<std::uint16_t>(cursor == 0u ? columns - 1u : cursor - 1u);
+            cursor = column;
+            while (cursor + columns < count) cursor = static_cast<std::uint16_t>(cursor + columns);
         }
+        break;
+    case InputAction::nextSection:
+        if (cursor + columns < count) cursor = static_cast<std::uint16_t>(cursor + columns);
+        else cursor = static_cast<std::uint16_t>((cursor % columns + 1u) % columns);
         break;
     case InputAction::action1:
         if (pageMenu_.section == noIndex) { dismissPageMenu(); return; }

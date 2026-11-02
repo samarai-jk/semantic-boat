@@ -469,6 +469,21 @@ int main() {
     display.handle(semantic_display::InputAction::action2);
     assert(!display.pageMenuVisible());
     assert(display.activeSection() == 0u && display.activePage() == 1u);
+    // Two section tiles in one row: down past the bottom continues at the top
+    // of the next column, up past the top at the bottom of the previous one.
+    assert(display.showPageMenu());
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::action2);
+    assert(!display.pageMenuVisible());
+    assert(display.activeSection() == 1u && display.activePage() == 2u);
+    assert(display.showPageMenu());
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::previousSection);
+    display.handle(semantic_display::InputAction::previousSection);
+    display.handle(semantic_display::InputAction::action2);
+    display.handle(semantic_display::InputAction::nextPage);
+    display.handle(semantic_display::InputAction::action2);
+    assert(display.activeSection() == 0u && display.activePage() == 1u);
     assert(display.showPageMenu());
     display.handle(semantic_display::InputAction::action2);
     display.handle(semantic_display::InputAction::action1);

@@ -34,6 +34,8 @@ const std::uint8_t* glyph(char character) {
     static constexpr std::uint8_t apostrophe[5] = {0x00,0x03,0x01,0x00,0x00};
     static constexpr std::uint8_t quote[5] = {0x03,0x00,0x03,0x00,0x00};
     static constexpr std::uint8_t comma[5] = {0x00,0x40,0x20,0x00,0x00};
+    static constexpr std::uint8_t less[5] = {0x08,0x14,0x22,0x41,0x00};
+    static constexpr std::uint8_t greater[5] = {0x00,0x41,0x22,0x14,0x08};
 
     if (character >= 'a' && character <= 'z') character = static_cast<char>(character - 'a' + 'A');
     if (character >= '0' && character <= '9') return digits[character - '0'];
@@ -45,6 +47,8 @@ const std::uint8_t* glyph(char character) {
     if (character == '\'') return apostrophe;
     if (character == '"') return quote;
     if (character == ',') return comma;
+    if (character == '<') return less;
+    if (character == '>') return greater;
     return space;
 }
 

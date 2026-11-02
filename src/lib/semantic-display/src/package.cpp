@@ -191,7 +191,7 @@ bool PackageView::widget(const RecordView& record, WidgetView& result) const {
 
 bool PackageView::historyPlot(const RecordView& record, HistoryPlotView& result) const {
     if (record.type != RecordType::historyPlot || record.payloadSize < 19u) return false;
-    result = {};
+    result = HistoryPlotView{};
     const auto* current = record.payload;
     const auto* end = current + record.payloadSize;
     result.sectionIndex = read16(current); current += 2u;
@@ -207,14 +207,43 @@ bool PackageView::historyPlot(const RecordView& record, HistoryPlotView& result)
     std::memcpy(&result.minimum, &raw, sizeof raw);
     raw = read32(current); current += 4u;
     std::memcpy(&result.maximum, &raw, sizeof raw);
-    if (flags > 1u || result.decimals > 6u || result.sourceIndex >= info().sourceCount ||
+    result.circular = (flags & 2u) != 0u;
+    const auto rangeValid = [](bool fixed, float minimum, float maximum) {
+        return !fixed || (minimum < maximum && std::isfinite(minimum) && std::isfinite(maximum) &&
+                          std::isfinite(maximum - minimum));
+    };
+    if (flags > 3u || result.decimals > 6u || result.sourceIndex >= info().sourceCount ||
         result.pageIndex >= info().pageCount || result.sectionIndex >= info().sectionCount ||
-        (result.fixedRange && (!(result.minimum < result.maximum) ||
-        !std::isfinite(result.minimum) || !std::isfinite(result.maximum) ||
-        !std::isfinite(result.maximum - result.minimum)))) return false;
-    return takeString(current, end, sourceLength, result.sourceId) &&
-           takeString(current, end, titleLength, result.title) &&
-           takeString(current, end, unitLength, result.displayUnit) && current == end;
+        !rangeValid(result.fixedRange, result.minimum, result.maximum)) return false;
+    if (!takeString(current, end, sourceLength, result.sourceId) ||
+        !takeString(current, end, titleLength, result.title) ||
+        !takeString(current, end, unitLength, result.displayUnit)) return false;
+    if (current == end) return true;
+    // Extra series: count, then per series index, flags, decimals, string
+    // lengths, range, strings.
+    result.extraCount = *current++;
+    if (result.extraCount == 0u || result.extraCount > maxHistoryPlotExtraSeries) return false;
+    for (std::uint8_t index = 0u; index < result.extraCount; ++index) {
+        auto& series = result.extra[index];
+        if (end - current < 15) return false;
+        series.sourceIndex = read16(current);
+        const auto seriesFlags = current[2];
+        series.fixedRange = (seriesFlags & 1u) != 0u;
+        series.circular = (seriesFlags & 2u) != 0u;
+        series.decimals = current[3];
+        const auto seriesSource = current[4], seriesTitle = current[5], seriesUnit = current[6];
+        raw = read32(current + 7u);
+        std::memcpy(&series.minimum, &raw, sizeof raw);
+        raw = read32(current + 11u);
+        std::memcpy(&series.maximum, &raw, sizeof raw);
+        current += 15u;
+        if (seriesFlags > 3u || series.decimals > 6u || series.sourceIndex >= info().sourceCount ||
+            !rangeValid(series.fixedRange, series.minimum, series.maximum) ||
+            !takeString(current, end, seriesSource, series.sourceId) ||
+            !takeString(current, end, seriesTitle, series.title) ||
+            !takeString(current, end, seriesUnit, series.displayUnit)) return false;
+    }
+    return current == end;
 }
 
 bool PackageView::historyPlotByPage(std::uint16_t index, HistoryPlotView& result) const {

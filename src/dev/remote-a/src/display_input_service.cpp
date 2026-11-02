@@ -73,8 +73,9 @@ void DisplayInputService::onButton(std::uint8_t id) {
         else if (id == 5u) display_.handle(InputAction::action2);
         return;
     }
-    if (display_.selectionVisible() && (id == 0u || id == 1u)) {
-        // Selection lists use the vertical buttons only for cursor movement.
+    if ((display_.selectionVisible() || display_.pageMenuVisible()) && (id == 0u || id == 1u)) {
+        // Selection lists and the page menu use the vertical buttons only for
+        // cursor movement.
         // Act on the press edge so the sleep/configuration hold gestures do
         // not add a one-second delay to each move.
         upHoldPending_ = false;

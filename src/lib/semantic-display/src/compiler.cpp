@@ -26,6 +26,16 @@ std::uint16_t read16(const std::uint8_t* source) {
            static_cast<std::uint16_t>(static_cast<std::uint16_t>(source[1]) << 8u);
 }
 
+std::uint32_t read32(const std::uint8_t* source) {
+    return static_cast<std::uint32_t>(read16(source)) |
+           (static_cast<std::uint32_t>(read16(source + 2u)) << 16u);
+}
+
+// Text limits of an extra history plot series (they share one stack buffer).
+constexpr std::size_t maxSeriesSourceBytes = 64u;
+constexpr std::size_t maxSeriesTitleBytes = 32u;
+constexpr std::size_t maxSeriesUnitBytes = 16u;
+
 struct Token {
     char bytes[256]{};
     std::uint8_t size{};
@@ -118,6 +128,13 @@ public:
         } while (position_ < input_.size() && input_[position_] >= '0' && input_[position_] <= '9');
         result = static_cast<std::uint32_t>(value);
         return true;
+    }
+
+    bool boolean(bool& result) {
+        skipWhitespace();
+        if (match("true")) { result = true; return true; }
+        if (match("false")) { result = false; return true; }
+        return false;
     }
 
     bool number(float& result) {
@@ -597,50 +614,120 @@ private:
         return true;
     }
 
-    bool parseHistoryPlot(std::uint16_t sectionIndex, std::uint16_t pageIndex) {
-        if (!reader_.consume('{')) return false;
+    // One graph value: source, title, display unit, decimals, optional fixed
+    // range, circular flag. Shared by the plot itself and its extra series.
+    struct PlotValue {
         Token source{}, title{}, unit{};
         std::uint32_t decimals{1u};
         float minimum{}, maximum{};
-        bool hasMinimum{}, hasMaximum{};
+        bool hasMinimum{}, hasMaximum{}, circular{};
+    };
+
+    bool parsePlotProperty(const Token& key, PlotValue& value) {
+        if (key.equals("source")) return reader_.string(value.source);
+        if (key.equals("title")) return reader_.string(value.title);
+        if (key.equals("display_unit")) return reader_.string(value.unit);
+        if (key.equals("decimals")) return reader_.unsignedInteger(value.decimals) && value.decimals <= 6u;
+        if (key.equals("y_min")) { value.hasMinimum = true; return reader_.number(value.minimum); }
+        if (key.equals("y_max")) { value.hasMaximum = true; return reader_.number(value.maximum); }
+        if (key.equals("circular")) return reader_.boolean(value.circular);
+        fail(CompileError::invalidProperty, "unknown history plot property");
+        return false;
+    }
+
+    bool plotValueValid(const PlotValue& value) {
+        if (value.source.size == 0u || value.hasMinimum != value.hasMaximum ||
+            (value.hasMinimum && (!(value.minimum < value.maximum) ||
+                                  !std::isfinite(value.maximum - value.minimum)))) {
+            fail(CompileError::invalidProperty, "history plot requires source and an increasing finite range");
+            return false;
+        }
+        return true;
+    }
+
+    // An extra series, appended to the plot payload: source index (resolved
+    // later), flags, decimals, three string lengths, range, strings.
+    __attribute__((noinline)) bool parsePlotSeries(std::uint8_t*& cursor, const std::uint8_t* end) {
+        if (!reader_.consume('{')) return false;
+        PlotValue value{};
+        if (!reader_.consume('}')) {
+            bool done{};
+            while (!done) {
+                Token key{};
+                if (!keyValuePrefix(key) || !parsePlotProperty(key, value)) return false;
+                if (!nextObjectMember(done)) return false;
+            }
+        }
+        if (!plotValueValid(value)) return false;
+        if (value.source.size > maxSeriesSourceBytes || value.title.size > maxSeriesTitleBytes ||
+            value.unit.size > maxSeriesUnitBytes ||
+            static_cast<std::size_t>(end - cursor) < 15u + value.source.size + value.title.size + value.unit.size) {
+            fail(CompileError::invalidProperty, "history plot series text too long");
+            return false;
+        }
+        write16(cursor, noIndex);
+        cursor[2] = static_cast<std::uint8_t>((value.hasMinimum ? 1u : 0u) | (value.circular ? 2u : 0u));
+        cursor[3] = static_cast<std::uint8_t>(value.decimals);
+        cursor[4] = value.source.size; cursor[5] = value.title.size; cursor[6] = value.unit.size;
+        std::uint32_t raw{};
+        std::memcpy(&raw, &value.minimum, sizeof raw); write32(cursor + 7u, raw);
+        std::memcpy(&raw, &value.maximum, sizeof raw); write32(cursor + 11u, raw);
+        cursor += 15u;
+        std::memcpy(cursor, value.source.bytes, value.source.size); cursor += value.source.size;
+        std::memcpy(cursor, value.title.bytes, value.title.size); cursor += value.title.size;
+        std::memcpy(cursor, value.unit.bytes, value.unit.size); cursor += value.unit.size;
+        return true;
+    }
+
+    __attribute__((noinline)) bool parseHistoryPlot(std::uint16_t sectionIndex, std::uint16_t pageIndex) {
+        if (!reader_.consume('{')) return false;
+        PlotValue value{};
+        // Extra series are encoded straight into this buffer while parsing.
+        std::uint8_t series[1u + maxHistoryPlotExtraSeries *
+                           (15u + maxSeriesSourceBytes + maxSeriesTitleBytes + maxSeriesUnitBytes)]{};
+        auto* seriesCursor = series + 1u;
         if (!reader_.consume('}')) {
             bool done{};
             while (!done) {
                 Token key{};
                 if (!keyValuePrefix(key)) return false;
-                if (key.equals("source")) { if (!reader_.string(source)) return false; }
-                else if (key.equals("title")) { if (!reader_.string(title)) return false; }
-                else if (key.equals("display_unit")) { if (!reader_.string(unit)) return false; }
-                else if (key.equals("decimals")) {
-                    if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false;
-                } else if (key.equals("y_min")) {
-                    if (!reader_.number(minimum)) return false;
-                    hasMinimum = true;
-                } else if (key.equals("y_max")) {
-                    if (!reader_.number(maximum)) return false;
-                    hasMaximum = true;
-                } else { fail(CompileError::invalidProperty, "unknown history plot property"); return false; }
+                if (key.equals("series")) {
+                    if (!reader_.consume('[')) return false;
+                    if (!reader_.consume(']')) {
+                        bool last{};
+                        while (!last) {
+                            if (series[0] == maxHistoryPlotExtraSeries) {
+                                fail(CompileError::invalidProperty, "a history plot shows at most three values");
+                                return false;
+                            }
+                            if (!parsePlotSeries(seriesCursor, series + sizeof series)) return false;
+                            ++series[0];
+                            if (!nextArrayItem(last)) return false;
+                        }
+                    }
+                } else if (!parsePlotProperty(key, value)) return false;
                 if (!nextObjectMember(done)) return false;
             }
         }
-        if (source.size == 0u || hasMinimum != hasMaximum ||
-            (hasMinimum && (!(minimum < maximum) || !std::isfinite(maximum - minimum)))) {
-            fail(CompileError::invalidProperty, "history plot requires source and an increasing finite range");
-            return false;
-        }
-        std::uint8_t payload[19u + 3u * 255u]{};
+        if (!plotValueValid(value)) return false;
+        std::uint8_t payload[19u + 3u * 255u + sizeof series]{};
         write16(payload, sectionIndex); write16(payload + 2u, pageIndex);
         write16(payload + 4u, noIndex);
-        payload[6] = hasMinimum ? 1u : 0u;
-        payload[7] = static_cast<std::uint8_t>(decimals);
-        payload[8] = source.size; payload[9] = title.size; payload[10] = unit.size;
+        payload[6] = static_cast<std::uint8_t>((value.hasMinimum ? 1u : 0u) | (value.circular ? 2u : 0u));
+        payload[7] = static_cast<std::uint8_t>(value.decimals);
+        payload[8] = value.source.size; payload[9] = value.title.size; payload[10] = value.unit.size;
         std::uint32_t raw{};
-        std::memcpy(&raw, &minimum, sizeof raw); write32(payload + 11u, raw);
-        std::memcpy(&raw, &maximum, sizeof raw); write32(payload + 15u, raw);
+        std::memcpy(&raw, &value.minimum, sizeof raw); write32(payload + 11u, raw);
+        std::memcpy(&raw, &value.maximum, sizeof raw); write32(payload + 15u, raw);
         auto* cursor = payload + 19u;
-        std::memcpy(cursor, source.bytes, source.size); cursor += source.size;
-        std::memcpy(cursor, title.bytes, title.size); cursor += title.size;
-        std::memcpy(cursor, unit.bytes, unit.size); cursor += unit.size;
+        std::memcpy(cursor, value.source.bytes, value.source.size); cursor += value.source.size;
+        std::memcpy(cursor, value.title.bytes, value.title.size); cursor += value.title.size;
+        std::memcpy(cursor, value.unit.bytes, value.unit.size); cursor += value.unit.size;
+        // A plot without extra series keeps the original record layout.
+        if (series[0] != 0u) {
+            const auto size = static_cast<std::size_t>(seriesCursor - series);
+            std::memcpy(cursor, series, size); cursor += size;
+        }
         if (!output_.appendRecord(RecordType::historyPlot, payload, static_cast<std::size_t>(cursor - payload))) {
             fail(CompileError::outputTooLarge, "compiled history plot exceeds package limit");
             return false;
@@ -855,6 +942,50 @@ private:
         return foundPermanent;
     }
 
+    // History span (interval x (points - 1)) of a source; zero without history.
+    std::uint64_t historySpan(std::uint16_t sourceIndex) const {
+        for (std::size_t offset = packageHeaderSize; offset < output_.size();) {
+            const auto* record = output_.data() + offset;
+            if (record[0] == static_cast<std::uint8_t>(RecordType::source) && read16(record + 6u) == sourceIndex) {
+                const auto points = read16(record + 20u);
+                return points < 2u ? (points == 0u ? 0u : 1u)
+                                   : static_cast<std::uint64_t>(read32(record + 16u)) * (points - 1u);
+            }
+            offset += read16(record + 2u);
+        }
+        return 0u;
+    }
+
+    // Resolves the extra series of a plot record: each needs history over
+    // the same span as the plot's own source, so the points line up.
+    bool resolvePlotSeries(std::uint8_t* payload, std::size_t size, std::uint16_t primary) {
+        std::size_t offset = 19u + payload[8] + payload[9] + payload[10];
+        if (offset >= size) return true;
+        const auto count = payload[offset++];
+        const auto span = historySpan(primary);
+        for (std::uint8_t index = 0u; index < count; ++index) {
+            auto* series = payload + offset;
+            const std::string_view sourceId{reinterpret_cast<const char*>(series + 15u), series[4]};
+            std::uint16_t sourceIndex{};
+            if (!findSource(read16(payload), sourceId, sourceIndex)) {
+                fail(CompileError::unresolvedSource, "history plot series references an unknown source");
+                return false;
+            }
+            const auto seriesSpan = historySpan(sourceIndex);
+            if (seriesSpan == 0u) {
+                fail(CompileError::invalidProperty, "history plot series source requires history storage");
+                return false;
+            }
+            if (seriesSpan != span) {
+                fail(CompileError::invalidProperty, "history plot series must cover the same time span");
+                return false;
+            }
+            write16(series, sourceIndex);
+            offset += 15u + series[4] + series[5] + series[6];
+        }
+        return true;
+    }
+
     bool pageGrid(std::uint16_t pageIndex, std::uint8_t& columns, std::uint8_t& rows) const {
         for (std::size_t offset = packageHeaderSize; offset < output_.size();) {
             const auto* record = output_.data() + offset;
@@ -1011,6 +1142,7 @@ private:
                     return false;
                 }
                 write16(payload + 4u, sourceIndex);
+                if (!resolvePlotSeries(payload, recordSize - 4u, sourceIndex)) return false;
             }
             if (record[0] == static_cast<std::uint8_t>(RecordType::widget)) {
                 auto* payload = record + 4u;

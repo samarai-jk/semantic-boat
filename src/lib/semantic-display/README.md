@@ -161,9 +161,11 @@ Cancel, and Next Page is an unlabelled alternative Select. Action 1 always
 cancels and Action 2 always selects. Only the Cancel and Select action-button
 captions are drawn.
 
-`showPageMenu()` uses it to list every page of the configuration in order
-(`SECTION - PAGE`, or the section title alone for a one-page section) with
-the current page selected; selecting one shows it.
+`showPageMenu()` is a separate full-screen menu: the sections as tiles in a
+grid (up to three columns, the current one marked with a bar, the cursor
+filled black), then the pages of the chosen section the same way; a one-page
+section opens directly. Previous/next section move the cursor up/down,
+previous/next page left/right, action 1 goes back (or closes), action 2 opens.
 
 `requestSleep()` renders a blank screen with one small line,
 `OFF - PRESS ANY BUTTON`, before the panel sleeps.

@@ -120,7 +120,9 @@ API of the hub: `GET /devices` (transports and all devices),
   plugin's web page, not in Signal K's bus/device settings form.
 - Catalog files live under the server-provided plugin data directory in
   `configurations/`; they are saved atomically and are not device-specific.
-- Maximum 16 files, 47-byte filenames, 8192-byte compact JSON per configuration.
+- Maximum 16 files, 47-byte filenames, 10240-byte compact JSON per configuration
+  (displays with firmware before November 2026 accept 8192 bytes and refuse
+  larger ones with "CONFIGURATION IS TOO LARGE").
   JSON Schema validation is preliminary; the firmware compiler is authoritative.
 - The left catalog is the only configuration selector. New configuration opens
   a filename/template dialog (including a blank draft), separate from selection.
@@ -275,10 +277,11 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
   apparent and true speed and angle, true direction. Depth references. Course
   (`navigation.course.calcValues`, only with an active destination): distance,
   bearing, XTE, VMG, time to go, ETA, and the autopilot state and target.
-  Graphs: SOG, true wind gusts (30 s maximum), true wind direction (30 s
-  samples, 0..360, jumps when the wind crosses north), minimum depth below
-  keel; the four histories use the whole 1024-byte budget, and the
-  configuration is 8186 of 8192 bytes, so additions need something removed.
+  Graphs: SOG; true wind gusts (30 s maximum, solid) together with the true
+  wind direction (dotted, N/E/S/W scale on the right, the line breaks where
+  the wind crosses north); the true wind direction alone; minimum depth below
+  keel. The four histories use the whole 1024-byte budget; the configuration
+  is about 8.3 of 10 KB, so it needs display firmware from November 2026.
 - `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
 - `electrics.json`: 12 V house/starter batteries and port alternator voltage.
   Battery paths use the conventional `electrical.batteries.house` and `starter`

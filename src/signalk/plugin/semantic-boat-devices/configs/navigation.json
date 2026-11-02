@@ -51,7 +51,7 @@
         {"id": "twa", "provider": "signalk", "path": "environment.wind.angleTrueWater", "unit": "rad", "stale_ms": 10000}
       ],
       "pages": [
-        {"id": "wind", "title": "WIND", "history_plot": {"source": "tws", "title": "TRUE WIND GUSTS", "display_unit": "kn", "decimals": 0}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+        {"id": "wind", "title": "WIND", "history_plot": {"source": "tws", "title": "TRUE WIND GUSTS", "display_unit": "kn", "decimals": 0, "series": [{"source": "twd", "title": "TRUE DIRECTION", "display_unit": "deg", "decimals": 0, "circular": true}]}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
           {"type": "value", "source": "aws", "label": "APPARENT", "display_unit": "kn", "decimals": 1, "cell": {"column": 0, "row": 0}},
           {"type": "value", "source": "awa", "label": "APP ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 0}},
           {"type": "value", "source": "twa", "label": "TRUE ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 0}},
@@ -59,7 +59,7 @@
           {"type": "value", "source": "twd", "label": "TRUE DIR", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}},
           {"type": "value", "source": "hdg", "label": "HDG TRUE", "display_unit": "deg", "decimals": 0, "cell": {"column": 2, "row": 1}}
         ]},
-        {"id": "dir", "title": "WIND DIRECTION", "history_plot": {"source": "twd", "title": "TRUE WIND DIRECTION", "display_unit": "deg", "decimals": 0, "y_min": 0, "y_max": 360}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+        {"id": "dir", "title": "WIND DIRECTION", "history_plot": {"source": "twd", "title": "TRUE WIND DIRECTION", "display_unit": "deg", "decimals": 0, "circular": true}, "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
           {"type": "value", "source": "twd", "label": "TRUE DIR", "display_unit": "deg", "decimals": 0, "cell": {"column": 0, "row": 0, "row_span": 2}},
           {"type": "value", "source": "tws", "label": "TRUE WIND", "display_unit": "kn", "decimals": 1, "cell": {"column": 1, "row": 0}},
           {"type": "value", "source": "awa", "label": "APP ANGLE", "display_unit": "deg", "decimals": 0, "cell": {"column": 1, "row": 1}}

@@ -196,4 +196,41 @@ int main() {
     rejectPlot("\"y_max\":1e2", "\"y_max\":1e100");
     rejectPlot("\"y_min\":-2.5,\"y_max\":1e2", "\"y_min\":-3e38,\"y_max\":3e38");
     rejectPlot("\"history_plot\": {", "\"history_plot\":{\"source\":\"depth-history\"},\"history_plot\": {");
+
+    // Graphs with further values: each needs history over the same span.
+    constexpr auto seriesConfiguration = R"json({"schema":"semantic-display/v1",
+      "permanent_sources":[
+        {"id":"speed","path":"environment.wind.speedTrue","unit":"m/s","history":{"interval_ms":30000,"points":56}},
+        {"id":"direction","path":"environment.wind.directionTrue","unit":"rad","history":{"interval_ms":30000,"points":56}},
+        {"id":"gust","path":"environment.wind.gust","unit":"m/s","history":{"interval_ms":30000,"points":56}},
+        {"id":"short","path":"environment.wind.short","unit":"m/s","history":{"interval_ms":10000,"points":56}},
+        {"id":"none","path":"environment.wind.none","unit":"m/s"}],
+      "sections":[{"id":"wind","pages":[{"id":"wind","grid":{"columns":1,"rows":1},
+        "history_plot":{"source":"speed","title":"WIND","display_unit":"kn","circular":false,
+          "series":[{"source":"direction","title":"DIR","display_unit":"deg","decimals":0,"circular":true},
+                    {"source":"gust","y_min":0,"y_max":20}]},
+        "widgets":[{"type":"value","source":"speed","cell":{"column":0,"row":0}}]}]}]})json";
+    const auto seriesResult = compiler.compile(seriesConfiguration, bytes.data(), bytes.size());
+    assert(seriesResult);
+    semantic_display::PackageView seriesPackage{bytes.data(), seriesResult.packageSize};
+    semantic_display::HistoryPlotView seriesPlot{};
+    assert(seriesPackage.historyPlotByPage(0u, seriesPlot));
+    assert(seriesPlot.sourceIndex == 0u && !seriesPlot.circular && seriesPlot.extraCount == 2u);
+    assert(seriesPlot.extra[0].sourceIndex == 1u && seriesPlot.extra[0].circular);
+    assert(seriesPlot.extra[0].title == "DIR" && seriesPlot.extra[0].displayUnit == "deg" &&
+           seriesPlot.extra[0].decimals == 0u && !seriesPlot.extra[0].fixedRange);
+    assert(seriesPlot.extra[1].sourceIndex == 2u && seriesPlot.extra[1].fixedRange &&
+           seriesPlot.extra[1].maximum == 20.0f);
+    const auto rejectSeries = [&](const char* original, const char* replacement) {
+      std::string document{seriesConfiguration};
+      const auto position = document.find(original);
+      assert(position != std::string::npos);
+      document.replace(position, std::strlen(original), replacement);
+      assert(!compiler.compile(document, bytes.data(), bytes.size()));
+    };
+    rejectSeries("{\"source\":\"gust\"", "{\"source\":\"short\"");
+    rejectSeries("{\"source\":\"gust\"", "{\"source\":\"none\"");
+    rejectSeries("{\"source\":\"gust\"", "{\"source\":\"missing\"");
+    rejectSeries("{\"source\":\"gust\",", "{\"source\":\"gust\"},{\"source\":\"gust\",");
+    rejectSeries("\"circular\":true", "\"circular\":1");
 }

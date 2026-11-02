@@ -43,6 +43,15 @@ class Catalog {
         const plot = page.history_plot;
         if (!plot) continue;
         if (!available.get(plot.source)?.history) throw new Error(`Page ${page.id}: plot source requires history storage`);
+        // Further values need history over the same span so the points line up.
+        const span = history => history.interval_ms * (history.points - 1);
+        for (const series of plot.series ?? []) {
+          const history = available.get(series.source)?.history;
+          if (!history) throw new Error(`Page ${page.id}: plot series ${series.source} requires history storage`);
+          if (span(history) !== span(available.get(plot.source).history)) {
+            throw new Error(`Page ${page.id}: plot series ${series.source} must cover the same time span`);
+          }
+        }
         if (plot.y_min !== undefined && (!(plot.y_min < plot.y_max) ||
             !Number.isFinite(Math.fround(plot.y_min)) || !Number.isFinite(Math.fround(plot.y_max)) ||
             !Number.isFinite(Math.fround(Math.fround(plot.y_max) - Math.fround(plot.y_min))) ||
@@ -50,7 +59,7 @@ class Catalog {
       }
     }
     const bytes = Buffer.from(JSON.stringify(document));
-    if (bytes.length > 8192) throw new Error('Configuration exceeds the remote-a 8192-byte limit');
+    if (bytes.length > 10240) throw new Error('Configuration exceeds the remote-a 10240-byte limit');
     return bytes;
   }
 

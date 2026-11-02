@@ -106,9 +106,13 @@ public:
     void dismissTransientModal();
     bool showSelection(const char* title, SelectionList list, std::size_t selectedIndex = 0u);
     void dismissSelection();
-    // A selection list of every page (grouped by section, current page
-    // preselected); selecting one shows it.
+    // Page menu: the sections as tiles, then the pages of the chosen section.
+    // Previous/next section move the cursor up/down, previous/next page
+    // left/right, action 1 goes back, action 2 selects. A one-page section
+    // opens directly.
     bool showPageMenu();
+    void dismissPageMenu();
+    bool pageMenuVisible() const { return pageMenu_.visible; }
     void showAlert(const char* title, const char* message, AlertLevel level,
                    std::uint8_t position, std::uint8_t count,
                    std::uint16_t overflowCount, AlertHandler handler);
@@ -120,7 +124,7 @@ public:
     std::uint16_t activeSection() const { return activeSection_; }
     std::uint16_t activePage() const { return activePage_; }
     bool modalVisible() const {
-        return modal_.visible || transientModal_.visible || selection_.visible;
+        return modal_.visible || transientModal_.visible || selection_.visible || pageMenu_.visible;
     }
     bool selectionVisible() const { return selection_.visible; }
     bool alertVisible() const { return alert_.visible; }
@@ -181,9 +185,17 @@ private:
     void renderWidgetSeparators(const PageView& page, std::uint16_t contentX,
                                 std::uint16_t contentY, std::uint16_t cellWidth,
                                 std::uint16_t cellHeight, std::uint16_t gap);
-    static std::string_view pageMenuItem(void* context, std::size_t index);
-    static void pageMenuCompleted(void* context, SelectionResult result, std::size_t index);
-    bool pageByOrder(std::size_t order, PageView& page, std::size_t& position) const;
+    struct PageMenuState {
+        std::uint16_t section{noIndex}; // noIndex: choosing a section
+        std::uint16_t cursor{};
+        bool visible{};
+    };
+
+    std::uint16_t pageMenuCount() const;
+    bool pageMenuEntry(std::uint16_t index, std::uint16_t& section, std::uint16_t& page,
+                       std::uint16_t& pages) const;
+    void handlePageMenu(InputAction action);
+    void renderPageMenu();
     void renderBars(const char* title, const char* const (&labels)[4], bool upArrow, bool downArrow);
     void renderSleepScreen();
     void renderModal(const ModalState& modal);
@@ -209,7 +221,7 @@ private:
     ModalState transientModal_{};
     SelectionState selection_{};
     AlertState alert_{};
-    char pageMenuText_[48]{};
+    PageMenuState pageMenu_{};
     std::uint16_t activeSection_{noIndex};
     std::uint16_t activePage_{noIndex};
     std::uint32_t renderAt_{};

@@ -449,21 +449,33 @@ int main() {
     panel.state = slstm32::epd::UpdateState::idle;
     display.run();
 
-    // Page menu: every page in order, the current one preselected; selecting
-    // shows that page in its section.
+    // Page menu: section tiles, then page tiles; a one-page section opens
+    // directly, action 1 goes back, action 2 opens.
     assert(display.activeSection() == 0u && display.activePage() == 0u);
     assert(display.showPageMenu());
-    assert(display.selectionVisible());
-    display.handle(semantic_display::InputAction::nextSection);
-    display.handle(semantic_display::InputAction::nextSection);
-    display.handle(semantic_display::InputAction::nextSection);
+    assert(display.pageMenuVisible() && display.modalVisible());
+    display.handle(semantic_display::InputAction::nextPage);
     display.handle(semantic_display::InputAction::action2);
-    assert(!display.selectionVisible());
+    assert(!display.pageMenuVisible());
     assert(display.activeSection() == 1u && display.activePage() == 2u);
     assert(display.showPageMenu());
-    display.handle(semantic_display::InputAction::previousSection);
+    display.handle(semantic_display::InputAction::previousPage);
+    display.handle(semantic_display::InputAction::action2);
+    assert(display.pageMenuVisible());
+    display.run();
+    assert(panel.state == slstm32::epd::UpdateState::prepared);
+    panel.state = slstm32::epd::UpdateState::idle;
+    display.handle(semantic_display::InputAction::nextPage);
+    display.handle(semantic_display::InputAction::action2);
+    assert(!display.pageMenuVisible());
+    assert(display.activeSection() == 0u && display.activePage() == 1u);
+    assert(display.showPageMenu());
+    display.handle(semantic_display::InputAction::action2);
     display.handle(semantic_display::InputAction::action1);
-    assert(display.activeSection() == 1u && display.activePage() == 2u);
+    assert(display.pageMenuVisible());
+    display.handle(semantic_display::InputAction::action1);
+    assert(!display.pageMenuVisible());
+    assert(display.activeSection() == 0u && display.activePage() == 1u);
     display.run();
     panel.state = slstm32::epd::UpdateState::idle;
     display.run();

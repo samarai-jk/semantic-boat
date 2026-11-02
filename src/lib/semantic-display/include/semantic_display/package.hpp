@@ -11,6 +11,8 @@ inline constexpr std::uint16_t packageFormatVersion = 1u;
 inline constexpr std::size_t packageHeaderSize = 32u;
 inline constexpr std::uint16_t noIndex = 0xffffu;
 inline constexpr std::size_t historySeriesOverheadBytes = 32u;
+// A history plot shows its own value plus up to this many more.
+inline constexpr std::size_t maxHistoryPlotExtraSeries = 2u;
 inline constexpr std::uint8_t defaultValueMaxDigits = 6u;
 inline constexpr std::uint8_t maximumValueMaxDigits = 32u;
 
@@ -95,17 +97,35 @@ struct WidgetView {
     std::string_view text{};
 };
 
+// One value of a graph. circular: a direction that wraps (the line breaks
+// instead of crossing the graph).
+struct HistoryPlotSeries {
+    std::uint16_t sourceIndex{noIndex};
+    std::uint8_t decimals{1u};
+    bool fixedRange{};
+    bool circular{};
+    float minimum{};
+    float maximum{};
+    std::string_view sourceId{};
+    std::string_view title{};
+    std::string_view displayUnit{};
+};
+
 struct HistoryPlotView {
     std::uint16_t sectionIndex{noIndex};
     std::uint16_t pageIndex{noIndex};
     std::uint16_t sourceIndex{noIndex};
     std::uint8_t decimals{1u};
     bool fixedRange{};
+    bool circular{};
     float minimum{};
     float maximum{};
     std::string_view sourceId{};
     std::string_view title{};
     std::string_view displayUnit{};
+    // Further values drawn dotted, then dashed, each on its own scale.
+    std::uint8_t extraCount{};
+    HistoryPlotSeries extra[maxHistoryPlotExtraSeries]{};
 };
 
 class PackageView {

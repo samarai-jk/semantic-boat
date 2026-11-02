@@ -20,7 +20,7 @@ test('catalog validates, persists, lists, deletes and prevents path traversal', 
   assert.deepEqual(await catalog.read('test.json'), document);
   await assert.rejects(catalog.save('../test.json', document));
   await assert.rejects(catalog.save('invalid.json', {}));
-  await assert.rejects(catalog.save('large.json', { ...document, name: 'x'.repeat(9000) }));
+  await assert.rejects(catalog.save('large.json', { ...document, name: 'x'.repeat(10300) }));
   const withAge = { ...document, permanent_sources: [{ id: 'position', path: 'navigation.position', outdated_ms: 10000, stale_ms: 60000 }] };
   assert.ok(catalog.validate(withAge));
   assert.throws(() => catalog.validate({ ...withAge, permanent_sources: [{ ...withAge.permanent_sources[0], stale_ms: 10000 }] }), /outdated_ms/);
@@ -68,6 +68,19 @@ test('navigation and weather templates provide permanent plot examples within RA
     assert.equal(plots.length, plotCount);
     for (const page of plots) assert.ok(histories.some(source => source.id === page.history_plot.source));
   }
+});
+
+test('graph series need history over the same span as the graph', () => {
+  const catalog = new Catalog('/tmp');
+  const source = (id, interval, points) => ({ id, path: `test.${id}`, history: { interval_ms: interval, points, reducer: 'last' } });
+  const document = series => ({ schema: 'semantic-display/v1', name: 'Graph',
+    permanent_sources: [source('a', 30000, 56), source('b', 30000, 56), source('c', 15000, 56), { id: 'd', path: 'test.d' }],
+    sections: [{ id: 's', pages: [{ id: 'p', history_plot: { source: 'a', series },
+      grid: { columns: 1, rows: 1 }, widgets: [{ type: 'value', source: 'a', cell: { column: 0, row: 0 } }] }] }] });
+  assert.ok(catalog.validate(document([{ source: 'b', circular: true }])));
+  assert.throws(() => catalog.validate(document([{ source: 'c' }])), /same time span/);
+  assert.throws(() => catalog.validate(document([{ source: 'd' }])), /requires history/);
+  assert.throws(() => catalog.validate(document([{ source: 'b' }, { source: 'b' }, { source: 'b' }])), /must NOT have more than 2 items/);
 });
 
 test('configuration transfer uses contiguous bounded chunks and complete CRC', async context => {

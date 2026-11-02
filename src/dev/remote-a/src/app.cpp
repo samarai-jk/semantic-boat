@@ -79,8 +79,10 @@ constexpr semantic_display::ConfigStorageLayout configStorageLayout{};
 // Installation uses the otherwise idle EPD framebuffer as two temporary 8 KiB
 // areas, so no download/compilation workspace consumes normal-operation RAM.
 constexpr std::size_t compiledConfigCapacity = 8u * 1024u;
-constexpr std::size_t installationPackageCapacity = 8u * 1024u;
-constexpr std::size_t installationSourceCapacity = 8u * 1024u;
+// The compiled package is well under half the JSON size, so the JSON gets the
+// larger share: configurations up to 10 KiB, packages up to 6 KiB.
+constexpr std::size_t installationPackageCapacity = 6u * 1024u;
+constexpr std::size_t installationSourceCapacity = 10u * 1024u;
 static_assert(installationPackageCapacity + installationSourceCapacity <=
               slstm32::epd::Waveshare3In7::bufferSize);
 constexpr std::size_t historyCapacity = 1024u;

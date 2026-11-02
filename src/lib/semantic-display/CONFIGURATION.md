@@ -173,7 +173,7 @@ The remote-a mapping is:
 | B0 / B1 | Previous / next section; hold B0 for three seconds to sleep |
 | B2 / B3 | Previous / next page |
 | B4 | Action 1: toggle GRAPH / VALUES when the page assigns a history plot |
-| B5 | Action 2 (`MENU`): press for the page menu, hold one second for a full display refresh |
+| B5 | Action 2 (`MENU`): press for the page menu (sections, then pages, as tiles), hold one second for a full display refresh |
 
 After B0 has been held for one second, remote-a displays a two-second countdown
 and asks the user to keep holding it. Releasing B0 cancels the countdown and
@@ -267,6 +267,19 @@ plot retain their existing Action 1 behavior; B5 still opens the page menu.
 | `display_unit` | Optional numeric conversion; defaults to the source unit. |
 | `decimals` | Y-axis label precision, 0 through 6; defaults to 1. |
 | `y_min`, `y_max` | Optional fixed bounds in **display units**, supplied together with minimum less than maximum. Omit both for zero-based automatic scaling. |
+| `circular` | Optional; `true` for a direction that wraps (wind direction, heading). The line breaks where the value wraps instead of drawing across the graph. Without bounds the range is one turn (0..360 for `deg`), labelled N, E, S, W, N instead of numbers. |
+| `series` | Optional; up to two more values on the same graph, each an object with `source`, `title`, `display_unit`, `decimals`, `y_min`/`y_max`, and `circular` as above. Each needs history over the same span (`interval_ms` × (`points` − 1)) as the graph's own source. |
+
+A graph with several values draws the first solid, the second dotted, and the
+third dashed, each on its own scale. The header shows a legend (line sample
+and title of each value) instead of the title; the first value's scale is on
+the left, the second's on the right, the third is named in the legend only.
+For example, true wind speed with its direction:
+
+```json
+"history_plot": {"source": "tws", "title": "TRUE WIND", "display_unit": "kn", "decimals": 0,
+  "series": [{"source": "twd", "title": "TRUE DIRECTION", "display_unit": "deg", "circular": true}]}
+```
 
 Automatic scaling starts at zero and uses the largest retained value for the
 upper bound. Zero or negative-only histories use a range of 0 to 1. Configure a

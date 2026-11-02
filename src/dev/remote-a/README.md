@@ -68,8 +68,9 @@ alarms. An automatic day/night LED mode is intentionally deferred until server
 data can provide the required ambient state.
 
 B5 (Action 2) is **Menu** in every application: a press opens the page menu
-(B0/B1 move, B5 or B3 select, B4 or B2 cancel), holding it for one second
-forces a full display refresh.
+(sections as tiles, then the pages of the chosen section; B0/B1 move up/down,
+B2/B3 left/right, B4 back, B5 open), holding it for one second forces a full
+display refresh.
 
 ## Local metrics
 
@@ -122,7 +123,8 @@ subscribes to a local memory metric.
 The active compiled package occupies a fixed 8 KiB RAM2 buffer. Download and
 compilation do not reserve another permanent RAM buffer: once a configuration
 transfer begins, normal display rendering is paused and the 16.4 KiB E-paper
-framebuffer is reused as separate 8 KiB JSON-input and compiled-output areas.
+framebuffer is reused as separate 10 KiB JSON-input and 6 KiB compiled-output
+areas (a compiled package is well under half the size of its JSON).
 The old active package remains valid until the new package has been committed
 to EEPROM. A successful commit uses the orderly reset path described above;
 startup then loads the new package. This keeps installation-only memory out of

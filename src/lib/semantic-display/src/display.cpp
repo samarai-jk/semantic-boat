@@ -317,6 +317,10 @@ void DisplayService::handle(InputAction action) {
         }
         return;
     }
+    if (pageMenu_.visible) {
+        handlePageMenu(action);
+        return;
+    }
     if (selection_.visible) {
         const auto count = selection_.list.count;
         if (count == 0u) {
@@ -533,77 +537,133 @@ void DisplayService::dismissSelection() {
     invalidate(0u);
 }
 
-bool DisplayService::pageByOrder(std::size_t order, PageView& result,
-                                 std::size_t& pagesInSection) const {
-    std::size_t index{};
+// Menu entries: the sections, or the pages of pageMenu_.section, in package
+// order. pages: the number of pages of the entry's section.
+bool DisplayService::pageMenuEntry(std::uint16_t index, std::uint16_t& section,
+                                   std::uint16_t& page, std::uint16_t& pages) const {
+    std::uint16_t position{};
     bool found{};
     RecordView record{};
     if (!package_.first(record)) return false;
     do {
-        PageView page{};
-        if (!package_.page(record, page)) continue;
-        if (index++ == order) { result = page; found = true; break; }
+        if (pageMenu_.section == noIndex) {
+            SectionView view{};
+            if (!package_.section(record, view)) continue;
+            if (position++ == index) { section = view.sectionIndex; found = true; break; }
+        } else {
+            PageView view{};
+            if (!package_.page(record, view) || view.sectionIndex != pageMenu_.section) continue;
+            if (position++ == index) {
+                section = view.sectionIndex; page = view.pageIndex; found = true; break;
+            }
+        }
     } while (package_.next(record));
     if (!found || !package_.first(record)) return false;
-    pagesInSection = 0u;
+    pages = 0u;
     do {
-        PageView page{};
-        if (package_.page(record, page) && page.sectionIndex == result.sectionIndex) ++pagesInSection;
+        PageView view{};
+        if (!package_.page(record, view) || view.sectionIndex != section) continue;
+        if (pages++ == 0u && pageMenu_.section == noIndex) page = view.pageIndex;
     } while (package_.next(record));
     return true;
 }
 
-std::string_view DisplayService::pageMenuItem(void* context, std::size_t index) {
-    auto& self = *static_cast<DisplayService*>(context);
-    PageView page{};
-    SectionView section{};
-    std::size_t pagesInSection{};
-    if (!self.pageByOrder(index, page, pagesInSection) ||
-        !self.sectionByIndex(page.sectionIndex, section)) return {};
-    char sectionTitle[22]{}, pageTitle[22]{};
-    copyView(sectionTitle, sizeof sectionTitle, section.title);
-    copyView(pageTitle, sizeof pageTitle, page.title);
-    // A section with one page is named by the section alone.
-    if (pagesInSection == 1u || page.title.empty() || page.title == section.title) {
-        copyText(self.pageMenuText_, sizeof self.pageMenuText_, sectionTitle);
-    } else {
-        std::snprintf(self.pageMenuText_, sizeof self.pageMenuText_, "%s - %s",
-                      sectionTitle, pageTitle);
-    }
-    return self.pageMenuText_;
-}
-
-void DisplayService::pageMenuCompleted(void* context, SelectionResult result, std::size_t index) {
-    auto& self = *static_cast<DisplayService*>(context);
-    PageView page{};
-    std::size_t pagesInSection{};
-    if (result != SelectionResult::selected || !self.pageByOrder(index, page, pagesInSection)) return;
-    if (page.pageIndex == self.activePage_) return;
-    self.activeSection_ = page.sectionIndex;
-    self.activePage_ = page.pageIndex;
-    self.graphMode_ = false;
-    if (self.navigationNotification_.changed) {
-        self.navigationNotification_.changed(self.navigationNotification_.context,
-                                             self.activeSection_, self.activePage_);
-    }
-    self.invalidate(0u);
+std::uint16_t DisplayService::pageMenuCount() const {
+    std::uint16_t count{};
+    RecordView record{};
+    if (!package_.first(record)) return 0u;
+    do {
+        SectionView section{};
+        PageView page{};
+        if (pageMenu_.section == noIndex ? package_.section(record, section)
+                                         : package_.page(record, page) &&
+                                           page.sectionIndex == pageMenu_.section) ++count;
+    } while (package_.next(record));
+    return count;
 }
 
 bool DisplayService::showPageMenu() {
-    const auto count = package_.info().pageCount;
-    if (count == 0u) return false;
-    std::size_t current{};
-    RecordView record{};
-    if (package_.first(record)) {
-        std::size_t index{};
-        do {
-            PageView page{};
-            if (!package_.page(record, page)) continue;
-            if (page.pageIndex == activePage_) current = index;
-            ++index;
-        } while (package_.next(record));
+    if (package_.info().pageCount == 0u) return false;
+    pageMenu_ = {};
+    pageMenu_.visible = true;
+    const auto count = pageMenuCount();
+    for (std::uint16_t index = 0u; index < count; ++index) {
+        std::uint16_t section{}, page{}, pages{};
+        if (pageMenuEntry(index, section, page, pages) && section == activeSection_) {
+            pageMenu_.cursor = index;
+            break;
+        }
     }
-    return showSelection("GO TO PAGE", {this, count, &pageMenuItem, &pageMenuCompleted}, current);
+    invalidate(0u);
+    return true;
+}
+
+void DisplayService::dismissPageMenu() {
+    if (!pageMenu_.visible) return;
+    pageMenu_.visible = false;
+    invalidate(0u);
+}
+
+void DisplayService::handlePageMenu(InputAction action) {
+    const auto count = pageMenuCount();
+    if (count == 0u) { dismissPageMenu(); return; }
+    const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
+    auto& cursor = pageMenu_.cursor;
+    switch (action) {
+    case InputAction::previousPage: cursor = static_cast<std::uint16_t>(cursor == 0u ? count - 1u : cursor - 1u); break;
+    case InputAction::nextPage: cursor = static_cast<std::uint16_t>(cursor + 1u >= count ? 0u : cursor + 1u); break;
+    case InputAction::previousSection: if (cursor >= columns) cursor = static_cast<std::uint16_t>(cursor - columns); break;
+    case InputAction::nextSection:
+        if (cursor / columns < (count - 1u) / columns) {
+            cursor = static_cast<std::uint16_t>(std::min<std::uint32_t>(cursor + columns, count - 1u));
+        }
+        break;
+    case InputAction::action1:
+        if (pageMenu_.section == noIndex) { dismissPageMenu(); return; }
+        {
+            const auto section = pageMenu_.section;
+            pageMenu_.section = noIndex;
+            pageMenu_.cursor = 0u;
+            const auto sections = pageMenuCount();
+            for (std::uint16_t index = 0u; index < sections; ++index) {
+                std::uint16_t entrySection{}, page{}, pages{};
+                if (pageMenuEntry(index, entrySection, page, pages) && entrySection == section) {
+                    pageMenu_.cursor = index;
+                    break;
+                }
+            }
+        }
+        break;
+    case InputAction::action2: {
+        std::uint16_t section{}, page{}, pages{};
+        if (!pageMenuEntry(cursor, section, page, pages)) { dismissPageMenu(); return; }
+        if (pageMenu_.section == noIndex && pages > 1u) {
+            pageMenu_.section = section;
+            pageMenu_.cursor = 0u;
+            const auto entries = pageMenuCount();
+            for (std::uint16_t index = 0u; index < entries; ++index) {
+                std::uint16_t entrySection{}, entryPage{}, entryPages{};
+                if (pageMenuEntry(index, entrySection, entryPage, entryPages) &&
+                    entryPage == activePage_) {
+                    pageMenu_.cursor = index;
+                    break;
+                }
+            }
+            break;
+        }
+        pageMenu_.visible = false;
+        if (page != activePage_) {
+            activeSection_ = section;
+            activePage_ = page;
+            graphMode_ = false;
+            if (navigationNotification_.changed) {
+                navigationNotification_.changed(navigationNotification_.context, activeSection_, activePage_);
+            }
+        }
+        break;
+    }
+    }
+    invalidate(0u);
 }
 
 void DisplayService::showAlert(const char* title, const char* message, AlertLevel level,
@@ -652,7 +712,8 @@ void DisplayService::setRenderingPaused(bool paused) {
 }
 
 bool DisplayService::dialogVisible() const {
-    return alert_.visible || modal_.visible || transientModal_.visible || selection_.visible;
+    return alert_.visible || modal_.visible || transientModal_.visible || selection_.visible ||
+           pageMenu_.visible;
 }
 
 void DisplayService::cancelObsoleteTransfer() {
@@ -1020,6 +1081,115 @@ void DisplayService::renderSelection() {
     }
 }
 
+// Tiles in a grid of up to three columns and three visible rows: outlined,
+// the cursor filled black, the current section or page marked with a bar.
+void DisplayService::renderPageMenu() {
+    const auto count = pageMenuCount();
+    const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
+    if (columns == 0u) return;
+    const auto rows = static_cast<std::uint16_t>((count + columns - 1u) / columns);
+    constexpr std::uint16_t visibleRows = 3u;
+    const auto shownRows = rows < visibleRows ? rows : visibleRows;
+    const auto cursorRow = static_cast<std::uint16_t>(pageMenu_.cursor / columns);
+    const auto firstRow = cursorRow >= shownRows ? static_cast<std::uint16_t>(cursorRow - shownRows + 1u) : 0u;
+
+    char title[48]{"GO TO"};
+    if (pageMenu_.section != noIndex) {
+        SectionView section{};
+        if (sectionByIndex(pageMenu_.section, section)) copyView(title, sizeof title, section.title);
+    }
+    const char* labels[4]{"<", ">", pageMenu_.section == noIndex ? "CLOSE" : "BACK", "OPEN"};
+    renderBars(title, labels, cursorRow != 0u, cursorRow + 1u < rows);
+
+    constexpr std::uint16_t margin = 8u;
+    constexpr std::uint16_t gap = 8u;
+    const auto areaWidth = static_cast<std::uint16_t>(canvas_.width() - 2u * horizontalSafeMargin);
+    const auto areaHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight - 2u * margin);
+    const auto tileWidth = static_cast<std::uint16_t>((areaWidth - (columns - 1u) * gap) / columns);
+    const auto tileHeight = static_cast<std::uint16_t>((areaHeight - (shownRows - 1u) * gap) / shownRows);
+    const auto textWidth = static_cast<std::uint16_t>(tileWidth - 12u);
+
+    const auto entryName = [this](std::uint16_t section, std::uint16_t page, char* name, std::size_t size) {
+        if (pageMenu_.section == noIndex) {
+            SectionView view{};
+            if (sectionByIndex(section, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
+        } else {
+            PageView view{};
+            if (pageByIndex(page, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
+        }
+    };
+    // A name on one or two lines, broken at the last space that lets the
+    // first line fit.
+    char first[48]{}, second[48]{};
+    const auto wrap = [&](const char* name, std::uint8_t scale) {
+        copyText(first, sizeof first, name);
+        second[0] = '\0';
+        if (Font5x7::textWidth(first, scale) <= textWidth) return true;
+        for (char* space = std::strrchr(first, ' '); space; space = std::strrchr(first, ' ')) {
+            *space = '\0';
+            if (Font5x7::textWidth(first, scale) <= textWidth) {
+                copyText(second, sizeof second, name + (space - first) + 1);
+                return Font5x7::textWidth(second, scale) <= textWidth;
+            }
+        }
+        return false;
+    };
+    // One text size for all tiles of the screen: 3 if every name fits.
+    std::uint8_t scale = 3u;
+    for (std::uint16_t index = static_cast<std::uint16_t>(firstRow * columns);
+         index < count && index < (firstRow + shownRows) * columns; ++index) {
+        std::uint16_t section{}, page{}, pages{};
+        char name[48]{};
+        if (!pageMenuEntry(index, section, page, pages)) continue;
+        entryName(section, page, name, sizeof name);
+        if (!wrap(name, 3u)) { scale = 2u; break; }
+    }
+
+    for (std::uint16_t row = 0u; row < shownRows; ++row) {
+        for (std::uint16_t column = 0u; column < columns; ++column) {
+            const auto index = static_cast<std::uint16_t>((firstRow + row) * columns + column);
+            if (index >= count) break;
+            std::uint16_t section{}, page{}, pages{};
+            if (!pageMenuEntry(index, section, page, pages)) continue;
+            const auto x = static_cast<std::uint16_t>(horizontalSafeMargin + column * (tileWidth + gap));
+            const auto y = static_cast<std::uint16_t>(headerHeight + margin + row * (tileHeight + gap));
+            const bool selected = index == pageMenu_.cursor;
+            const bool current = pageMenu_.section == noIndex ? section == activeSection_ : page == activePage_;
+            if (selected) canvas_.fillRect(x, y, tileWidth, tileHeight, true);
+            else canvas_.drawRect(x, y, tileWidth, tileHeight, true, 2u);
+
+            char name[48]{}, detail[16]{};
+            entryName(section, page, name, sizeof name);
+            if (pageMenu_.section == noIndex && pages > 1u) {
+                std::snprintf(detail, sizeof detail, "%u PAGES", static_cast<unsigned>(pages));
+            }
+            if (!wrap(name, scale)) {
+                fitText(first, sizeof first, textWidth, scale);
+                fitText(second, sizeof second, textWidth, scale);
+            }
+            const auto lineHeight = static_cast<std::uint16_t>(7u * scale);
+            const auto lineGap = static_cast<std::uint16_t>(scale * 2u);
+            const auto detailHeight = *detail ? 14u + 6u : 0u;
+            const auto blockHeight = static_cast<std::uint16_t>(
+                lineHeight + (*second ? lineGap + lineHeight : 0u) + detailHeight);
+            auto textY = static_cast<std::uint16_t>(y + (tileHeight > blockHeight ? (tileHeight - blockHeight) / 2u : 2u));
+            drawCentered(x, tileWidth, textY, first, !selected, scale);
+            if (*second) {
+                textY = static_cast<std::uint16_t>(textY + lineHeight + lineGap);
+                drawCentered(x, tileWidth, textY, second, !selected, scale);
+            }
+            if (*detail) {
+                drawCentered(x, tileWidth, static_cast<std::uint16_t>(textY + lineHeight + 6u), detail, !selected, 2u);
+            }
+            if (current) {
+                canvas_.fillRect(static_cast<std::uint16_t>(x + 8u),
+                                 static_cast<std::uint16_t>(y + tileHeight - 9u),
+                                 static_cast<std::uint16_t>(tileWidth - 16u), 4u, !selected);
+            }
+        }
+    }
+}
+
 // Switched off: an otherwise blank screen, so the retained E-paper image does
 // not look like live data.
 void DisplayService::renderSleepScreen() {
@@ -1110,30 +1280,68 @@ void DisplayService::renderAlert() {
     }
 }
 
+// A graph of up to three values, each on its own scale: the first solid with
+// its scale on the left, the second dotted with its scale on the right, the
+// third dashed (named in the legend only). A circular value (direction) on
+// 0..360 deg shows N/E/S/W instead of numbers and breaks its line where it
+// wraps instead of drawing across the graph.
 void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_t x,
                                      std::uint16_t y, std::uint16_t width, std::uint16_t height) {
     if (width < 180u || height < 90u) return;
-    SourceView source{};
-    if (!package_.sourceByIndex(plot.sourceIndex, source)) return;
-    const auto unit = plot.displayUnit.empty() ? source.unit : plot.displayUnit;
-    char title[64]{}, unitText[24]{};
-    copyView(title, sizeof title, plot.title.empty() ? plot.sourceId : plot.title);
-    copyView(unitText, sizeof unitText, unit);
-    const auto count = history_.sampleCount(plot.sourceIndex);
-    float minimum = plot.minimum, maximum = plot.maximum;
-    bool haveSample{};
-    if (!plot.fixedRange) {
-        minimum = 0.0f;
-        for (std::size_t index = 0u; index < count; ++index) {
-            float value{};
-            if (!history_.sample(plot.sourceIndex, index, value)) continue;
-            value = convertUnit(value, source.unit, unit);
-            if (!std::isfinite(value)) continue;
-            if (!haveSample) { maximum = value; haveSample = true; }
-            else maximum = std::max(maximum, value);
+    enum class Style : std::uint8_t { solid, dotted, dashed };
+    struct Trace {
+        SourceView source{};
+        std::string_view unit{}, name{};
+        std::uint8_t decimals{};
+        bool fixedRange{}, circular{}, compass{}, valid{};
+        float minimum{}, maximum{};
+        std::size_t count{};
+    };
+    Trace traces[1u + maxHistoryPlotExtraSeries]{};
+    std::size_t traceCount{};
+    const auto addTrace = [&](std::uint16_t sourceIndex, std::string_view unit, std::string_view title,
+                              std::string_view sourceId, std::uint8_t decimals, bool fixedRange,
+                              bool circular, float minimum, float maximum) {
+        auto& trace = traces[traceCount];
+        if (!package_.sourceByIndex(sourceIndex, trace.source)) return traceCount == 0u ? false : true;
+        trace.unit = unit.empty() ? trace.source.unit : unit;
+        trace.name = title.empty() ? sourceId : title;
+        trace.decimals = decimals;
+        trace.fixedRange = fixedRange;
+        trace.circular = circular;
+        trace.minimum = minimum;
+        trace.maximum = maximum;
+        const float fullTurn = trace.unit == "deg" ? 360.0f : 6.2831853f;
+        if (circular && !fixedRange) { trace.minimum = 0.0f; trace.maximum = fullTurn; trace.fixedRange = true; }
+        trace.compass = circular && trace.minimum == 0.0f && std::fabs(trace.maximum - fullTurn) < 0.001f;
+        trace.count = history_.sampleCount(sourceIndex);
+        bool haveSample{};
+        if (!trace.fixedRange) {
+            trace.minimum = 0.0f;
+            for (std::size_t index = 0u; index < trace.count; ++index) {
+                float value{};
+                if (!history_.sample(sourceIndex, index, value)) continue;
+                value = convertUnit(value, trace.source.unit, trace.unit);
+                if (!std::isfinite(value)) continue;
+                trace.maximum = haveSample ? std::max(trace.maximum, value) : value;
+                haveSample = true;
+            }
+            if (!(trace.maximum > trace.minimum)) trace.maximum = 1.0f;
         }
-        if (!(maximum > minimum)) maximum = 1.0f;
+        trace.valid = trace.count != 0u && (trace.fixedRange || haveSample) &&
+            trace.minimum < trace.maximum && std::isfinite(trace.maximum - trace.minimum);
+        ++traceCount;
+        return true;
+    };
+    if (!addTrace(plot.sourceIndex, plot.displayUnit, plot.title, plot.sourceId, plot.decimals,
+                  plot.fixedRange, plot.circular, plot.minimum, plot.maximum)) return;
+    for (std::uint8_t index = 0u; index < plot.extraCount; ++index) {
+        const auto& extra = plot.extra[index];
+        (void)addTrace(extra.sourceIndex, extra.displayUnit, extra.title, extra.sourceId, extra.decimals,
+                       extra.fixedRange, extra.circular, extra.minimum, extra.maximum);
     }
+    const bool multiple = traceCount > 1u;
+
     const auto fitScaled = [](char* text, std::uint16_t available, std::uint8_t numerator) {
         auto length = std::strlen(text);
         bool shortened{};
@@ -1142,20 +1350,17 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         }
         if (shortened && length != 0u) text[length - 1u] = '.';
     };
-    char lowerBound[48]{}, upperBound[48]{}, window[24]{};
-    (void)formatNumber(minimum, plot.decimals, lowerBound, sizeof lowerBound);
-    (void)formatNumber(maximum, plot.decimals, upperBound, sizeof upperBound);
-    const auto labelLimit = static_cast<std::uint16_t>(width / 3u - 3u);
-    fitScaled(lowerBound, labelLimit, 3u);
-    fitScaled(upperBound, labelLimit, 3u);
-    fitScaled(unitText, labelLimit, 3u);
     const auto left = x;
     const auto top = static_cast<std::uint16_t>(y + 21u);
     const auto right = static_cast<std::uint16_t>(x + width - 1u);
     const auto bottom = static_cast<std::uint16_t>(y + height - 1u);
     const auto graphWidth = static_cast<std::uint16_t>(right - left);
     const auto graphHeight = static_cast<std::uint16_t>(bottom - top);
-    const auto milliseconds = static_cast<std::uint64_t>(source.historyPoints - 1u) * source.historyIntervalMs;
+    const auto labelLimit = static_cast<std::uint16_t>(width / 3u - 3u);
+
+    char window[24]{};
+    const auto& firstSource = traces[0].source;
+    const auto milliseconds = static_cast<std::uint64_t>(firstSource.historyPoints - 1u) * firstSource.historyIntervalMs;
     const auto seconds = milliseconds / 1000u;
     if (seconds >= 3600u)
         std::snprintf(window, sizeof window, "%luh", static_cast<unsigned long>((seconds + 1800u) / 3600u));
@@ -1166,14 +1371,27 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
     else std::snprintf(window, sizeof window, "%lums", static_cast<unsigned long>(milliseconds));
     fitScaled(window, graphWidth / 2u, 3u);
     const auto windowWidth = Font5x7::textWidthScaled(window, 3u, 2u);
-    const bool validRange = count != 0u && (plot.fixedRange || haveSample) &&
-        minimum < maximum && std::isfinite(maximum - minimum);
-    char upperCaption[72]{};
-    if (validRange) std::snprintf(upperCaption, sizeof upperCaption, "%s%s%s", upperBound, *unitText ? " " : "", unitText);
-    else copyText(upperCaption, sizeof upperCaption, unitText);
-    fitScaled(upperCaption, labelLimit, 3u);
-    const auto sideWidth = std::max(Font5x7::textWidthScaled(upperCaption, 3u, 2u), windowWidth);
-    fitScaled(title, static_cast<std::uint16_t>(width - 2u * (sideWidth + 6u)), 4u);
+
+    // Scale captions: "max unit" at the top and min at the bottom, on the
+    // trace's side (first left, second right).
+    char upper[2][72]{}, lower[2][48]{};
+    for (std::size_t index = 0u; index < traceCount && index < 2u; ++index) {
+        const auto& trace = traces[index];
+        if (trace.compass) continue;
+        char unitText[24]{};
+        copyView(unitText, sizeof unitText, trace.unit);
+        if (trace.valid) {
+            char bound[48]{};
+            (void)formatNumber(trace.maximum, trace.decimals, bound, sizeof bound);
+            std::snprintf(upper[index], sizeof upper[index], "%s%s%s", bound, *unitText ? " " : "", unitText);
+            (void)formatNumber(trace.minimum, trace.decimals, lower[index], sizeof lower[index]);
+        } else {
+            copyText(upper[index], sizeof upper[index], unitText);
+        }
+        fitScaled(upper[index], labelLimit, 3u);
+        fitScaled(lower[index], labelLimit, 3u);
+    }
+
     const auto drawAnnotation = [&](const char* text, std::uint16_t textX, std::uint16_t textY, std::uint8_t numerator) {
         const auto textWidth = Font5x7::textWidthScaled(text, numerator, 2u);
         if (textWidth == 0u) return;
@@ -1182,13 +1400,72 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
                          static_cast<std::uint16_t>(textWidth + 4u), static_cast<std::uint16_t>(textHeight + 4u), false);
         Font5x7::drawTextScaled(canvas_, textX, textY, text, true, numerator, 2u);
     };
-    const auto drawAnnotations = [&]() {
-        drawAnnotation(title, static_cast<std::uint16_t>(x + (width - Font5x7::textWidthScaled(title, 4u, 2u)) / 2u), y, 4u);
-        drawAnnotation(upperCaption, left, static_cast<std::uint16_t>(y + 21u), 3u);
-        drawAnnotation(window, static_cast<std::uint16_t>(right + 1u - windowWidth), static_cast<std::uint16_t>(y + 5u), 3u);
-        if (validRange) drawAnnotation(lowerBound, left, static_cast<std::uint16_t>(bottom - 10u), 3u);
+    // A short sample of a line style, for the legend.
+    const auto drawStyleSample = [&](std::uint16_t sampleX, std::uint16_t sampleY, std::uint16_t length, Style style) {
+        for (std::uint16_t step = 0u; step < length; ++step) {
+            const bool on = style == Style::solid || (style == Style::dotted ? step % 6u < 2u : step % 12u < 7u);
+            if (on) canvas_.fillRect(static_cast<std::uint16_t>(sampleX + step), sampleY, 1u, 2u, true);
+        }
     };
-    if (!validRange) {
+    const auto rightAligned = [&](const char* text) {
+        return static_cast<std::uint16_t>(right + 1u - Font5x7::textWidthScaled(text, 3u, 2u));
+    };
+    const auto drawAnnotations = [&]() {
+        drawAnnotation(window, static_cast<std::uint16_t>(right + 1u - windowWidth), static_cast<std::uint16_t>(y + 5u), 3u);
+        if (!multiple) {
+            char title[64]{};
+            copyView(title, sizeof title, traces[0].name);
+            const auto sideWidth = std::max(Font5x7::textWidthScaled(upper[0], 3u, 2u), windowWidth);
+            fitScaled(title, static_cast<std::uint16_t>(width - 2u * (sideWidth + 6u)), 4u);
+            drawAnnotation(title, static_cast<std::uint16_t>(x + (width - Font5x7::textWidthScaled(title, 4u, 2u)) / 2u), y, 4u);
+        } else {
+            // Legend: line sample and name per trace, centred in the header row.
+            constexpr std::uint16_t sampleLength = 18u, sampleGap = 4u, itemGap = 14u;
+            char names[1u + maxHistoryPlotExtraSeries][24]{};
+            const auto available = static_cast<std::uint16_t>(width - 2u * (windowWidth + 8u));
+            const auto perItem = static_cast<std::uint16_t>(available / traceCount);
+            std::uint16_t total{};
+            for (std::size_t index = 0u; index < traceCount; ++index) {
+                copyView(names[index], sizeof names[index], traces[index].name);
+                fitScaled(names[index], static_cast<std::uint16_t>(perItem - sampleLength - sampleGap - itemGap), 3u);
+                total = static_cast<std::uint16_t>(total + sampleLength + sampleGap +
+                                                   Font5x7::textWidthScaled(names[index], 3u, 2u) +
+                                                   (index + 1u < traceCount ? itemGap : 0u));
+            }
+            auto itemX = static_cast<std::uint16_t>(x + (width > total ? (width - total) / 2u : 0u));
+            canvas_.fillRect(static_cast<std::uint16_t>(itemX - 2u), y, static_cast<std::uint16_t>(total + 4u), 16u, false);
+            for (std::size_t index = 0u; index < traceCount; ++index) {
+                drawStyleSample(itemX, static_cast<std::uint16_t>(y + 7u), sampleLength, static_cast<Style>(index));
+                itemX = static_cast<std::uint16_t>(itemX + sampleLength + sampleGap);
+                Font5x7::drawTextScaled(canvas_, itemX, static_cast<std::uint16_t>(y + 3u), names[index], true, 3u, 2u);
+                itemX = static_cast<std::uint16_t>(itemX + Font5x7::textWidthScaled(names[index], 3u, 2u) + itemGap);
+            }
+        }
+        for (std::size_t index = 0u; index < traceCount && index < 2u; ++index) {
+            const auto& trace = traces[index];
+            const bool rightSide = index == 1u;
+            if (trace.compass) {
+                // N at 0 and 360, E, S, W at the quarter lines.
+                constexpr const char* points[]{"N", "E", "S", "W", "N"};
+                for (std::uint16_t quarter = 0u; quarter < 5u; ++quarter) {
+                    auto labelY = static_cast<int>(bottom) - static_cast<int>(quarter * graphHeight / 4u) - 5;
+                    labelY = std::clamp(labelY, static_cast<int>(top), static_cast<int>(bottom) - 10);
+                    drawAnnotation(points[quarter], rightSide ? rightAligned(points[quarter]) : left,
+                                   static_cast<std::uint16_t>(labelY), 3u);
+                }
+                continue;
+            }
+            drawAnnotation(upper[index], rightSide ? rightAligned(upper[index]) : left, top, 3u);
+            if (trace.valid) {
+                drawAnnotation(lower[index], rightSide ? rightAligned(lower[index]) : left,
+                               static_cast<std::uint16_t>(bottom - 10u), 3u);
+            }
+        }
+    };
+
+    bool anyValid{};
+    for (std::size_t index = 0u; index < traceCount; ++index) anyValid = anyValid || traces[index].valid;
+    if (!anyValid) {
         const auto messageWidth = Font5x7::textWidthScaled("NO DATA", 5u, 2u);
         Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(left + (graphWidth - messageWidth) / 2u),
                               static_cast<std::uint16_t>(top + (graphHeight - 18u) / 2u), "NO DATA", true, 5u, 2u);
@@ -1200,31 +1477,45 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         for (std::uint16_t column = 4u; column < graphWidth; column += 8u)
             canvas_.setPixel(static_cast<std::uint16_t>(left + column), gridY, true);
     }
-    int previousX{}, previousY{};
-    bool previousValid{};
     const auto drawPoint = [&](int pixelX, int pixelY) {
         canvas_.fillRect(static_cast<std::uint16_t>(std::min(pixelX, static_cast<int>(right) - 1)),
                          static_cast<std::uint16_t>(std::min(pixelY, static_cast<int>(bottom) - 1)), 2u, 2u, true);
     };
-    for (std::size_t index = 0u; index < count; ++index) {
-        float value{};
-        if (!history_.sample(plot.sourceIndex, index, value)) { previousValid = false; continue; }
-        value = convertUnit(value, source.unit, unit);
-        if (!std::isfinite(value)) { previousValid = false; continue; }
-        const auto pointX = static_cast<int>(left + (source.historyPoints > 1u
-            ? (source.historyPoints - count + index) * graphWidth / (source.historyPoints - 1u) : graphWidth));
-        const auto ratio = std::clamp((value - minimum) / (maximum - minimum), 0.0f, 1.0f);
-        const auto pointY = static_cast<int>(bottom - static_cast<std::uint16_t>(ratio * graphHeight));
-        drawPoint(pointX, pointY);
-        if (previousValid) {
-            const auto steps = std::max(std::abs(pointX - previousX), std::abs(pointY - previousY));
-            for (int step = 0; step <= steps; ++step) {
-                const auto pixelX = steps == 0 ? pointX : previousX + (pointX - previousX) * step / steps;
-                const auto pixelY = steps == 0 ? pointY : previousY + (pointY - previousY) * step / steps;
-                drawPoint(pixelX, pixelY);
+    for (std::size_t traceIndex = 0u; traceIndex < traceCount; ++traceIndex) {
+        const auto& trace = traces[traceIndex];
+        if (!trace.valid) continue;
+        const auto style = static_cast<Style>(traceIndex);
+        const auto range = trace.maximum - trace.minimum;
+        const auto historyPoints = trace.source.historyPoints;
+        int previousX{}, previousY{};
+        float previousValue{};
+        bool previousValid{};
+        std::uint32_t patternStep{};
+        for (std::size_t index = 0u; index < trace.count; ++index) {
+            float value{};
+            if (!history_.sample(trace.source.sourceIndex, index, value)) { previousValid = false; continue; }
+            value = convertUnit(value, trace.source.unit, trace.unit);
+            if (!std::isfinite(value)) { previousValid = false; continue; }
+            // A direction that wraps starts a new line instead of crossing the graph.
+            if (trace.circular && previousValid && std::fabs(value - previousValue) > range / 2.0f) previousValid = false;
+            const auto pointX = static_cast<int>(left + (historyPoints > 1u
+                ? (historyPoints - trace.count + index) * graphWidth / (historyPoints - 1u) : graphWidth));
+            const auto ratio = std::clamp((value - trace.minimum) / range, 0.0f, 1.0f);
+            const auto pointY = static_cast<int>(bottom - static_cast<std::uint16_t>(ratio * graphHeight));
+            if (!previousValid) {
+                drawPoint(pointX, pointY);
+            } else {
+                const auto steps = std::max(std::abs(pointX - previousX), std::abs(pointY - previousY));
+                for (int step = 1; step <= steps; ++step, ++patternStep) {
+                    const bool on = style == Style::solid ||
+                        (style == Style::dotted ? patternStep % 6u < 2u : patternStep % 12u < 7u);
+                    if (!on) continue;
+                    drawPoint(previousX + (pointX - previousX) * step / steps,
+                              previousY + (pointY - previousY) * step / steps);
+                }
             }
+            previousX = pointX; previousY = pointY; previousValue = value; previousValid = true;
         }
-        previousX = pointX; previousY = pointY; previousValid = true;
     }
     drawAnnotations();
 }
@@ -1246,6 +1537,11 @@ void DisplayService::render() {
     if (selection_.visible) {
         canvas_.clear(false);
         renderSelection();
+        return;
+    }
+    if (pageMenu_.visible) {
+        canvas_.clear(false);
+        renderPageMenu();
         return;
     }
     if (transientModal_.visible) {

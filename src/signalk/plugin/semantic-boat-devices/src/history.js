@@ -5,33 +5,78 @@
 // API), aggregated into the display's intervals with the display's reducer.
 // Only the own vessel; the source Signal K prefers for the path when it has
 // data there, else every source of the path.
+//
+// Connection: the hub's own setting when its URL is set, else the settings of
+// the writer plugin (its configuration file next to the hub's data
+// directory, read again after a minute), else localhost:8086, signalk.
+
+const fs = require('node:fs');
 
 const REDUCERS = { 1: 'last', 2: 'mean', 3: 'min', 4: 'max' };
+const WRITER_SETTINGS_MS = 60000;
+
+function checkConnection({ url, database }) {
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error('History: invalid InfluxDB URL'); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('History: InfluxDB URL must be http or https');
+  if (!/^[A-Za-z0-9_-]+$/.test(database)) throw new Error('History: invalid database name');
+}
 
 function validateOptions(options = {}) {
-  const result = { enabled: options.enabled ?? true, url: options.url ?? 'http://localhost:8086',
-    database: options.database ?? 'signalk' };
-  let url;
-  try { url = new URL(result.url); } catch { throw new Error('History: invalid InfluxDB URL'); }
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('History: InfluxDB URL must be http or https');
-  if (!/^[A-Za-z0-9_-]+$/.test(result.database)) throw new Error('History: invalid database name');
+  const result = { enabled: options.enabled ?? true, url: options.url || '', database: options.database || '',
+    username: options.username || '', password: options.password || '' };
+  if (result.url) checkConnection({ url: result.url, database: result.database || 'signalk' });
+  else if (result.database && !/^[A-Za-z0-9_-]+$/.test(result.database)) throw new Error('History: invalid database name');
   return result;
+}
+
+// The connection of signalk-to-influxdb (protocol, host, port, database,
+// username, password), or null without a readable configuration.
+function writerConnection(file) {
+  let configuration;
+  try { configuration = JSON.parse(fs.readFileSync(file, 'utf8')).configuration; } catch { return null; }
+  if (!configuration) return null;
+  const protocol = configuration.protocol === 'https' ? 'https' : 'http';
+  return { url: `${protocol}://${configuration.host || 'localhost'}:${configuration.port || 8086}`,
+    database: configuration.database || 'signalk', username: configuration.username || '',
+    password: configuration.password || '', from: 'signalk-to-influxdb' };
 }
 
 const quoteString = value => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
 class HistoryProvider {
-  constructor({ app, options, fetchImpl = globalThis.fetch, now = Date.now }) {
-    this.app = app; this.options = validateOptions(options); this.fetch = fetchImpl; this.now = now;
-    this.queries = 0; this.errors = 0; this.lastError = null;
+  // writerSettings: the configuration file of signalk-to-influxdb.
+  constructor({ app, options, writerSettings = null, fetchImpl = globalThis.fetch, now = Date.now }) {
+    this.app = app; this.options = validateOptions(options); this.writerSettings = writerSettings;
+    this.fetch = fetchImpl; this.now = now;
+    this.queries = 0; this.errors = 0; this.lastError = null; this.writer = null; this.writerReadAt = -Infinity;
+  }
+
+  connection() {
+    if (this.options.url) {
+      return { url: this.options.url, database: this.options.database || 'signalk', username: this.options.username,
+        password: this.options.password, from: 'history setting' };
+    }
+    if (this.writerSettings && this.now() - this.writerReadAt >= WRITER_SETTINGS_MS) {
+      this.writer = writerConnection(this.writerSettings);
+      this.writerReadAt = this.now();
+    }
+    const connection = this.writer ?? { url: 'http://localhost:8086', database: 'signalk', username: '', password: '',
+      from: 'defaults' };
+    return this.options.database ? { ...connection, database: this.options.database } : connection;
   }
 
   async query(statement) {
-    const url = new URL('/query', this.options.url);
-    url.searchParams.set('db', this.options.database);
+    const connection = this.connection();
+    checkConnection(connection);
+    const url = new URL('/query', connection.url);
+    url.searchParams.set('db', connection.database);
     url.searchParams.set('epoch', 'ms');
     url.searchParams.set('q', statement);
-    const response = await this.fetch(url, { signal: AbortSignal.timeout(15000) });
+    // Credentials in a header, not in the URL (which may end up in logs).
+    const headers = connection.username
+      ? { Authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString('base64')}` } : {};
+    const response = await this.fetch(url, { headers, signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error(`InfluxDB answered ${response.status}`);
     const body = await response.json();
     const result = body.results?.[0];
@@ -71,7 +116,11 @@ class HistoryProvider {
     }
   }
 
-  status() { return { ...this.options, queries: this.queries, errors: this.errors, lastError: this.lastError }; }
+  status() {
+    const { url, database, username, from } = this.connection();
+    return { enabled: this.options.enabled, url, database, user: username || null, from,
+      queries: this.queries, errors: this.errors, lastError: this.lastError };
+  }
 }
 
 module.exports = { HistoryProvider, validateOptions };

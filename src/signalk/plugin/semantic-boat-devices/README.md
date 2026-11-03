@@ -273,11 +273,17 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
 Displays fill their graphs from the database instead of waiting for them to
 fill (`src/history.js`): a transport passes the display's request to
 `hub.history({path, intervalMs, points, reducer})`, which queries the
-InfluxDB 1.x that signalk-to-influxdb writes (setting `history`, default
-`http://localhost:8086`, database `signalk`) for the own vessel and the
+InfluxDB 1.x that signalk-to-influxdb writes for the own vessel and the
 source Signal K prefers for the path (all sources if that one has no data),
 grouped into the display's intervals ending now. A year of 56 points takes
 about 0.5 s on the Pi, shorter spans a few milliseconds.
+
+The connection comes from the setting `history` when its URL is set (with
+database, user, and password); otherwise from signalk-to-influxdb's own
+settings (protocol, host, port, database, user, password, read from its
+configuration file and again a minute later, so changes there apply without
+a restart); without that file, `http://localhost:8086`, database `signalk`.
+Credentials go in an HTTP Basic header; the status never shows the password.
 
 ## Bundled Configurations
 

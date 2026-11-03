@@ -39,8 +39,10 @@ module.exports = app => {
       properties: {
         history: { type: 'object', title: 'Graph history for displays (InfluxDB 1.x written by signalk-to-influxdb)', properties: {
           enabled: { type: 'boolean', title: 'Displays may load graph history', default: true },
-          url: { type: 'string', title: 'InfluxDB URL', default: 'http://localhost:8086' },
-          database: { type: 'string', title: 'InfluxDB database', default: 'signalk' }
+          url: { type: 'string', title: 'InfluxDB URL (empty: the connection of signalk-to-influxdb)', default: '' },
+          database: { type: 'string', title: 'InfluxDB database (empty: as signalk-to-influxdb, else signalk)', default: '' },
+          username: { type: 'string', title: 'InfluxDB user (with an own URL)', default: '' },
+          password: { type: 'string', title: 'InfluxDB password (with an own URL)', default: '' }
         } },
         b1s: { type: 'object', title: 'B1S (Semantic Boat CAN network)', properties: {
           enabled: { type: 'boolean', title: 'B1S devices: measurements, configuration, console', default: false },

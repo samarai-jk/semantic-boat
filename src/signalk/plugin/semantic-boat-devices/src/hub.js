@@ -58,7 +58,9 @@ class DevicesHub {
   async start(options) {
     const { b1s, history } = validateOptions(structuredClone(options));
     await this.catalog.init();
-    this.historyProvider = history.enabled ? new HistoryProvider({ app: this.app, options: history }) : null;
+    // An empty connection setting takes the one of signalk-to-influxdb.
+    this.historyProvider = history.enabled ? new HistoryProvider({ app: this.app, options: history,
+      writerSettings: path.join(path.dirname(this.directory), 'signalk-to-influxdb.json') }) : null;
     if (b1s.enabled) {
       this.b1s = new B1sAdapter({ app: this.app, options: b1s, directory: this.directory, onError: this.onError,
         pluginId: this.pluginId,

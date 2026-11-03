@@ -27,3 +27,32 @@ test('history queries the own vessel and the preferred source, aligned to now, a
   assert.throws(() => validateOptions({ url: 'file:///x' }), /http/);
   assert.throws(() => validateOptions({ database: 'a;b' }), /database/);
 });
+
+test('an empty connection setting takes the one of signalk-to-influxdb, credentials in a header', async () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'history-'));
+  const writer = path.join(directory, 'signalk-to-influxdb.json');
+  fs.writeFileSync(writer, JSON.stringify({ enabled: true, configuration: { protocol: 'http', host: 'influx.local',
+    port: 8087, database: 'boat', username: 'reader', password: 'secret' } }));
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push({ url, init });
+    return { ok: true, json: async () => ({ results: [{ series: [{ values: [] }] }] }) };
+  };
+  const app = { selfContext: 'vessels.self', getSelfPath: () => undefined };
+  const provider = new HistoryProvider({ app, options: {}, writerSettings: writer, fetchImpl, now: () => 5000 });
+  await provider.values({ path: 'navigation.speedOverGround', intervalMs: 1000, points: 2, reducer: 2 });
+  assert.equal(requests[0].url.origin, 'http://influx.local:8087');
+  assert.equal(requests[0].url.searchParams.get('db'), 'boat');
+  assert.equal(requests[0].url.searchParams.get('p'), null);
+  assert.equal(requests[0].init.headers.Authorization, `Basic ${Buffer.from('reader:secret').toString('base64')}`);
+  const status = provider.status();
+  assert.equal(status.from, 'signalk-to-influxdb');
+  assert.ok(!JSON.stringify(status).includes('secret'));
+  // An own URL wins; without any settings file the defaults apply.
+  const own = new HistoryProvider({ app, options: { url: 'http://db:9999', database: 'x' }, writerSettings: writer, fetchImpl });
+  assert.equal(own.connection().url, 'http://db:9999');
+  const none = new HistoryProvider({ app, options: {}, writerSettings: path.join(directory, 'missing.json'), fetchImpl });
+  assert.equal(none.connection().url, 'http://localhost:8086');
+  fs.rmSync(directory, { recursive: true });
+});

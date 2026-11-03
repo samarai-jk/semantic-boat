@@ -631,6 +631,35 @@ int main() {
       assert(!graphDisplay.graphMode());
       graphDisplay.handle(semantic_display::InputAction::action1);
       assert(!graphDisplay.graphMode());
+      {
+        // Time frames: a frame spreads the points over its span; history
+        // loaded from a database fills the ring for the current interval only.
+        assert(graphDisplay.applyTimeFrame(0u, 6u)); // 24 hours over 3 points
+        assert(graphHistory.intervalMs(0u) == 43200000u && graphHistory.sampleCount(0u) == 0u);
+        assert(graphDisplay.timeFrame(0u) == 6u);
+        const float loaded[]{280.15f, NAN, 290.15f};
+        assert(!graphHistory.fill(0u, 1000u, 3u, 0u, loaded, 3u));
+        assert(graphHistory.fill(0u, 43200000u, 4u, 0u, loaded, 3u)); // the newest 3 of 4
+        float value{};
+        assert(graphHistory.sampleCount(0u) == 2u && graphHistory.sample(0u, 1u, value) && value == 290.15f);
+        // B2 in the graph opens the time frame menu; selecting tells the handler.
+        static std::uint16_t changedPage{0xffffu};
+        static std::uint8_t changedFrame{};
+        graphDisplay.setHistoryHandler({nullptr, [](void*, std::uint16_t page, std::uint8_t frame) {
+            changedPage = page; changedFrame = frame; }});
+        while (graphDisplay.activePage() != 0u) graphDisplay.handle(semantic_display::InputAction::nextPage);
+        graphDisplay.handle(semantic_display::InputAction::action1);
+        assert(graphDisplay.graphMode());
+        graphDisplay.handle(semantic_display::InputAction::previousPage);
+        assert(graphDisplay.pageMenuVisible());
+        graphDisplay.handle(semantic_display::InputAction::nextPage);
+        graphDisplay.handle(semantic_display::InputAction::action2);
+        assert(!graphDisplay.pageMenuVisible() && graphDisplay.graphMode());
+        assert(changedPage == 0u && changedFrame == 7u && graphHistory.intervalMs(0u) == 302400000u);
+        graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
+        graphDisplay.handle(semantic_display::InputAction::action1);
+        assert(graphDisplay.applyTimeFrame(0u, 0u));
+      }
       for (const auto interval : {900000u, 18000000u}) {
         std::string durationJson{graphJson};
         constexpr auto intervalProperty = "\"interval_ms\":100";

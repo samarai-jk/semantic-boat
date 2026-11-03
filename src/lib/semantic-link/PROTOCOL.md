@@ -233,6 +233,25 @@ image starts unconfirmed (flag bit 0) and confirms itself after 10 s of
 normal running; three starts without confirmation leave the device in its
 bootloader. The gateway pauses the display's session during an update.
 
+## History
+
+Graphs start complete: the device asks the gateway for the recent values of
+one of its history sources, and the gateway answers from its database (the
+Semantic Boat Devices hub queries the InfluxDB of signalk-to-influxdb).
+
+| Type | Message | Direction | Payload |
+| --- | --- | --- | --- |
+| `0x70` | History request | Device to gateway | request id `u16`, source index `u16`, interval ms `u32`, points `u16`, reducer `u8` (1 last, 2 mean, 3 minimum, 4 maximum) |
+| `0x71` | History data | Gateway to device | request id `u16`, source index `u16`, interval ms `u32`, total points `u16`, first index `u16`, count `u8`, then `count` float32 values |
+
+The values are the source's, in its unit, oldest first: `total` intervals
+ending at the time of the answer, one value each (NaN: no data in that
+interval). A frame carries up to 56 values; larger answers continue with the
+next `first` index. An answer without values (total 0) means no data: the
+source is not subscribed, the gateway has no database, or the query failed.
+The device keeps its live recording and accepts an answer only for the
+interval it currently uses (its time frame may have changed meanwhile).
+
 ## Limits and behavior
 
 - Maximum decoded payload: 240 bytes.

@@ -268,6 +268,17 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
    default to the ones above; `registryPath` overrides the repository copy of
    the registry). Restart Signal K after a registry change.
 
+## History
+
+Displays fill their graphs from the database instead of waiting for them to
+fill (`src/history.js`): a transport passes the display's request to
+`hub.history({path, intervalMs, points, reducer})`, which queries the
+InfluxDB 1.x that signalk-to-influxdb writes (setting `history`, default
+`http://localhost:8086`, database `signalk`) for the own vessel and the
+source Signal K prefers for the path (all sources if that one has no data),
+grouped into the display's intervals ending now. A year of 56 points takes
+about 0.5 s on the Pi, shorter spans a few milliseconds.
+
 ## Bundled Configurations
 
 - `environment.json`: apparent/true wind, air/sea temperature, air pressure.

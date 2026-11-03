@@ -60,7 +60,8 @@ class ControlServer {
         send({ event: 'done', devices: this.runtime.devices().map(device => ({
           id: device.id, label: device.label, address: device.address, online: device.online,
           queuedFrames: device.detail?.queuedFrames, sentFrames: device.detail?.sentFrames,
-          subscriptions: device.detail?.subscriptions?.length })) });
+          subscriptions: device.detail?.subscriptions?.length, historyRequests: device.detail?.historyRequests,
+          historyError: device.detail?.historyError, recentHistory: device.detail?.recentHistory })) });
       } else if (request.command === 'bus') {
         send({ event: 'done', buses: this.runtime.busStates() });
       } else if (request.command === 'install-config') {

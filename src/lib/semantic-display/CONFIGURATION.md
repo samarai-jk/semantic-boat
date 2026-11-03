@@ -272,6 +272,15 @@ plot retain their existing Action 1 behavior; B5 still opens the page menu.
 | `circular` | Optional; `true` for a direction that wraps (wind direction, heading). The line breaks where the value wraps instead of drawing across the graph. Without bounds the range is one turn (0..360 for `deg`), labelled N, E, S, W, N instead of numbers. |
 | `series` | Optional; up to two more values on the same graph, each an object with `source`, `title`, `display_unit`, `decimals`, `y_min`/`y_max`, and `circular` as above. Each needs history over the same span (`interval_ms` × (`points` − 1)) as the graph's own source. |
 
+In the graph B2 shows the time frame and opens a menu to choose another:
+15 or 30 minutes, 1, 3, 6, 12, or 24 hours, 7, 14, or 30 days, 3 or 6 months,
+1 year. A frame spreads the source's `points` over its span, so it sets the
+sample interval of every value of the graph (live recording then follows the
+new interval); the configured `interval_ms` is the default. The header bar
+shows the graph's current values, at most once a second. A device with a
+gateway loads the points of a new frame at once (semantic-link "History");
+remote-a remembers the frames of the last eight graphs it showed.
+
 A graph with several values draws the first solid, the second dotted, and the
 third dashed, each on its own scale. The header shows a legend (line sample
 and title of each value) instead of the title; the first value's scale is on

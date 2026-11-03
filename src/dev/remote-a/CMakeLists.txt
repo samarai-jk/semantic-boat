@@ -30,6 +30,7 @@ target_sources(${REMOTE_A_TARGET} PRIVATE
     src/firmware_service.cpp
     src/hal_eeprom.cpp
     src/hal_epd_transport.cpp
+    src/history_service.cpp
     src/setup_service.cpp
     src/uart_transport.cpp
 )

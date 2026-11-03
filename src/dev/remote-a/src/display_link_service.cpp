@@ -48,6 +48,17 @@ bool DisplayLinkService::requestConfig(std::string_view name) {
                 payload.data(), name.size() + 1u);
 }
 
+bool DisplayLinkService::requestHistory(std::uint16_t requestId, std::uint16_t sourceIndex,
+                                        std::uint32_t intervalMs, std::uint16_t points, std::uint8_t reducer) {
+    std::uint8_t payload[11]{};
+    semantic_link::writeU16(payload, requestId);
+    semantic_link::writeU16(payload + 2u, sourceIndex);
+    semantic_link::writeU32(payload + 4u, intervalMs);
+    semantic_link::writeU16(payload + 8u, points);
+    payload[10] = reducer;
+    return send(semantic_link::MessageType::historyRequest, payload, sizeof payload);
+}
+
 bool DisplayLinkService::sendAlertAction(semantic_link::AlertAction action,
                                          std::uint32_t occurrence,
                                          std::string_view id) {
@@ -252,6 +263,20 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
         if (configReceiver_.configEnd) {
             configReceiver_.configEnd(configReceiver_.context,
                                       semantic_link::readU16(payload));
+        }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::historyData && size >= semantic_link::historyDataHeaderBytes &&
+        size == semantic_link::historyDataHeaderBytes + 4u * payload[12]) {
+        if (historyReceiver_.data) {
+            float values[semantic_link::historyValuesPerFrame]{};
+            const auto count = payload[12] < semantic_link::historyValuesPerFrame ? payload[12]
+                                                                                   : semantic_link::historyValuesPerFrame;
+            std::memcpy(values, payload + semantic_link::historyDataHeaderBytes, 4u * count);
+            historyReceiver_.data(historyReceiver_.context, semantic_link::readU16(payload),
+                                  semantic_link::readU16(payload + 2u), semantic_link::readU32(payload + 4u),
+                                  semantic_link::readU16(payload + 8u), semantic_link::readU16(payload + 10u),
+                                  values, count);
         }
         return;
     }

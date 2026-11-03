@@ -34,6 +34,8 @@ export const MessageType = Object.freeze({
   FIRMWARE_DATA: 0x64,
   FIRMWARE_END: 0x65,
   FIRMWARE_RESTART: 0x66,
+  HISTORY_REQUEST: 0x70,
+  HISTORY_DATA: 0x71,
 });
 
 export function crc16Ccitt(data) {
@@ -270,4 +272,30 @@ export function parseFirmwareStatus(payload) {
     imageCrc: payload.readUInt32LE(8), version: payload.readUInt32LE(12),
     unconfirmed: (payload[16] & 1) !== 0, text: payload.subarray(18).toString('utf8')
   };
+}
+
+export const HistoryReducer = Object.freeze({ LAST: 1, MEAN: 2, MINIMUM: 3, MAXIMUM: 4 });
+
+// History request: request id u16, source index u16, interval ms u32, points u16, reducer u8.
+export function parseHistoryRequest(payload) {
+  if (payload.length !== 11) throw new Error('Malformed history request');
+  return { requestId: payload.readUInt16LE(0), sourceIndex: payload.readUInt16LE(2),
+    intervalMs: payload.readUInt32LE(4), points: payload.readUInt16LE(8), reducer: payload[10] };
+}
+
+// History data: request id u16, source index u16, interval ms u32, total points u16,
+// first index u16, count u8, then count float32 values oldest first (NaN: no data).
+export const HISTORY_VALUES_PER_FRAME = Math.floor((MAX_PAYLOAD_SIZE - 13) / 4);
+export function historyDataPayloads({ requestId, sourceIndex, intervalMs }, values) {
+  const payloads = [];
+  for (let first = 0; first < values.length || (first === 0 && values.length === 0); first += HISTORY_VALUES_PER_FRAME) {
+    const chunk = values.slice(first, first + HISTORY_VALUES_PER_FRAME);
+    const payload = Buffer.alloc(13 + 4 * chunk.length);
+    payload.writeUInt16LE(requestId, 0); payload.writeUInt16LE(sourceIndex, 2); payload.writeUInt32LE(intervalMs, 4);
+    payload.writeUInt16LE(values.length, 8); payload.writeUInt16LE(first, 10); payload[12] = chunk.length;
+    chunk.forEach((value, index) => payload.writeFloatLE(Number.isFinite(value) ? value : NaN, 13 + 4 * index));
+    payloads.push(payload);
+    if (values.length === 0) break;
+  }
+  return payloads;
 }

@@ -71,6 +71,19 @@ struct ActionHandler {
                               std::uint16_t pageIndex){};
 };
 
+// Graph time frames (15 minutes .. 1 year): a frame spreads a plot's history
+// points over its span, so it sets the sample interval of the plot's sources.
+inline constexpr std::uint8_t timeFrameCount = 13u;
+std::uint32_t timeFrameSeconds(std::uint8_t frame);
+const char* timeFrameLabel(std::uint8_t frame);
+
+struct HistoryHandler {
+    void* context{};
+    // The user chose a time frame for the plot of a page; its sources have
+    // the new interval and an empty ring (load their history now).
+    void (*timeFrameChanged)(void* context, std::uint16_t pageIndex, std::uint8_t frame){};
+};
+
 struct AlertHandler {
     void* context{};
     void (*selected)(void* context, AlertAction action){};
@@ -120,6 +133,13 @@ public:
     void dismissAlert();
     void setRenderingPaused(bool paused);
     void setHeaderStatus(HeaderStatus status) { headerStatus_ = status; }
+    void setHistoryHandler(HistoryHandler handler) { historyHandler_ = handler; }
+    // The time frame of a page's plot (the nearest to its sources' interval),
+    // and setting it (restoring a stored choice; no handler call).
+    std::uint8_t timeFrame(std::uint16_t pageIndex) const;
+    bool applyTimeFrame(std::uint16_t pageIndex, std::uint8_t frame);
+    // History of a source was loaded: redraw a graph showing it.
+    void historyChanged(std::uint16_t sourceIndex);
 
     std::uint16_t activeSection() const { return activeSection_; }
     std::uint16_t activePage() const { return activePage_; }
@@ -191,12 +211,16 @@ private:
         std::uint16_t section{noIndex}; // noIndex: choosing a section
         std::uint16_t cursor{};
         bool visible{};
+        bool timeFrames{}; // choosing the time frame of the graph instead
     };
 
     std::uint16_t pageMenuCount() const;
     bool pageMenuEntry(std::uint16_t index, std::uint16_t& section, std::uint16_t& page,
                        std::uint16_t& pages) const;
     void handlePageMenu(InputAction action);
+    bool menuEntryName(std::uint16_t index, char* name, std::size_t size, char* detail, std::size_t detailSize) const;
+    bool plotUsesSource(std::uint16_t sourceIndex) const;
+    void graphValues(const HistoryPlotView& plot, char* output, std::size_t capacity) const;
     void renderPageMenu();
     void renderBars(const char* title, const char* const (&labels)[4], bool upArrow, bool downArrow);
     void renderSleepScreen();
@@ -218,6 +242,7 @@ private:
     NavigationNotification navigationNotification_;
     ActionHandler actionHandler_;
     HeaderStatus headerStatus_;
+    HistoryHandler historyHandler_{};
     PackageView package_{};
     ModalState modal_{};
     ModalState transientModal_{};

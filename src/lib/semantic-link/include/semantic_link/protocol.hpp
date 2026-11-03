@@ -50,7 +50,15 @@ enum class MessageType : std::uint8_t {
     firmwareData = 0x64u,
     firmwareEnd = 0x65u,
     firmwareRestart = 0x66u,
+    // Graph history (PROTOCOL.md, "History"): the device asks for the
+    // points of one history source, the gateway answers from its database.
+    historyRequest = 0x70u,
+    historyData = 0x71u,
 };
+
+// historyData: header bytes before the float32 values.
+inline constexpr std::size_t historyDataHeaderBytes = 13u;
+inline constexpr std::size_t historyValuesPerFrame = (maxPayloadSize - historyDataHeaderBytes) / 4u;
 
 enum class FirmwareMode : std::uint8_t { application = 1u, bootloader = 2u };
 

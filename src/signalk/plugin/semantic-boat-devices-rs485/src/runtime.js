@@ -45,7 +45,9 @@ function validateOptions(options) {
 
 class Rs485Runtime {
   // catalog: function returning the hub's display configuration catalog (or null).
-  constructor(app, catalog, onError) {
+  // history: function returning the hub's history(request) (or null).
+  constructor(app, catalog, onError, history = () => null) {
+    this.history = history;
     this.app = app;
     this.catalog = catalog;
     this.onError = onError;
@@ -66,7 +68,7 @@ class Rs485Runtime {
       const bus = buses.find(entry => entry.id === device.bus);
       const master = masters.get(bus.id);
       const port = master?.devicePort(device.address);
-      const link = new SerialLink({ app: this.app, bus, device, mappings, protocol,
+      const link = new SerialLink({ app: this.app, bus, device, mappings, protocol, history: this.history,
         catalog: this.catalog, onError: this.onError, ...(port ? { Port: function () { return port; } } : {}) });
       this.links.push(link); link.start();
     }

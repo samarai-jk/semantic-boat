@@ -118,6 +118,14 @@ observed peak stack usage in KiB. The measurement is allocation-free. Stack
 painting is scanned only when Developer mode is enabled or the active page
 subscribes to a local memory metric.
 
+## Graph history and time frames
+
+`HistoryService` loads every history source from the server 30 s after the
+server is first seen (one request at a time), and the sources of a graph at
+once when its time frame changes (B2 in the graph). The chosen frames of the
+last eight graphs (keyed by section and page id) are stored in the second half
+of the EEPROM settings area and restored at start-up.
+
 ## Firmware
 
 remote-a starts from the [remote-a bootloader](../remote-a-bootloader/README.md):

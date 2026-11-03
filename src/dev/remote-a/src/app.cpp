@@ -6,6 +6,7 @@
 #include "device_settings.hpp"
 #include "device_shutdown_service.hpp"
 #include "firmware_service.hpp"
+#include "history_service.hpp"
 #include "device_metrics_service.hpp"
 #include "display_config.hpp"
 #include "display_input_service.hpp"
@@ -191,6 +192,12 @@ remote_a::DeviceShutdownService deviceShutdown{
 remote_a::AlarmService alarmService{display, feedback, displayLink};
 // Firmware updates over RS485 (remote-a bootloader, semantic-link PROTOCOL.md).
 remote_a::FirmwareService firmware{runtime, display, deviceShutdown, dataTransport};
+// Graph history from the server's database and the graphs' time frames, kept
+// in the second half of the settings area (8 graphs).
+remote_a::HistoryService historyService{
+    runtime, displayLink, display, historyStore, displayPackage, configEeprom,
+    static_cast<std::uint32_t>(configStorageLayout.settingsOffset() +
+                               slstm32::storage::RedundantBlobStore::requiredBytes)};
 
 void requestReset(void* context) {
     static_cast<remote_a::DeviceShutdownService*>(context)->requestReset();
@@ -299,6 +306,7 @@ struct Configuration;
 struct Alarms;
 struct DisplayLink;
 struct Firmware;
+struct History;
 struct DeviceMetrics;
 struct Shutdown;
 } // namespace component
@@ -321,6 +329,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::DisplayInput>(displayInput),
         slstm32::bind<component::DisplayLink>(displayLink),
         slstm32::bind<component::Firmware>(firmware),
+        slstm32::bind<component::History>(historyService),
         slstm32::bind<component::Shutdown>(deviceShutdown)));
 
 } // namespace
@@ -418,6 +427,7 @@ extern "C" void remote_a_app_init(void) {
     if (!configureDataUart()) Error_Handler();
     disableInactiveDataUart();
     displayLink.setFirmwareReceiver(firmware.receiver());
+    display.setHistoryHandler(historyService.handler());
     if (!application.init()) Error_Handler();
     if (warningTitle) {
         display.showModal(warningTitle, warningMessage, semantic_display::ModalSeverity::error);

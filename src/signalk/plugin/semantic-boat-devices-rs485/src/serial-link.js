@@ -4,7 +4,8 @@ const { SerialPort } = require('serialport');
 const { DeviceSession } = require('./session');
 
 class SerialLink {
-  constructor({ app, bus, device, protocol, catalog, mappings, onError, Port = SerialPort }) {
+  constructor({ app, bus, device, protocol, catalog, mappings, onError, history = () => null, Port = SerialPort }) {
+    this.history = history;
     this.bus = bus;
     this.addressed = bus.type === 'rs485-addressed';
     this.protocol = protocol;
@@ -49,6 +50,7 @@ class SerialLink {
         try {
           this.session.handle(message);
           this.handleCatalog(message);
+          if (message.type === protocol.MessageType.HISTORY_REQUEST) void this.handleHistory(message).catch(onError);
         } catch (error) { onError(error); }
       }
     });
@@ -165,6 +167,32 @@ class SerialLink {
     }
   }
 
+  // Graph history for one of the display's sources (hub history, PROTOCOL.md
+  // "History"). Without data (no hub, no database, an unknown source) the
+  // answer has no values, so the display goes on with its next request.
+  async handleHistory(message) {
+    let request;
+    try { request = this.protocol.parseHistoryRequest(message.payload); } catch { return; }
+    const source = this.session.active.get(request.sourceIndex);
+    const history = this.history();
+    let values = [];
+    if (source && history && ['signalk', 'signalk-ugm3'].includes(source.provider)) {
+      try {
+        values = await history({ path: source.resolvedPath ?? source.path, intervalMs: request.intervalMs,
+          points: request.points, reducer: request.reducer });
+        if (source.provider === 'signalk-ugm3') values = values.map(value => value === null ? null : value * 1e9);
+      } catch (error) { this.historyError = error.message; values = []; }
+    }
+    this.historyRequests = (this.historyRequests ?? 0) + 1;
+    // The last requests, for diagnosis (control socket "devices").
+    this.recentHistory = [...(this.recentHistory ?? []).slice(-7), { at: new Date().toISOString(),
+      sourceIndex: request.sourceIndex, path: source?.path ?? null, intervalMs: request.intervalMs,
+      points: request.points, values: values.filter(value => value !== null).length }];
+    for (const payload of this.protocol.historyDataPayloads(request, values)) {
+      await this.send(this.protocol.MessageType.HISTORY_DATA, payload);
+    }
+  }
+
   async install(name) {
     const catalog = this.catalog();
     if (!catalog) throw new Error('Semantic Boat Devices (configuration catalog) is not running');
@@ -203,7 +231,8 @@ class SerialLink {
     return { ...this.session.snapshot(), subscriptions, bus: this.bus.id, open: this.port.isOpen,
       transport: this.bus.type ?? 'serial-point-to-point', error: this.port.lastError ?? this.error, receivedFrames: this.receivedFrames,
       sentFrames: this.sentFrames, decodeErrors: this.decoder.errors + (this.port.busDecodeErrors ?? 0), queuedFrames: this.queue.length,
-      lastTransfer: this.lastTransfer };
+      lastTransfer: this.lastTransfer, historyRequests: this.historyRequests ?? 0, historyError: this.historyError ?? null,
+      recentHistory: this.recentHistory ?? [] };
   }
 }
 

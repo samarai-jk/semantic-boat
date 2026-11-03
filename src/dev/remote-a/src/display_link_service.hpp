@@ -34,6 +34,13 @@ struct FirmwareMessageReceiver {
     void (*enterBootloader)(void* context){};
 };
 
+// Graph history loaded by the gateway (semantic-link PROTOCOL.md, "History").
+struct HistoryMessageReceiver {
+    void* context{};
+    void (*data)(void* context, std::uint16_t requestId, std::uint16_t sourceIndex, std::uint32_t intervalMs,
+                 std::uint16_t total, std::uint16_t first, const float* values, std::size_t count){};
+};
+
 struct AlertMessageReceiver {
     void* context{};
     void (*update)(void* context, std::uint8_t level, std::uint32_t occurrence,
@@ -58,6 +65,9 @@ public:
     void setConfigReceiver(ConfigMessageReceiver receiver) { configReceiver_ = receiver; }
     void setAlertReceiver(AlertMessageReceiver receiver) { alertReceiver_ = receiver; }
     void setFirmwareReceiver(FirmwareMessageReceiver receiver) { firmwareReceiver_ = receiver; }
+    void setHistoryReceiver(HistoryMessageReceiver receiver) { historyReceiver_ = receiver; }
+    bool requestHistory(std::uint16_t requestId, std::uint16_t sourceIndex, std::uint32_t intervalMs,
+                        std::uint16_t points, std::uint8_t reducer);
     bool requestConfigList();
     bool requestConfig(std::string_view name);
     bool sendAlertAction(semantic_link::AlertAction action, std::uint32_t occurrence,
@@ -95,6 +105,7 @@ private:
     ConfigMessageReceiver configReceiver_{};
     AlertMessageReceiver alertReceiver_{};
     FirmwareMessageReceiver firmwareReceiver_{};
+    HistoryMessageReceiver historyReceiver_{};
     std::uint16_t subscribedSection_{semantic_display::noIndex};
     std::uint32_t lastAnnouncementAt_{};
     std::uint32_t lastPeerAt_{};

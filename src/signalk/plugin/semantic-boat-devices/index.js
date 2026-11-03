@@ -37,6 +37,11 @@ module.exports = app => {
     schema: {
       type: 'object',
       properties: {
+        history: { type: 'object', title: 'Graph history for displays (InfluxDB 1.x written by signalk-to-influxdb)', properties: {
+          enabled: { type: 'boolean', title: 'Displays may load graph history', default: true },
+          url: { type: 'string', title: 'InfluxDB URL', default: 'http://localhost:8086' },
+          database: { type: 'string', title: 'InfluxDB database', default: 'signalk' }
+        } },
         b1s: { type: 'object', title: 'B1S (Semantic Boat CAN network)', properties: {
           enabled: { type: 'boolean', title: 'B1S devices: measurements, configuration, console', default: false },
           analyzerEvent: { type: 'string', title: 'Decoded messages event of the B1S connection', default: 'b1s-N2KAnalyzerOut' },

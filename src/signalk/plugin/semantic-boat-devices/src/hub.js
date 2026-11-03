@@ -9,6 +9,7 @@
 const path = require('node:path');
 const { Catalog } = require('./catalog');
 const { B1sAdapter } = require('./b1s/adapter');
+const { HistoryProvider, validateOptions: validateHistory } = require('./history');
 
 const hubProperty = 'semanticBoatDevicesHub';
 const apiVersion = 1;
@@ -20,7 +21,7 @@ function validateOptions(options) {
       throw new Error(`B1S ${name} must be an event name`);
     }
   }
-  return { b1s };
+  return { b1s, history: validateHistory(options.history ?? {}) };
 }
 
 function checkTransport(transport) {
@@ -39,17 +40,25 @@ class DevicesHub {
     this.pluginId = pluginId;
     this.transports = new Map();
     this.b1s = null;
-    // What transport plugins see of the hub.
+    this.historyProvider = null;
+    // What transport plugins see of the hub. history({path, intervalMs,
+    // points, reducer}) resolves with points values (null: no data), oldest
+    // first, ending now (src/history.js).
     this.api = Object.freeze({
       apiVersion,
       catalog: this.catalog,
-      registerTransport: transport => this.registerTransport(transport)
+      registerTransport: transport => this.registerTransport(transport),
+      history: request => {
+        if (!this.historyProvider) return Promise.reject(new Error('History is not available'));
+        return this.historyProvider.values(request);
+      }
     });
   }
 
   async start(options) {
-    const { b1s } = validateOptions(structuredClone(options));
+    const { b1s, history } = validateOptions(structuredClone(options));
     await this.catalog.init();
+    this.historyProvider = history.enabled ? new HistoryProvider({ app: this.app, options: history }) : null;
     if (b1s.enabled) {
       this.b1s = new B1sAdapter({ app: this.app, options: b1s, directory: this.directory, onError: this.onError,
         pluginId: this.pluginId,
@@ -102,6 +111,7 @@ class DevicesHub {
   snapshot() {
     return {
       transports: [...this.transports.values()].map(transport => ({ id: transport.id, label: transport.label ?? transport.id })),
+      history: this.historyProvider?.status() ?? null,
       devices: this.devices()
     };
   }

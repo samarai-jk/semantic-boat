@@ -89,7 +89,8 @@ module.exports = app => {
     },
     start: (options = {}) => serialize(async () => {
       await stop();
-      const instance = new Rs485Runtime(app, () => hub?.catalog ?? null, error => app.setPluginError(error.message));
+      const instance = new Rs485Runtime(app, () => hub?.catalog ?? null, error => app.setPluginError(error.message),
+        () => hub?.history ?? null);
       runtime = instance;
       try {
         await instance.start(options);

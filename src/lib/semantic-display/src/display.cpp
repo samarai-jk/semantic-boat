@@ -121,6 +121,106 @@ void drawVerticalArrow(slstm32::epd::MonochromeCanvas& canvas,
 
 } // namespace
 
+namespace {
+
+struct TimeFrame {
+    std::uint32_t seconds;
+    const char* label;   // menu
+    const char* caption; // footer, at most nine characters
+};
+
+constexpr TimeFrame timeFrames[timeFrameCount]{
+    {900u, "15 MIN", "15 MIN"},      {1800u, "30 MIN", "30 MIN"},     {3600u, "1 HOUR", "1 H"},
+    {10800u, "3 HOURS", "3 H"},      {21600u, "6 HOURS", "6 H"},      {43200u, "12 HOURS", "12 H"},
+    {86400u, "24 HOURS", "24 H"},    {604800u, "7 DAYS", "7 D"},      {1209600u, "14 DAYS", "14 D"},
+    {2592000u, "30 DAYS", "30 D"},   {7776000u, "3 MONTHS", "3 MON"}, {15724800u, "6 MONTHS", "6 MON"},
+    {31536000u, "1 YEAR", "1 YEAR"},
+};
+
+} // namespace
+
+std::uint32_t timeFrameSeconds(std::uint8_t frame) {
+    return frame < timeFrameCount ? timeFrames[frame].seconds : 0u;
+}
+
+const char* timeFrameLabel(std::uint8_t frame) {
+    return frame < timeFrameCount ? timeFrames[frame].label : "";
+}
+
+std::uint8_t DisplayService::timeFrame(std::uint16_t pageIndex) const {
+    HistoryPlotView plot{};
+    if (!package_.historyPlotByPage(pageIndex, plot)) return 0u;
+    const auto points = history_.points(plot.sourceIndex);
+    const auto span = points > 1u ? static_cast<double>(history_.intervalMs(plot.sourceIndex)) * (points - 1u) / 1000.0 : 0.0;
+    std::uint8_t best = 0u;
+    double bestDistance = 1e30;
+    for (std::uint8_t frame = 0u; frame < timeFrameCount; ++frame) {
+        // Nearest on a logarithmic scale.
+        const auto distance = std::fabs(std::log((span > 1.0 ? span : 1.0) / timeFrames[frame].seconds));
+        if (distance < bestDistance) { bestDistance = distance; best = frame; }
+    }
+    return best;
+}
+
+bool DisplayService::applyTimeFrame(std::uint16_t pageIndex, std::uint8_t frame) {
+    HistoryPlotView plot{};
+    if (frame >= timeFrameCount || !package_.historyPlotByPage(pageIndex, plot)) return false;
+    const auto now = runtime_.millis ? runtime_.millis() : 0u;
+    const auto apply = [&](std::uint16_t sourceIndex) {
+        const auto points = history_.points(sourceIndex);
+        if (points < 2u) return;
+        const auto interval = static_cast<std::uint32_t>(
+            static_cast<std::uint64_t>(timeFrames[frame].seconds) * 1000u / (points - 1u));
+        (void)history_.setInterval(sourceIndex, interval, now);
+    };
+    apply(plot.sourceIndex);
+    for (std::uint8_t index = 0u; index < plot.extraCount; ++index) apply(plot.extra[index].sourceIndex);
+    if (graphMode_ && pageIndex == activePage_) invalidate(0u);
+    return true;
+}
+
+bool DisplayService::plotUsesSource(std::uint16_t sourceIndex) const {
+    HistoryPlotView plot{};
+    if (!package_.historyPlotByPage(activePage_, plot)) return false;
+    if (plot.sourceIndex == sourceIndex) return true;
+    for (std::uint8_t index = 0u; index < plot.extraCount; ++index) {
+        if (plot.extra[index].sourceIndex == sourceIndex) return true;
+    }
+    return false;
+}
+
+void DisplayService::historyChanged(std::uint16_t sourceIndex) {
+    if (!graphMode_ || sleepActive() || renderingPaused_ || !plotUsesSource(sourceIndex)) return;
+    invalidate(policy_.inputSettleMs);
+}
+
+// The current values of a graph, for its header: "12.4 KN  245°".
+void DisplayService::graphValues(const HistoryPlotView& plot, char* output, std::size_t capacity) const {
+    if (!output || capacity == 0u) return;
+    output[0] = '\0';
+    std::size_t length{};
+    const auto append = [&](std::uint16_t sourceIndex, std::string_view displayUnit, std::uint8_t decimals) {
+        SourceView source{};
+        if (!package_.sourceByIndex(sourceIndex, source)) return;
+        const auto unit = displayUnit.empty() ? source.unit : displayUnit;
+        const auto* value = data_.get(sourceIndex);
+        char number[24]{"--"};
+        if (value && value->type == ValueType::number) {
+            (void)formatNumber(convertUnit(value->number, source.unit, unit), decimals, number, sizeof number);
+        }
+        char unitText[16]{};
+        if (unit == "deg") copyText(unitText, sizeof unitText, "\xc2\xb0");
+        else if (!unit.empty()) { unitText[0] = ' '; copyView(unitText + 1, sizeof unitText - 1u, unit); }
+        const auto written = std::snprintf(output + length, capacity - length, "%s%s%s",
+                                           length ? "  " : "", number, unitText);
+        if (written > 0) length = std::min(capacity - 1u, length + static_cast<std::size_t>(written));
+    };
+    append(plot.sourceIndex, plot.displayUnit, plot.decimals);
+    for (std::uint8_t index = 0u; index < plot.extraCount; ++index) {
+        append(plot.extra[index].sourceIndex, plot.extra[index].displayUnit, plot.extra[index].decimals);
+    }
+}
+
 bool DisplayService::setPackage(PackageView package) {
     if (!package.valid()) return false;
     package_ = package;
@@ -362,7 +462,17 @@ void DisplayService::handle(InputAction action) {
     switch (action) {
     case InputAction::previousSection: changed = switchSection(-1); break;
     case InputAction::nextSection: changed = switchSection(1); break;
-    case InputAction::previousPage: changed = switchPage(-1); break;
+    case InputAction::previousPage:
+        if (graphMode_) {
+            pageMenu_ = {};
+            pageMenu_.visible = true;
+            pageMenu_.timeFrames = true;
+            pageMenu_.cursor = timeFrame(activePage_);
+            invalidate(0u);
+            return;
+        }
+        changed = switchPage(-1);
+        break;
     case InputAction::nextPage: changed = switchPage(1); break;
     case InputAction::action1:
         {
@@ -470,14 +580,19 @@ void DisplayService::sourceUpdated(std::uint16_t sourceIndex, bool requestRender
         (void)history_.ingest(sourceIndex, value->number, value->updatedAt);
     }
     if (!requestRender) return;
-    if (graphMode_ && history_.revision() == previousRevision) return;
+    // A graph shows its sources' current values in the header: redraw for
+    // them, at most once a second, and for new history points.
+    if (graphMode_ && !plotUsesSource(sourceIndex)) return;
+    const bool newPoint = history_.revision() != previousRevision;
     // Continue updating the data store and histories while an overlay is up,
     // but do not let high-rate values compete with dialog interaction for the
     // EPD. Dismissing every dialog invalidates the complete normal screen.
     if (sleepActive() || dialogVisible() || renderingPaused_) return;
-    if (!pageUsesSource(sourceIndex)) return;
+    if (!graphMode_ && !pageUsesSource(sourceIndex)) return;
+    constexpr std::uint32_t graphValueRenderIntervalMs = 1000u;
     const auto now = runtime_.millis();
-    const auto earliest = lastRenderStartedAt_ + policy_.minimumDataRenderIntervalMs;
+    const auto earliest = lastRenderStartedAt_ +
+        (graphMode_ && !newPoint ? graphValueRenderIntervalMs : policy_.minimumDataRenderIntervalMs);
     const auto delay = static_cast<std::int32_t>(now - earliest) >= 0 ? 0u : earliest - now;
     invalidate(delay);
 }
@@ -571,6 +686,7 @@ bool DisplayService::pageMenuEntry(std::uint16_t index, std::uint16_t& section,
 }
 
 std::uint16_t DisplayService::pageMenuCount() const {
+    if (pageMenu_.timeFrames) return timeFrameCount;
     std::uint16_t count{};
     RecordView record{};
     if (!package_.first(record)) return 0u;
@@ -606,6 +722,28 @@ void DisplayService::dismissPageMenu() {
     invalidate(0u);
 }
 
+bool DisplayService::menuEntryName(std::uint16_t index, char* name, std::size_t size, char* detail,
+                                   std::size_t detailSize) const {
+    name[0] = '\0';
+    detail[0] = '\0';
+    if (pageMenu_.timeFrames) {
+        if (index >= timeFrameCount) return false;
+        copyText(name, size, timeFrames[index].label);
+        return true;
+    }
+    std::uint16_t section{}, page{}, pages{};
+    if (!pageMenuEntry(index, section, page, pages)) return false;
+    if (pageMenu_.section == noIndex) {
+        SectionView view{};
+        if (sectionByIndex(section, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
+        if (pages > 1u) std::snprintf(detail, detailSize, "%u PAGES", static_cast<unsigned>(pages));
+    } else {
+        PageView view{};
+        if (pageByIndex(page, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
+    }
+    return true;
+}
+
 void DisplayService::handlePageMenu(InputAction action) {
     const auto count = pageMenuCount();
     if (count == 0u) { dismissPageMenu(); return; }
@@ -630,7 +768,7 @@ void DisplayService::handlePageMenu(InputAction action) {
         else cursor = static_cast<std::uint16_t>((cursor % columns + 1u) % columns);
         break;
     case InputAction::action1:
-        if (pageMenu_.section == noIndex) { dismissPageMenu(); return; }
+        if (pageMenu_.timeFrames || pageMenu_.section == noIndex) { dismissPageMenu(); return; }
         {
             const auto section = pageMenu_.section;
             pageMenu_.section = noIndex;
@@ -646,6 +784,15 @@ void DisplayService::handlePageMenu(InputAction action) {
         }
         break;
     case InputAction::action2: {
+        if (pageMenu_.timeFrames) {
+            pageMenu_.visible = false;
+            const auto frame = static_cast<std::uint8_t>(cursor);
+            if (frame != timeFrame(activePage_) && applyTimeFrame(activePage_, frame) &&
+                historyHandler_.timeFrameChanged) {
+                historyHandler_.timeFrameChanged(historyHandler_.context, activePage_, frame);
+            }
+            break;
+        }
         std::uint16_t section{}, page{}, pages{};
         if (!pageMenuEntry(cursor, section, page, pages)) { dismissPageMenu(); return; }
         if (pageMenu_.section == noIndex && pages > 1u) {
@@ -1106,11 +1253,14 @@ void DisplayService::renderPageMenu() {
     const auto firstRow = cursorRow >= shownRows ? static_cast<std::uint16_t>(cursorRow - shownRows + 1u) : 0u;
 
     char title[48]{"MENU"};
-    if (pageMenu_.section != noIndex) {
+    if (pageMenu_.timeFrames) {
+        copyText(title, sizeof title, "TIME FRAME");
+    } else if (pageMenu_.section != noIndex) {
         SectionView section{};
         if (sectionByIndex(pageMenu_.section, section)) copyView(title, sizeof title, section.title);
     }
-    const char* labels[4]{"<", ">", pageMenu_.section == noIndex ? "CLOSE" : "BACK", "OPEN"};
+    const char* labels[4]{"<", ">", pageMenu_.section == noIndex || pageMenu_.timeFrames ? "CLOSE" : "BACK",
+                          pageMenu_.timeFrames ? "SELECT" : "OPEN"};
     renderBars(title, labels, cursorRow != 0u, cursorRow + 1u < rows);
 
     constexpr std::uint16_t gap = widgetSeparatorWidth;
@@ -1121,15 +1271,6 @@ void DisplayService::renderPageMenu() {
     const auto tileHeight = static_cast<std::uint16_t>((areaHeight - (shownRows - 1u) * gap) / shownRows);
     const auto textWidth = static_cast<std::uint16_t>(tileWidth - 12u);
 
-    const auto entryName = [this](std::uint16_t section, std::uint16_t page, char* name, std::size_t size) {
-        if (pageMenu_.section == noIndex) {
-            SectionView view{};
-            if (sectionByIndex(section, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
-        } else {
-            PageView view{};
-            if (pageByIndex(page, view)) copyView(name, size, view.title.empty() ? view.id : view.title);
-        }
-    };
     // A name on one or two lines, broken at the last space that lets the
     // first line fit.
     char first[48]{}, second[48]{};
@@ -1150,10 +1291,8 @@ void DisplayService::renderPageMenu() {
     std::uint8_t scale = 3u;
     for (std::uint16_t index = static_cast<std::uint16_t>(firstRow * columns);
          index < count && index < (firstRow + shownRows) * columns; ++index) {
-        std::uint16_t section{}, page{}, pages{};
-        char name[48]{};
-        if (!pageMenuEntry(index, section, page, pages)) continue;
-        entryName(section, page, name, sizeof name);
+        char name[48]{}, detail[16]{};
+        if (!menuEntryName(index, name, sizeof name, detail, sizeof detail)) continue;
         if (!wrap(name, 3u)) { scale = 2u; break; }
     }
 
@@ -1161,8 +1300,8 @@ void DisplayService::renderPageMenu() {
         for (std::uint16_t column = 0u; column < columns; ++column) {
             const auto index = static_cast<std::uint16_t>((firstRow + row) * columns + column);
             if (index >= count) break;
-            std::uint16_t section{}, page{}, pages{};
-            if (!pageMenuEntry(index, section, page, pages)) continue;
+            char name[48]{}, detail[16]{};
+            if (!menuEntryName(index, name, sizeof name, detail, sizeof detail)) continue;
             const auto x = static_cast<std::uint16_t>(horizontalSafeMargin + column * (tileWidth + gap));
             const auto y = static_cast<std::uint16_t>(areaTop + row * (tileHeight + gap));
             const bool selected = index == pageMenu_.cursor;
@@ -1176,11 +1315,6 @@ void DisplayService::renderPageMenu() {
                                  static_cast<std::uint16_t>(tileWidth + (column + 1u < columns ? gap : 0u)), gap, true);
             }
 
-            char name[48]{}, detail[16]{};
-            entryName(section, page, name, sizeof name);
-            if (pageMenu_.section == noIndex && pages > 1u) {
-                std::snprintf(detail, sizeof detail, "%u PAGES", static_cast<unsigned>(pages));
-            }
             if (!wrap(name, scale)) {
                 fitText(first, sizeof first, textWidth, scale);
                 fitText(second, sizeof second, textWidth, scale);
@@ -1373,9 +1507,12 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
 
     char window[24]{};
     const auto& firstSource = traces[0].source;
-    const auto milliseconds = static_cast<std::uint64_t>(firstSource.historyPoints - 1u) * firstSource.historyIntervalMs;
+    const auto milliseconds = static_cast<std::uint64_t>(firstSource.historyPoints - 1u) *
+        history_.intervalMs(firstSource.sourceIndex);
     const auto seconds = milliseconds / 1000u;
-    if (seconds >= 3600u)
+    if (seconds >= 172800u)
+        std::snprintf(window, sizeof window, "%lud", static_cast<unsigned long>((seconds + 43200u) / 86400u));
+    else if (seconds >= 3600u)
         std::snprintf(window, sizeof window, "%luh", static_cast<unsigned long>((seconds + 1800u) / 3600u));
     else if (seconds >= 60u)
         std::snprintf(window, sizeof window, "%lum", static_cast<unsigned long>((seconds + 30u) / 60u));
@@ -1579,7 +1716,15 @@ void DisplayService::render() {
     char sectionTitle[48]{}, pageTitle[48]{}, heading[100]{};
     copyView(sectionTitle, sizeof sectionTitle, section.title);
     copyView(pageTitle, sizeof pageTitle, page.title);
-    std::snprintf(heading, sizeof heading, "%s - %s", sectionTitle, pageTitle);
+    HistoryPlotView shownPlot{};
+    if (graphMode_ && package_.historyPlotByPage(activePage_, shownPlot)) {
+        // The graph's current values next to the page title.
+        char values[48]{};
+        graphValues(shownPlot, values, sizeof values);
+        std::snprintf(heading, sizeof heading, "%s  %s", pageTitle, values);
+    } else {
+        std::snprintf(heading, sizeof heading, "%s - %s", sectionTitle, pageTitle);
+    }
     bool previousSectionAvailable{}, nextSectionAvailable{};
     logicalSectionAvailability(previousSectionAvailable, nextSectionAvailable);
     const auto indicatorWidth = package_.info().sectionCount > 1u
@@ -1621,8 +1766,10 @@ void DisplayService::render() {
             showNext = activePageIsFirstInSection();
             showPrevious = !showNext;
         }
+        // In the graph B2 chooses the time frame and shows the current one.
         const std::string_view labels[]{
-            showPrevious ? previousPage.title : std::string_view{},
+            graphMode_ ? std::string_view{timeFrames[timeFrame(activePage_)].caption}
+                       : showPrevious ? previousPage.title : std::string_view{},
             showNext ? nextPage.title : std::string_view{},
             action1Available
                 ? actionLabel(InputAction::action1, section.action1Label) : std::string_view{},

@@ -119,6 +119,59 @@ bool HistoryStore::ingest(std::uint16_t sourceIndex, float value, std::uint32_t 
     return true;
 }
 
+std::size_t HistoryStore::points(std::uint16_t sourceIndex) const {
+    const auto* series = find(sourceIndex);
+    return series ? read16(series + pointsOffset) : 0u;
+}
+
+std::uint32_t HistoryStore::intervalMs(std::uint16_t sourceIndex) const {
+    const auto* series = find(sourceIndex);
+    return series ? read32(series + intervalOffset) : 0u;
+}
+
+HistoryReducer HistoryStore::reducer(std::uint16_t sourceIndex) const {
+    const auto* series = find(sourceIndex);
+    return series ? static_cast<HistoryReducer>(series[reducerOffset]) : HistoryReducer::none;
+}
+
+bool HistoryStore::setInterval(std::uint16_t sourceIndex, std::uint32_t intervalMs, std::uint32_t now) {
+    auto* series = find(sourceIndex);
+    if (!series || intervalMs == 0u) return false;
+    if (read32(series + intervalOffset) == intervalMs) return true;
+    write32(series + intervalOffset, intervalMs);
+    write32(series + nextOffset, now + intervalMs);
+    write16(series + writeOffset, 0u);
+    write16(series + countOffset, 0u);
+    series[activeOffset] = 0u;
+    write32(series + accumulatorCountOffset, 0u);
+    ++revision_;
+    return true;
+}
+
+bool HistoryStore::fill(std::uint16_t sourceIndex, std::uint32_t intervalMs, std::uint16_t total,
+                        std::uint16_t first, const float* values, std::size_t count) {
+    auto* series = find(sourceIndex);
+    if (!series || !values || read32(series + intervalOffset) != intervalMs) return false;
+    const auto points = read16(series + pointsOffset);
+    // More points than the ring holds: keep the newest.
+    const std::size_t skip = total > points ? total - points : 0u;
+    if (first == 0u) {
+        write16(series + writeOffset, 0u);
+        write16(series + countOffset, 0u);
+    }
+    for (std::size_t index = 0u; index < count; ++index) {
+        const auto position = static_cast<std::size_t>(first) + index;
+        if (position < skip) continue;
+        const auto slot = position - skip;
+        if (slot >= points) break;
+        writeFloat(series + headerSize + slot * sizeof(float), values[index]);
+        write16(series + countOffset, static_cast<std::uint16_t>(slot + 1u));
+        write16(series + writeOffset, static_cast<std::uint16_t>((slot + 1u) % points));
+    }
+    ++revision_;
+    return true;
+}
+
 std::size_t HistoryStore::sampleCount(std::uint16_t sourceIndex) const {
     const auto* series = find(sourceIndex);
     return series ? read16(series + countOffset) : 0u;

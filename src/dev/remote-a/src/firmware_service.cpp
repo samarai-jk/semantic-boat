@@ -51,6 +51,15 @@ void FirmwareService::enterBootloaderThunk(void* context) {
                                      "THE DISPLAY RESTARTS WHEN IT IS DONE.", "PLEASE WAIT");
 }
 
+void FirmwareService::restoreView(semantic_display::DisplayService& display,
+                                  const semantic_display::PackageView& package) {
+    const auto view = RTC->BKP11R;
+    if ((view & 0xFFFF0000u) != bootloader::viewMagic) return;
+    writeBackup(RTC->BKP11R, 0u);
+    if (!package.valid() || RTC->BKP12R != package.info().sourceCrc32) return;
+    display.setStartPage(static_cast<std::uint16_t>(view & 0x0FFFu), (view & 0x1000u) != 0u);
+}
+
 void FirmwareService::run() {
     const auto now = runtime_.millis();
     if (!confirmed_ && now >= confirmAfterMs) {
@@ -59,6 +68,11 @@ void FirmwareService::run() {
     }
     if (!bootloaderRequested_ || static_cast<std::int32_t>(now - bootloaderAt_) < 0) return;
     bootloaderRequested_ = false;
+    // Come back to the same page (and graph) with the new firmware.
+    if (package_.valid() && display_.activePage() < 0x1000u) {
+        writeBackup(RTC->BKP12R, package_.info().sourceCrc32);
+        writeBackup(RTC->BKP11R, bootloader::viewMagic | display_.activePage() | (display_.graphMode() ? 0x1000u : 0u));
+    }
     writeBackup(RTC->BKP10R, bootloader::addressMagic | transport_.address());
     writeBackup(RTC->BKP7R, image::bootRequestMagic);
     shutdown_.requestReset();

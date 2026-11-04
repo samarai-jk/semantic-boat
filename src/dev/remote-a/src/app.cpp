@@ -191,7 +191,7 @@ remote_a::DeviceShutdownService deviceShutdown{
     displayLink, dataTransport, display, feedback};
 remote_a::AlarmService alarmService{display, feedback, displayLink};
 // Firmware updates over RS485 (remote-a bootloader, semantic-link PROTOCOL.md).
-remote_a::FirmwareService firmware{runtime, display, deviceShutdown, dataTransport};
+remote_a::FirmwareService firmware{runtime, display, displayPackage, deviceShutdown, dataTransport};
 // Graph history from the server's database and the graphs' time frames, kept
 // in the second half of the settings area (8 graphs).
 remote_a::HistoryService historyService{
@@ -427,6 +427,7 @@ extern "C" void remote_a_app_init(void) {
     if (!configureDataUart()) Error_Handler();
     disableInactiveDataUart();
     displayLink.setFirmwareReceiver(firmware.receiver());
+    remote_a::FirmwareService::restoreView(display, displayPackage);
     display.setHistoryHandler(historyService.handler());
     if (!application.init()) Error_Handler();
     if (warningTitle) {

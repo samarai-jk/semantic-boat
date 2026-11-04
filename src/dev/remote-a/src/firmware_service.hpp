@@ -19,8 +19,13 @@ namespace remote_a {
 class FirmwareService final : public slstm32::Service {
 public:
     FirmwareService(slstm32::Runtime runtime, semantic_display::DisplayService& display,
-                    DeviceShutdownService& shutdown, UartTransport& transport)
-        : runtime_(runtime), display_(display), shutdown_(shutdown), transport_(transport) {}
+                    const semantic_display::PackageView& package, DeviceShutdownService& shutdown,
+                    UartTransport& transport)
+        : runtime_(runtime), display_(display), package_(package), shutdown_(shutdown), transport_(transport) {}
+
+    // Before the display starts: the page shown before a firmware update
+    // (same configuration only); the saved view is used once.
+    static void restoreView(semantic_display::DisplayService& display, const semantic_display::PackageView& package);
 
     bool init() override { return runtime_.millis != nullptr; }
     void run() override;
@@ -32,6 +37,7 @@ private:
 
     slstm32::Runtime runtime_;
     semantic_display::DisplayService& display_;
+    const semantic_display::PackageView& package_;
     DeviceShutdownService& shutdown_;
     UartTransport& transport_;
     std::uint32_t bootloaderAt_{};

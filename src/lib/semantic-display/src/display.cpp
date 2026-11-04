@@ -249,6 +249,14 @@ bool DisplayService::setPackage(PackageView package) {
 bool DisplayService::init() {
     if (!configured_ || !runtime_.millis || !data_.configure(package_) ||
         !history_.configure(package_, runtime_.millis()) || !selectFirstPage()) return false;
+    PageView start{};
+    if (startPage_ != noIndex && pageByIndex(startPage_, start)) {
+        activeSection_ = start.sectionIndex;
+        activePage_ = start.pageIndex;
+        HistoryPlotView plot{};
+        graphMode_ = startGraph_ && package_.historyPlotByPage(activePage_, plot);
+    }
+    startPage_ = noIndex;
     if (navigationNotification_.changed) {
         navigationNotification_.changed(navigationNotification_.context, activeSection_, activePage_);
     }

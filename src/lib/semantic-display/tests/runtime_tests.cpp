@@ -664,6 +664,22 @@ int main() {
         graphDisplay.handle(semantic_display::InputAction::action1);
         assert(graphDisplay.applyTimeFrame(0u, 0u));
       }
+      {
+        // A view restored after a restart: init() starts on that page, in
+        // the graph if it has one; an unknown page falls back to the first.
+        FakePanel startPanel;
+        semantic_display::DisplayService startDisplay{{&millis, nullptr, nullptr}, startPanel, graphCanvas, graphData, graphHistory};
+        assert(startDisplay.setPackage({graphBytes.data(), graphPackage.packageSize}));
+        startDisplay.setStartPage(2u, true);
+        assert(startDisplay.init());
+        assert(startDisplay.activePage() == 2u && startDisplay.graphMode());
+        FakePanel unknownPanel;
+        semantic_display::DisplayService unknownDisplay{{&millis, nullptr, nullptr}, unknownPanel, graphCanvas, graphData, graphHistory};
+        assert(unknownDisplay.setPackage({graphBytes.data(), graphPackage.packageSize}));
+        unknownDisplay.setStartPage(9u, true);
+        assert(unknownDisplay.init());
+        assert(unknownDisplay.activePage() == 0u && !unknownDisplay.graphMode());
+      }
       for (const auto interval : {900000u, 18000000u}) {
         std::string durationJson{graphJson};
         constexpr auto intervalProperty = "\"interval_ms\":100";

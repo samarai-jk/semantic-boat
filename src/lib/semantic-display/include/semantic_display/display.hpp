@@ -104,6 +104,9 @@ public:
           headerStatus_(headerStatus) {}
 
     bool setPackage(PackageView package);
+    // The page init() shows instead of the first one (a view restored after
+    // a restart); ignored if the package has no such page.
+    void setStartPage(std::uint16_t pageIndex, bool graph) { startPage_ = pageIndex; startGraph_ = graph; }
     bool init() override;
     void run() override;
     void handle(InputAction action);
@@ -243,6 +246,8 @@ private:
     ActionHandler actionHandler_;
     HeaderStatus headerStatus_;
     HistoryHandler historyHandler_{};
+    std::uint16_t startPage_{noIndex};
+    bool startGraph_{};
     PackageView package_{};
     ModalState modal_{};
     ModalState transientModal_{};

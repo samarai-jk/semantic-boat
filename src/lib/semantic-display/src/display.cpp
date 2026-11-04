@@ -1498,12 +1498,27 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         if (shortened && length != 0u) text[length - 1u] = '.';
     };
     const auto left = x;
-    const auto top = static_cast<std::uint16_t>(y + 21u);
+    // The header row (title or legend, duration) is 16 pixels; the plot starts below it.
+    const auto top = static_cast<std::uint16_t>(y + 18u);
     const auto right = static_cast<std::uint16_t>(x + width - 1u);
     const auto bottom = static_cast<std::uint16_t>(y + height - 1u);
     const auto graphWidth = static_cast<std::uint16_t>(right - left);
     const auto graphHeight = static_cast<std::uint16_t>(bottom - top);
     const auto labelLimit = static_cast<std::uint16_t>(width / 3u - 3u);
+    // Scale captions and the duration: 1.75 times the font, bold (drawn twice,
+    // one pixel apart).
+    constexpr std::uint8_t captionNumerator = 7u, captionDenominator = 4u;
+    constexpr std::uint16_t captionHeight = (7u * captionNumerator + captionDenominator - 1u) / captionDenominator;
+    const auto captionWidth = [](const char* text) {
+        const auto width = Font5x7::textWidthScaled(text, captionNumerator, captionDenominator);
+        return static_cast<std::uint16_t>(width == 0u ? 0u : width + 1u);
+    };
+    const auto fitCaption = [&](char* text, std::uint16_t available) {
+        auto length = std::strlen(text);
+        bool shortened{};
+        while (length != 0u && captionWidth(text) > available) { text[--length] = '\0'; shortened = true; }
+        if (shortened && length != 0u) text[length - 1u] = '.';
+    };
 
     char window[24]{};
     const auto& firstSource = traces[0].source;
@@ -1519,8 +1534,8 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
     else if (milliseconds >= 1000u)
         std::snprintf(window, sizeof window, "%lus", static_cast<unsigned long>(seconds));
     else std::snprintf(window, sizeof window, "%lums", static_cast<unsigned long>(milliseconds));
-    fitScaled(window, graphWidth / 2u, 3u);
-    const auto windowWidth = Font5x7::textWidthScaled(window, 3u, 2u);
+    fitCaption(window, graphWidth / 2u);
+    const auto windowWidth = captionWidth(window);
 
     // Scale captions: "max unit" at the top and min at the bottom, on the
     // trace's side (first left, second right).
@@ -1538,8 +1553,8 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         } else {
             copyText(upper[index], sizeof upper[index], unitText);
         }
-        fitScaled(upper[index], labelLimit, 3u);
-        fitScaled(lower[index], labelLimit, 3u);
+        fitCaption(upper[index], labelLimit);
+        fitCaption(lower[index], labelLimit);
     }
 
     const auto drawAnnotation = [&](const char* text, std::uint16_t textX, std::uint16_t textY, std::uint8_t numerator) {
@@ -1549,6 +1564,18 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         canvas_.fillRect(static_cast<std::uint16_t>(textX - 2u), static_cast<std::uint16_t>(textY - 2u),
                          static_cast<std::uint16_t>(textWidth + 4u), static_cast<std::uint16_t>(textHeight + 4u), false);
         Font5x7::drawTextScaled(canvas_, textX, textY, text, true, numerator, 2u);
+    };
+    const auto drawCaption = [&](const char* text, std::uint16_t textX, std::uint16_t textY) {
+        const auto textWidth = captionWidth(text);
+        if (textWidth == 0u) return;
+        canvas_.fillRect(static_cast<std::uint16_t>(textX - 2u), static_cast<std::uint16_t>(textY - 2u),
+                         static_cast<std::uint16_t>(textWidth + 4u), static_cast<std::uint16_t>(captionHeight + 4u), false);
+        Font5x7::drawTextScaled(canvas_, textX, textY, text, true, captionNumerator, captionDenominator);
+        Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(textX + 1u), textY, text, true, captionNumerator,
+                                captionDenominator);
+    };
+    const auto captionRight = [&](const char* text) {
+        return static_cast<std::uint16_t>(right + 1u - captionWidth(text));
     };
     // A short sample of a line style, for the legend.
     const auto drawStyleSample = [&](std::uint16_t sampleX, std::uint16_t sampleY, std::uint16_t length, Style style) {
@@ -1561,11 +1588,12 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
         return static_cast<std::uint16_t>(right + 1u - Font5x7::textWidthScaled(text, 3u, 2u));
     };
     const auto drawAnnotations = [&]() {
-        drawAnnotation(window, static_cast<std::uint16_t>(right + 1u - windowWidth), static_cast<std::uint16_t>(y + 5u), 3u);
+        // The duration on the level of the title or legend.
+        drawCaption(window, static_cast<std::uint16_t>(right + 1u - windowWidth), static_cast<std::uint16_t>(y + 2u));
         if (!multiple) {
             char title[64]{};
             copyView(title, sizeof title, traces[0].name);
-            const auto sideWidth = std::max(Font5x7::textWidthScaled(upper[0], 3u, 2u), windowWidth);
+            const auto sideWidth = windowWidth;
             fitScaled(title, static_cast<std::uint16_t>(width - 2u * (sideWidth + 6u)), 4u);
             drawAnnotation(title, static_cast<std::uint16_t>(x + (width - Font5x7::textWidthScaled(title, 4u, 2u)) / 2u), y, 4u);
         } else {
@@ -1605,10 +1633,10 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
                 }
                 continue;
             }
-            drawAnnotation(upper[index], rightSide ? rightAligned(upper[index]) : left, top, 3u);
+            drawCaption(upper[index], rightSide ? captionRight(upper[index]) : left, top);
             if (trace.valid) {
-                drawAnnotation(lower[index], rightSide ? rightAligned(lower[index]) : left,
-                               static_cast<std::uint16_t>(bottom - 10u), 3u);
+                drawCaption(lower[index], rightSide ? captionRight(lower[index]) : left,
+                            static_cast<std::uint16_t>(bottom - captionHeight));
             }
         }
     };
@@ -1809,9 +1837,11 @@ void DisplayService::render() {
     HistoryPlotView plot{};
     if (graphMode_ && package_.historyPlotByPage(activePage_, plot)) {
         constexpr std::uint16_t graphMargin = 6u;
-        renderHistoryPlot(plot, graphMargin, static_cast<std::uint16_t>(headerHeight + graphMargin),
+        constexpr std::uint16_t graphTopMargin = 3u;
+        renderHistoryPlot(plot, graphMargin, static_cast<std::uint16_t>(headerHeight + graphTopMargin),
                           static_cast<std::uint16_t>(canvas_.width() - 2u * graphMargin),
-                          static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight - 2u * graphMargin));
+                          static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight -
+                                                     graphTopMargin - graphMargin));
         return;
     }
     const auto gap = page.gap < widgetSeparatorWidth ? widgetSeparatorWidth : page.gap;

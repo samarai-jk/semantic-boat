@@ -6,6 +6,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -557,7 +558,8 @@ int main() {
       for (std::uint16_t row = 246u; row < 252u; ++row)
         for (std::uint16_t column = 6u; column < 474u; ++column)
           assert(!logicalPixelIsBlack(graphFrame, column, row));
-      for (std::uint16_t row = 30u; row < 36u; ++row)
+      // The graph starts 3 pixels below the header bar.
+      for (std::uint16_t row = 30u; row < 33u; ++row)
         for (std::uint16_t column = 6u; column < 474u; ++column)
           assert(!logicalPixelIsBlack(graphFrame, column, row));
       graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
@@ -570,16 +572,18 @@ int main() {
       std::array<std::uint8_t, 16800> upperLabelFrame{};
       slstm32::epd::MonochromeCanvas upperLabelCanvas{upperLabelFrame.data(), upperLabelFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
       upperLabelCanvas.clear(false);
-      slstm32::epd::Font5x7::drawTextScaled(upperLabelCanvas, 6u, 57u, "10.0 C", true, 3u, 2u);
-      for (std::uint16_t row = 57u; row < 68u; ++row)
-        for (std::uint16_t column = 6u; column < 59u; ++column)
+      // The scale caption: 1.75 times the font, bold, at the top of the plot.
+      slstm32::epd::Font5x7::drawTextScaled(upperLabelCanvas, 6u, 51u, "10.0 C", true, 7u, 4u);
+      slstm32::epd::Font5x7::drawTextScaled(upperLabelCanvas, 7u, 51u, "10.0 C", true, 7u, 4u);
+      for (std::uint16_t row = 51u; row < 64u; ++row)
+        for (std::uint16_t column = 6u; column < 66u; ++column)
           assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(upperLabelFrame, column, row));
-      for (std::uint16_t row = 41u; row < 52u; ++row)
-        for (std::uint16_t column = 6u; column < 59u; ++column)
+      for (std::uint16_t row = 47u; row < 49u; ++row)
+        for (std::uint16_t column = 6u; column < 66u; ++column)
           assert(!logicalPixelIsBlack(graphFrame, column, row));
-      assert(logicalPixelIsBlack(graphFrame, 473u, 76u));
-      assert(logicalPixelIsBlack(graphFrame, 473u, 77u));
-      assert(logicalPixelIsBlack(graphFrame, 472u, 76u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 71u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 72u));
+      assert(logicalPixelIsBlack(graphFrame, 472u, 71u));
       graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
       for (const auto value : {173.15f, 373.15f}) {
         now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
@@ -587,9 +591,9 @@ int main() {
       float oldest{};
       assert(graphHistory.sample(0u, 0u, oldest) && oldest == 281.15f);
       now += 333u; graphDisplay.run();
-      assert(logicalPixelIsBlack(graphFrame, 473u, 57u));
-      assert(logicalPixelIsBlack(graphFrame, 473u, 58u));
-      for (std::uint16_t row = 34u; row < 39u; ++row)
+      assert(logicalPixelIsBlack(graphFrame, 473u, 51u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 52u));
+      for (std::uint16_t row = 30u; row < 33u; ++row)
         assert(!logicalPixelIsBlack(graphFrame, 473u, row));
       graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
       graphDisplay.handle(semantic_display::InputAction::action1);
@@ -602,15 +606,15 @@ int main() {
         now += 100u; assert(graphData.setNumber(0u, 278.15f, now)); graphDisplay.sourceUpdated(0u);
       }
       now += 333u; graphDisplay.run();
-      assert(logicalPixelIsBlack(graphFrame, 473u, 57u));
+      assert(logicalPixelIsBlack(graphFrame, 473u, 51u));
       assert(!logicalPixelIsBlack(graphFrame, 473u, 145u));
       graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
       for (const auto value : {275.15f, 278.15f, 281.15f}) {
         now += 100u; assert(graphData.setNumber(0u, value, now)); graphDisplay.sourceUpdated(0u);
       }
       now += 333u; graphDisplay.run();
-      assert(logicalPixelIsBlack(graphFrame, 239u, 128u));
-      assert(logicalPixelIsBlack(graphFrame, 239u, 129u));
+      assert(logicalPixelIsBlack(graphFrame, 239u, 124u));
+      assert(logicalPixelIsBlack(graphFrame, 239u, 125u));
       assert(!logicalPixelIsBlack(graphFrame, 239u, 140u));
       graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
       for (const auto value : {273.15f, 268.15f}) {
@@ -675,19 +679,21 @@ int main() {
         durationDisplay.handle(semantic_display::InputAction::action1);
         now = 100u; durationDisplay.run();
         const auto label = interval == 900000u ? "30m" : "10h";
-        const auto labelX = static_cast<std::uint16_t>(474u - slstm32::epd::Font5x7::textWidthScaled(label, 3u, 2u));
+        // The duration: bold, 1.75 times the font, level with the title.
+        const auto labelX = static_cast<std::uint16_t>(474u - 1u - slstm32::epd::Font5x7::textWidthScaled(label, 7u, 4u));
         std::array<std::uint8_t, 16800> expectedFrame{};
         slstm32::epd::MonochromeCanvas expectedCanvas{expectedFrame.data(), expectedFrame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
         expectedCanvas.clear(false);
-        slstm32::epd::Font5x7::drawTextScaled(expectedCanvas, labelX, 41u, label, true, 3u, 2u);
-        for (std::uint16_t row = 41u; row < 52u; ++row)
+        slstm32::epd::Font5x7::drawTextScaled(expectedCanvas, labelX, 35u, label, true, 7u, 4u);
+        slstm32::epd::Font5x7::drawTextScaled(expectedCanvas, static_cast<std::uint16_t>(labelX + 1u), 35u, label, true, 7u, 4u);
+        for (std::uint16_t row = 35u; row < 48u; ++row)
           for (auto column = static_cast<std::uint16_t>(labelX - 9u); column < 474u; ++column)
             assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(expectedFrame, column, row));
         constexpr auto graphTitle = "TEST GRAPH";
         const auto titleWidth = slstm32::epd::Font5x7::textWidth(graphTitle, 2u);
         const auto titleX = static_cast<std::uint16_t>((480u - titleWidth) / 2u);
-        slstm32::epd::Font5x7::drawText(expectedCanvas, titleX, 36u, graphTitle, true, 2u);
-        for (std::uint16_t row = 36u; row < 50u; ++row)
+        slstm32::epd::Font5x7::drawText(expectedCanvas, titleX, 33u, graphTitle, true, 2u);
+        for (std::uint16_t row = 33u; row < 47u; ++row)
           for (auto column = titleX; column < titleX + titleWidth; ++column)
             assert(logicalPixelIsBlack(graphFrame, column, row) == logicalPixelIsBlack(expectedFrame, column, row));
       }

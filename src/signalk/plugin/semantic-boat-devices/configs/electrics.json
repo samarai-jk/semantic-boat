@@ -1,27 +1,67 @@
 {
   "schema": "semantic-display/v1", "name": "Electrics",
+  "permanent_sources": [
+    {"id": "soc", "path": "electrical.batteries.house.capacity.stateOfCharge", "unit": "ratio", "outdated_ms": 120000, "history": {"interval_ms": 1570909, "points": 56, "reducer": "mean"}},
+    {"id": "house-v", "path": "electrical.batteries.house.voltage", "unit": "V", "outdated_ms": 120000, "history": {"interval_ms": 1570909, "points": 56, "reducer": "mean"}},
+    {"id": "house-a", "path": "electrical.batteries.house.current", "unit": "A", "outdated_ms": 120000, "history": {"interval_ms": 392727, "points": 56, "reducer": "mean"}},
+    {"id": "solar-w", "path": "electrical.solar.solar.panelPower", "unit": "W", "outdated_ms": 120000, "history": {"interval_ms": 1570909, "points": 56, "reducer": "mean"}},
+    {"id": "house-w", "path": "electrical.batteries.house.power", "unit": "W", "outdated_ms": 120000},
+    {"id": "left", "path": "electrical.batteries.house.capacity.timeRemaining", "unit": "s", "outdated_ms": 120000}
+  ],
   "sections": [
     {
-      "id": "batteries", "title": "12 V DC", "button_labels": {"action_2": "REFRESH"},
+      "id": "house", "title": "HOUSE BATTERY", "button_labels": {"action_2": "MENU"},
       "sources": [
-        {"id": "house-voltage", "provider": "signalk", "path": "electrical.batteries.house.voltage", "unit": "V", "stale_ms": 30000},
-        {"id": "house-current", "provider": "signalk", "path": "electrical.batteries.house.current", "unit": "A", "stale_ms": 30000},
-        {"id": "house-charge", "provider": "signalk", "path": "electrical.batteries.house.capacity.stateOfCharge", "unit": "ratio", "stale_ms": 60000},
-        {"id": "starter-voltage", "provider": "signalk", "path": "electrical.batteries.starter.voltage", "unit": "V", "stale_ms": 30000}
+        {"id": "used", "provider": "signalk", "path": "electrical.batteries.house.capacity.dischargeSinceFull", "unit": "C", "outdated_ms": 120000}
       ],
-      "pages": [{"id": "batteries", "title": "BATTERIES", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
-        {"type": "value", "source": "house-voltage", "label": "HOUSE VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}},
-        {"type": "value", "source": "house-current", "label": "HOUSE CURRENT", "display_unit": "A", "decimals": 1, "cell": {"column": 1, "row": 0}},
-        {"type": "value", "source": "house-charge", "label": "HOUSE CHARGE", "display_unit": "%", "decimals": 0, "cell": {"column": 0, "row": 1}},
-        {"type": "value", "source": "starter-voltage", "label": "STARTER VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 1, "row": 1}}
-      ]}]
+      "pages": [
+        {"id": "overview", "title": "OVERVIEW", "history_plot": {"source": "soc", "title": "CHARGE", "display_unit": "%", "decimals": 0, "y_min": 0, "y_max": 100, "series": [{"source": "house-v", "title": "VOLTAGE", "display_unit": "V", "decimals": 1, "y_min": 11, "y_max": 15}]}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "soc", "label": "CHARGE %", "display_unit": "%", "decimals": 0, "max_digits": 3, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "house-v", "label": "VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "house-a", "label": "CURRENT A", "display_unit": "A", "decimals": 1, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "house-w", "label": "POWER W", "display_unit": "W", "decimals": 0, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "left", "label": "TIME LEFT H", "display_unit": "h", "decimals": 1, "cell": {"column": 2, "row": 1}}
+        ]},
+        {"id": "usage", "title": "USAGE", "history_plot": {"source": "house-a", "title": "BATTERY CURRENT", "display_unit": "A", "decimals": 0, "y_min": -30, "y_max": 30}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "house-a", "label": "CURRENT A", "display_unit": "A", "decimals": 1, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "used", "label": "CONSUMED AH", "display_unit": "Ah", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "left", "label": "TIME LEFT H", "display_unit": "h", "decimals": 1, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "house-w", "label": "POWER W", "display_unit": "W", "decimals": 0, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "soc", "label": "CHARGE %", "display_unit": "%", "decimals": 0, "cell": {"column": 2, "row": 1}}
+        ]}
+      ]
     },
     {
-      "id": "charging", "title": "CHARGING", "button_labels": {"action_2": "REFRESH"},
-      "sources": [{"id": "alternator", "provider": "signalk", "path": "propulsion.port.alternatorVoltage", "unit": "V", "stale_ms": 30000}],
-      "pages": [{"id": "alternator", "title": "PORT ALTERNATOR", "grid": {"columns": 1, "rows": 1, "gap": 4}, "widgets": [
-        {"type": "value", "source": "alternator", "label": "ALTERNATOR VOLTAGE", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}}
-      ]}]
+      "id": "solar", "title": "SOLAR", "button_labels": {"action_2": "MENU"},
+      "sources": [
+        {"id": "solar-a", "provider": "signalk", "path": "electrical.solar.solar.current", "unit": "A", "outdated_ms": 120000},
+        {"id": "solar-v", "provider": "signalk", "path": "electrical.solar.solar.voltage", "unit": "V", "outdated_ms": 120000},
+        {"id": "yield", "provider": "signalk", "path": "electrical.solar.solar.yieldToday", "unit": "J", "outdated_ms": 120000},
+        {"id": "mode", "provider": "signalk", "path": "electrical.solar.solar.chargingMode", "outdated_ms": 120000}
+      ],
+      "pages": [
+        {"id": "solar", "title": "SOLAR", "history_plot": {"source": "solar-w", "title": "SOLAR POWER", "display_unit": "W", "decimals": 0}, "grid": {"columns": 3, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "solar-w", "label": "PANEL POWER W", "display_unit": "W", "decimals": 0, "max_digits": 4, "cell": {"column": 0, "row": 0, "row_span": 2}},
+          {"type": "value", "source": "solar-a", "label": "CHARGE A", "display_unit": "A", "decimals": 1, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "mode", "label": "MODE", "max_digits": 10, "cell": {"column": 2, "row": 0}},
+          {"type": "value", "source": "yield", "label": "TODAY WH", "display_unit": "Wh", "decimals": 0, "cell": {"column": 1, "row": 1}},
+          {"type": "value", "source": "solar-v", "label": "BATTERY V", "display_unit": "V", "decimals": 2, "cell": {"column": 2, "row": 1}}
+        ]}
+      ]
+    },
+    {
+      "id": "batteries", "title": "BATTERIES", "button_labels": {"action_2": "MENU"},
+      "sources": [
+        {"id": "starter-v", "provider": "signalk", "path": "electrical.batteries.engine.voltage", "unit": "V", "outdated_ms": 120000}
+      ],
+      "pages": [
+        {"id": "both", "title": "BOTH BATTERIES", "grid": {"columns": 2, "rows": 2, "gap": 4}, "widgets": [
+          {"type": "value", "source": "house-v", "label": "HOUSE V", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}},
+          {"type": "value", "source": "starter-v", "label": "STARTER V", "display_unit": "V", "decimals": 2, "cell": {"column": 1, "row": 0}},
+          {"type": "value", "source": "soc", "label": "HOUSE CHARGE %", "display_unit": "%", "decimals": 0, "cell": {"column": 0, "row": 1}},
+          {"type": "value", "source": "solar-w", "label": "SOLAR W", "display_unit": "W", "decimals": 0, "cell": {"column": 1, "row": 1}}
+        ]}
+      ]
     }
   ]
 }

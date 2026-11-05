@@ -235,8 +235,9 @@ pages and widgets continue to operate.
 
 Current built-in numeric conversions are `m/s` to `kn`, radians to degrees,
 kelvin to Celsius, metres to nautical miles, pascals to hectopascals or bar,
-hertz to RPM, seconds to hours, ratio to percent, and cubic metres per second
-to litres per hour. A connector should keep incoming values in the source
+hertz to RPM, seconds to hours, ratio to percent, cubic metres per second
+to litres per hour, coulombs to ampere hours (`C` to `Ah`), and joules to
+watt hours (`J` to `Wh` or `kWh`). A connector should keep incoming values in the source
 unit; display conversion belongs to the widget/runtime.
 
 ## History

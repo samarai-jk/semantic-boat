@@ -304,11 +304,18 @@ Credentials go in an HTTP Basic header; the status never shows the password.
   only every 10..30 s while the boat does not move) instead of disappearing
   (no `stale_ms`); values Signal K reports as unavailable show `--` at once.
 - `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
-- `electrics.json`: 12 V house/starter batteries and port alternator voltage.
-  Battery paths use the conventional `electrical.batteries.house` and `starter`
-  identifiers; this server has no battery-monitor data yet, so those values are
-  unavailable until a provider publishes them. Edit identifiers to match future
-  monitors. No Raspberry Pi or Sailor HAT readings are included in this config.
+- `electrics.json`: the Victron battery monitor and solar charger that
+  signalk-victron-ble publishes. HOUSE BATTERY: charge, voltage, current,
+  power, time left, consumed Ah (`C` shown as `Ah`). SOLAR: panel power,
+  charge current, mode, yield today (`J` shown as `Wh`), battery voltage at
+  the charger. BATTERIES: house and starter (`electrical.batteries.engine`)
+  voltage. Graphs: house charge (0..100 %, solid) with house voltage (dotted,
+  11..15 V), 24 h; house current (mean, -30..30 A, negative is discharge),
+  6 h; solar power (mean), 24 h. The four histories use the whole 1024-byte
+  budget. The monitor sends about once a minute, so values get the `OLD`
+  badge only after 2 minutes. Time left shows 240 h while charging (the
+  monitor's "infinite"). No Raspberry Pi or Sailor HAT readings are included
+  in this config (see `server.json`).
 - `server.json`: live `environment.rpi` CPU temperature/utilisation, RAM/disk
   utilisation, uptime, and 1/5/15-minute load averages.
 - `weather-station.json`: all 15 SN-*-FSXCS-N01 measurements under

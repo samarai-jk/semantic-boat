@@ -163,6 +163,9 @@ int main() {
     assert(std::fabs(semantic_display::convertUnit(7200.0f, "s", "h") - 2.0f) < 0.001f);
     assert(std::fabs(semantic_display::convertUnit(0.72f, "ratio", "%") - 72.0f) < 0.001f);
     assert(std::fabs(semantic_display::convertUnit(1.0e-6f, "m3/s", "L/h") - 3.6f) < 0.001f);
+    assert(std::fabs(semantic_display::convertUnit(-153360.0f, "C", "Ah") + 42.6f) < 0.001f);
+    assert(std::fabs(semantic_display::convertUnit(2448000.0f, "J", "Wh") - 680.0f) < 0.01f);
+    assert(std::fabs(semantic_display::convertUnit(2448000.0f, "J", "kWh") - 0.68f) < 0.0001f);
 
     char formatted[32]{};
     assert(semantic_display::formatNumber(12.345f, 2u, formatted, sizeof formatted));

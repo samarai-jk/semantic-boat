@@ -71,6 +71,9 @@ float convertUnit(float value, std::string_view sourceUnit, std::string_view dis
     if (sourceUnit == "s" && displayUnit == "h") return value / 3600.0f;
     if (sourceUnit == "ratio" && displayUnit == "%") return value * 100.0f;
     if (sourceUnit == "m3/s" && displayUnit == "L/h") return value * 3600000.0f;
+    if (sourceUnit == "C" && displayUnit == "Ah") return value / 3600.0f;
+    if (sourceUnit == "J" && displayUnit == "Wh") return value / 3600.0f;
+    if (sourceUnit == "J" && displayUnit == "kWh") return value / 3600000.0f;
     return value;
 }
 

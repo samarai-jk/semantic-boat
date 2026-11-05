@@ -662,7 +662,7 @@ int main() {
         graphDisplay.handle(semantic_display::InputAction::nextPage);
         graphDisplay.handle(semantic_display::InputAction::action2);
         assert(!graphDisplay.pageMenuVisible() && graphDisplay.graphMode());
-        assert(changedPage == 0u && changedFrame == 7u && graphHistory.intervalMs(0u) == 302400000u);
+        assert(changedPage == 0u && changedFrame == 7u && graphHistory.intervalMs(0u) == 129600000u);
         graphDisplay.run(); graphPanel.state = slstm32::epd::UpdateState::idle; graphDisplay.run();
         graphDisplay.handle(semantic_display::InputAction::action1);
         assert(graphDisplay.applyTimeFrame(0u, 0u));

@@ -274,7 +274,7 @@ plot retain their existing Action 1 behavior; B5 still opens the page menu.
 | `series` | Optional; up to two more values on the same graph, each an object with `source`, `title`, `display_unit`, `decimals`, `y_min`/`y_max`, and `circular` as above. Each needs history over the same span (`interval_ms` × (`points` − 1)) as the graph's own source. |
 
 In the graph B2 shows the time frame and opens a menu to choose another:
-15 or 30 minutes, 1, 3, 6, 12, or 24 hours, 7, 14, or 30 days, 3 or 6 months,
+15 or 30 minutes, 1, 3, 6, 12, or 24 hours, 3, 7, 14, or 30 days, 3 or 6 months,
 1 year. A frame spreads the source's `points` over its span, so it sets the
 sample interval of every value of the graph (live recording then follows the
 new interval); the configured `interval_ms` is the default. The header bar

@@ -73,7 +73,7 @@ struct ActionHandler {
 
 // Graph time frames (15 minutes .. 1 year): a frame spreads a plot's history
 // points over its span, so it sets the sample interval of the plot's sources.
-inline constexpr std::uint8_t timeFrameCount = 13u;
+inline constexpr std::uint8_t timeFrameCount = 14u;
 std::uint32_t timeFrameSeconds(std::uint8_t frame);
 const char* timeFrameLabel(std::uint8_t frame);
 

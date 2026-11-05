@@ -132,7 +132,8 @@ struct TimeFrame {
 constexpr TimeFrame timeFrames[timeFrameCount]{
     {900u, "15 MIN", "15 MIN"},      {1800u, "30 MIN", "30 MIN"},     {3600u, "1 HOUR", "1 H"},
     {10800u, "3 HOURS", "3 H"},      {21600u, "6 HOURS", "6 H"},      {43200u, "12 HOURS", "12 H"},
-    {86400u, "24 HOURS", "24 H"},    {604800u, "7 DAYS", "7 D"},      {1209600u, "14 DAYS", "14 D"},
+    {86400u, "24 HOURS", "24 H"},    {259200u, "3 DAYS", "3 D"},      {604800u, "7 DAYS", "7 D"},
+    {1209600u, "14 DAYS", "14 D"},
     {2592000u, "30 DAYS", "30 D"},   {7776000u, "3 MONTHS", "3 MON"}, {15724800u, "6 MONTHS", "6 MON"},
     {31536000u, "1 YEAR", "1 YEAR"},
 };

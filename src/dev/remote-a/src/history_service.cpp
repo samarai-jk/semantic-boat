@@ -8,7 +8,10 @@ namespace display = semantic_display;
 
 constexpr std::uint32_t initialLoadDelayMs = 30000u; // after the server is first seen
 constexpr std::uint32_t requestTimeoutMs = 10000u;
-constexpr std::uint8_t framesVersion = 1u;
+// Version 2: the list of time frames got 3 days after 24 hours (index 7);
+// version 1 indices from 7 on move up by one.
+constexpr std::uint8_t framesVersion = 2u;
+constexpr std::uint8_t insertedFrame = 7u;
 
 } // namespace
 
@@ -58,13 +61,16 @@ std::uint32_t HistoryService::pageKey(std::uint16_t pageIndex) const {
 void HistoryService::loadFrames() {
     std::uint8_t payload[slstm32::storage::RedundantBlobStore::maxPayloadBytes]{};
     std::size_t size{};
-    if (!frames_.load(payload, sizeof payload, size) || size < 2u || payload[0] != framesVersion) return;
+    if (!frames_.load(payload, sizeof payload, size) || size < 2u) return;
+    if (payload[0] != framesVersion && payload[0] != 1u) return;
+    const bool older = payload[0] == 1u;
     const auto count = payload[1] < frameSlots ? payload[1] : frameSlots;
     if (size < 2u + 4u * count) return;
     for (std::size_t index = 0u; index < count; ++index) {
         const auto* entry = payload + 2u + 4u * index;
         slots_[index].key = entry[0] | entry[1] << 8u | static_cast<std::uint32_t>(entry[2]) << 16u;
-        slots_[index].frame = entry[3] < display::timeFrameCount ? entry[3] : 0u;
+        const auto frame = static_cast<std::uint8_t>(older && entry[3] >= insertedFrame ? entry[3] + 1u : entry[3]);
+        slots_[index].frame = frame < display::timeFrameCount ? frame : 0u;
     }
 }
 

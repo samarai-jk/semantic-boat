@@ -1652,9 +1652,9 @@ void DisplayService::renderHistoryPlot(const HistoryPlotView& plot, std::uint16_
     bool anyValid{};
     for (std::size_t index = 0u; index < traceCount; ++index) anyValid = anyValid || traces[index].valid;
     if (!anyValid) {
-        const auto messageWidth = Font5x7::textWidthScaled("NO DATA", 5u, 2u);
+        const auto messageWidth = Font5x7::textWidthScaled("LOADING DATA", 5u, 2u);
         Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(left + (graphWidth - messageWidth) / 2u),
-                              static_cast<std::uint16_t>(top + (graphHeight - 18u) / 2u), "NO DATA", true, 5u, 2u);
+                              static_cast<std::uint16_t>(top + (graphHeight - 18u) / 2u), "LOADING DATA", true, 5u, 2u);
         drawAnnotations();
         return;
     }

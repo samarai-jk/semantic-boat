@@ -296,7 +296,7 @@ Automatic scaling starts at zero and uses the largest retained value for the
 upper bound. Zero or negative-only histories use a range of 0 to 1. Configure a
 negative `y_min` and matching `y_max` to show negative values rather than clipping
 them to zero. Fixed ranges clip out-of-range values at the graph edges. Empty
-histories show `NO DATA`. Graph traces are two pixels thick; there are no axis
+histories show `LOADING DATA`. Graph traces are two pixels thick; there are no axis
 strokes or dedicated Y-label gutter. The white content area is the plot, with a
 six-pixel outer inset. The 14-pixel title is centered at the top, with the
 duration at the top right. The plotted maximum and its scale/unit label begin

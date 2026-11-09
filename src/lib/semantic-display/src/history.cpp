@@ -1,4 +1,5 @@
 #include "semantic_display/history.hpp"
+#include <cmath>
 #include <cstring>
 
 namespace semantic_display {
@@ -16,6 +17,8 @@ constexpr std::size_t activeOffset = 17u;
 constexpr std::size_t accumulatorOffset = 20u;
 constexpr std::size_t auxiliaryOffset = 24u;
 constexpr std::size_t accumulatorCountOffset = 28u;
+// No value for longer than this (and two intervals) is an outage.
+constexpr std::uint32_t outageMs = 120000u;
 
 std::uint16_t read16(const std::uint8_t* data) {
     return static_cast<std::uint16_t>(data[0]) |
@@ -72,9 +75,58 @@ std::uint8_t* HistoryStore::find(std::uint16_t sourceIndex) const {
     return nullptr;
 }
 
+void HistoryStore::push(std::uint8_t* series, float value) {
+    const auto points = read16(series + pointsOffset);
+    auto writeIndex = read16(series + writeOffset);
+    writeFloat(series + headerSize + writeIndex * sizeof(float), value);
+    ++revision_;
+    write16(series + writeOffset, static_cast<std::uint16_t>((writeIndex + 1u) % points));
+    const auto count = read16(series + countOffset);
+    if (count < points) write16(series + countOffset, static_cast<std::uint16_t>(count + 1u));
+}
+
+// The interval ending at the deadline gets what it collected (a gap
+// without values), every interval missed after it a gap; the next deadline
+// is the end of the interval that contains now.
+bool HistoryStore::closeOutage(std::uint8_t* series, std::uint32_t now) {
+    const auto deadline = read32(series + nextOffset);
+    const auto interval = read32(series + intervalOffset);
+    const auto overdue = static_cast<std::int32_t>(now - deadline);
+    if (overdue < 0 || interval == 0u) return false;
+    const auto late = static_cast<std::uint32_t>(overdue);
+    if (late < outageMs || late / 2u < interval) return false;
+    float pending = NAN;
+    if (series[activeOffset] != 0u) {
+        pending = readFloat(series + accumulatorOffset);
+        const auto collected = read32(series + accumulatorCountOffset);
+        if (static_cast<HistoryReducer>(series[reducerOffset]) == HistoryReducer::mean && collected != 0u) {
+            pending /= static_cast<float>(collected);
+        }
+    }
+    push(series, pending);
+    const auto missed = late / interval;
+    const auto points = read16(series + pointsOffset);
+    for (std::uint32_t index = 0u; index < missed && index < points; ++index) push(series, NAN);
+    write32(series + nextOffset, deadline + (missed + 1u) * interval);
+    series[activeOffset] = 0u;
+    write32(series + accumulatorCountOffset, 0u);
+    return true;
+}
+
+bool HistoryStore::advance(std::uint32_t now) {
+    bool written{};
+    for (std::size_t offset = 0u; offset < usedBytes_;) {
+        auto* series = memory_ + offset;
+        written = closeOutage(series, now) || written;
+        offset += recordSize(series);
+    }
+    return written;
+}
+
 bool HistoryStore::ingest(std::uint16_t sourceIndex, float value, std::uint32_t now) {
     auto* series = find(sourceIndex);
     if (!series) return false;
+    (void)closeOutage(series, now);
     const auto reducer = static_cast<HistoryReducer>(series[reducerOffset]);
     auto accumulator = readFloat(series + accumulatorOffset);
     auto auxiliary = readFloat(series + auxiliaryOffset);
@@ -102,14 +154,7 @@ bool HistoryStore::ingest(std::uint16_t sourceIndex, float value, std::uint32_t 
     if (reducer == HistoryReducer::mean && accumulatorCount != 0u) {
         sampleValue = accumulator / static_cast<float>(accumulatorCount);
     }
-    const auto points = read16(series + pointsOffset);
-    auto writeIndex = read16(series + writeOffset);
-    writeFloat(series + headerSize + writeIndex * sizeof(float), sampleValue);
-    ++revision_;
-    writeIndex = static_cast<std::uint16_t>((writeIndex + 1u) % points);
-    write16(series + writeOffset, writeIndex);
-    auto count = read16(series + countOffset);
-    if (count < points) write16(series + countOffset, static_cast<std::uint16_t>(count + 1u));
+    push(series, sampleValue);
     const auto interval = read32(series + intervalOffset);
     auto next = deadline;
     do { next += interval; } while (static_cast<std::int32_t>(now - next) >= 0);

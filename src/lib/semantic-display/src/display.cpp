@@ -1925,6 +1925,11 @@ void DisplayService::run() {
         clockRefreshAt_ = now + policy_.localClockRenderIntervalMs;
         if (!dialogVisible() && !renderingPaused_ && pageHasLocalClock()) invalidate(0u);
     }
+    // Sources that stopped sending get gaps in their histories.
+    if (static_cast<std::uint32_t>(now - historyAdvancedAt_) >= 1000u) {
+        historyAdvancedAt_ = now;
+        if (history_.advance(now) && graphMode_ && !dialogVisible() && !renderingPaused_) invalidate(0u);
+    }
     if (static_cast<std::uint32_t>(now - ageCheckedAt_) >= 1000u) {
         ageCheckedAt_ = now;
         if (!dirty_ && !dialogVisible() && !renderingPaused_) {

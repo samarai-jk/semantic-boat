@@ -12,6 +12,11 @@ public:
 
     bool configure(const PackageView& package, std::uint32_t now);
     bool ingest(std::uint16_t sourceIndex, float value, std::uint32_t now);
+    // Outages: a source without values for more than two intervals and two
+    // minutes gets gap points (NaN) for the missed intervals, so the ring
+    // stays a timeline and old points move out. Call about once a second;
+    // true when a point was written.
+    bool advance(std::uint32_t now);
     std::size_t usedBytes() const { return usedBytes_; }
     std::size_t seriesCount() const { return seriesCount_; }
     std::size_t sampleCount(std::uint16_t sourceIndex) const;
@@ -31,6 +36,8 @@ public:
 
 private:
     std::uint8_t* find(std::uint16_t sourceIndex) const;
+    bool closeOutage(std::uint8_t* series, std::uint32_t now);
+    void push(std::uint8_t* series, float value);
     std::uint8_t* memory_{};
     std::size_t capacity_{};
     std::size_t usedBytes_{};

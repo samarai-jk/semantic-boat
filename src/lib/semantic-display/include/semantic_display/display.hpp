@@ -262,6 +262,7 @@ private:
     std::uint32_t partialRefreshCount_{};
     std::uint32_t clockRefreshAt_{};
     std::uint32_t ageCheckedAt_{};
+    std::uint32_t historyAdvancedAt_{};
     bool configured_{};
     bool graphMode_{};
     bool dirty_{};

@@ -760,6 +760,42 @@ int main() {
       now += 333u; agingDisplay.run(); finishRefresh();
       assert(agingFrame == freshFrame);
     }
+    {
+      // Outages: a source silent for more than two intervals and two minutes
+      // gets gaps, so old points move out of the ring.
+      constexpr auto outageJson = R"json({"schema":"semantic-display/v1",
+        "permanent_sources":[{"id":"gust","path":"test.gust","unit":"m/s",
+          "history":{"interval_ms":60000,"points":5,"reducer":"maximum"}}],
+        "sections":[{"id":"s","pages":[{"id":"p","grid":{"columns":1,"rows":1},
+          "widgets":[{"type":"text","text":"X","cell":{"column":0,"row":0}}]}]}]})json";
+      std::array<std::uint8_t, 1024> outageBytes{};
+      const auto outagePackage = semantic_display::ConfigCompiler{}.compile(outageJson, outageBytes.data(), outageBytes.size());
+      assert(outagePackage);
+      std::array<std::uint8_t, 64> outageMemory{};
+      semantic_display::HistoryStore outage{outageMemory.data(), outageMemory.size()};
+      assert(outage.configure({outageBytes.data(), outagePackage.packageSize}, 0u));
+      // Regular values: one point per minute.
+      assert(outage.ingest(0u, 6.0f, 30000u) && outage.ingest(0u, 2.0f, 60000u));
+      assert(outage.sampleCount(0u) == 1u);
+      float value{};
+      assert(outage.sample(0u, 0u, value) && value == 6.0f);
+      // A short pause (90 s) is not an outage.
+      assert(!outage.advance(150000u));
+      assert(outage.ingest(0u, 3.0f, 150000u) && outage.sampleCount(0u) == 2u);
+      // Silent from 150 s: at 300 s (two minutes past the deadline 180 s)
+      // the empty minute up to it and the two missed ones become gaps.
+      assert(!outage.advance(299000u));
+      assert(outage.advance(300000u));
+      assert(outage.sampleCount(0u) == 5u);
+      assert(outage.sample(0u, 1u, value) && value == 3.0f);
+      for (std::size_t index = 2u; index < 5u; ++index) assert(outage.sample(0u, index, value) && std::isnan(value));
+      // A long outage pushes every old point out; the next value starts anew.
+      assert(outage.ingest(0u, 4.0f, 3600000u));
+      for (std::size_t index = 0u; index < outage.sampleCount(0u); ++index)
+        assert(outage.sample(0u, index, value) && std::isnan(value));
+      assert(outage.ingest(0u, 1.0f, 3660000u));
+      assert(outage.sample(0u, 4u, value) && value == 4.0f);
+    }
     display.requestShutdown();
     assert(!display.wake());
     display.run();

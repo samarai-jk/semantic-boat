@@ -8,6 +8,9 @@ namespace display = semantic_display;
 
 constexpr std::uint32_t initialLoadDelayMs = 30000u; // after the server is first seen
 constexpr std::uint32_t requestTimeoutMs = 10000u;
+// The clock stops while the display sleeps (Stop 2), so the histories miss
+// that time: after waking they are loaded again from the server.
+constexpr std::uint32_t wakeLoadDelayMs = 5000u;
 // Version 2: the list of time frames got 3 days after 24 hours (index 7);
 // version 1 indices from 7 on move up by one.
 constexpr std::uint8_t framesVersion = 2u;
@@ -158,6 +161,12 @@ void HistoryService::sendNext(std::uint32_t now) {
 
 void HistoryService::run() {
     const auto now = runtime_.millis();
+    const bool sleeping = display_.sleeping();
+    if (wasSleeping_ && !sleeping) {
+        initialLoadDone_ = false;
+        connectedAt_ = now - (initialLoadDelayMs - wakeLoadDelayMs);
+    }
+    wasSleeping_ = sleeping;
     const bool connected = link_.connected();
     if (connected && !wasConnected_) connectedAt_ = now;
     wasConnected_ = connected;

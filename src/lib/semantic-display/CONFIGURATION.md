@@ -312,9 +312,13 @@ The X-axis is oldest to latest, with a nominal span of
 duration appears in the top-right corner as `30m` or `10h`, rounded to the nearest
 minute or hour (seconds or milliseconds for shorter windows).
 Partially filled rings are right-aligned. History
-does not store timestamps or insert empty buckets for outages, so this is a
-sample-history graph, not an exact wall-clock timeline. Section-local sampling
-pauses outside that section; use permanent sources for continuous collection.
+does not store timestamps. A source that sends nothing for more than two
+intervals and two minutes gets empty points (the line breaks) for the missed
+intervals, so old points still move out; shorter pauses join the next point.
+The clock stops while remote-a sleeps; after waking it loads the histories
+again from the server. Section-local sources
+get no values outside their section, so their graphs show gaps for that time;
+use permanent sources for continuous collection.
 Graph redraws follow committed history samples rather than every raw update.
 All samples disappear on reboot or configuration replacement.
 

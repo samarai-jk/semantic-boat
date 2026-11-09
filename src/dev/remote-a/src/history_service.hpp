@@ -18,6 +18,7 @@ namespace remote_a {
 // "History"), and the graphs' time frames:
 // - 30 s after the server is first seen, each history source is loaded once,
 //   one request at a time, so the graphs are complete without waiting;
+//   again 5 s after waking from sleep (the clock stops while sleeping);
 // - a new time frame loads the sources of its graph at once and is stored:
 //   the last 8 graphs keep their frame across restarts (least recently used
 //   replaced), restored at start-up.
@@ -65,6 +66,7 @@ private:
     std::uint16_t requestId_{};
     std::uint16_t inFlight_{semantic_display::noIndex};
     bool wasConnected_{};
+    bool wasSleeping_{};
     bool initialLoadDone_{};
 };
 

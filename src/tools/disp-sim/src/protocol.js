@@ -36,6 +36,8 @@ export const MessageType = Object.freeze({
   FIRMWARE_RESTART: 0x66,
   HISTORY_REQUEST: 0x70,
   HISTORY_DATA: 0x71,
+  SCREEN_REQUEST: 0x80,
+  SCREEN_DATA: 0x81,
 });
 
 export function crc16Ccitt(data) {
@@ -272,6 +274,14 @@ export function parseFirmwareStatus(payload) {
     imageCrc: payload.readUInt32LE(8), version: payload.readUInt32LE(12),
     unconfirmed: (payload[16] & 1) !== 0, text: payload.subarray(18).toString('utf8')
   };
+}
+
+// Screen data: panel width u16, height u16, rotation u8 (quarter turns),
+// offset u32, then framebuffer bytes (width and height 0: not available).
+export function parseScreenData(payload) {
+  if (payload.length < 9) throw new Error('Malformed screen data');
+  return { width: payload.readUInt16LE(0), height: payload.readUInt16LE(2), rotation: payload[4],
+    offset: payload.readUInt32LE(5), data: payload.subarray(9) };
 }
 
 export const HistoryReducer = Object.freeze({ LAST: 1, MEAN: 2, MINIMUM: 3, MAXIMUM: 4 });

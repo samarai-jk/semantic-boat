@@ -252,6 +252,24 @@ source is not subscribed, the gateway has no database, or the query failed.
 The device keeps its live recording and accepts an answer only for the
 interval it currently uses (its time frame may have changed meanwhile).
 
+## Screenshot
+
+Addressed RS485 (version 2) only. The gateway reads what a display shows,
+piece by piece, while the display session waits (its replies of other types
+still reach the session).
+
+| Type | Message | Direction | Payload |
+| --- | --- | --- | --- |
+| `0x80` | Screen request | Gateway to device | offset `u32` |
+| `0x81` | Screen data | Device to gateway | panel width `u16`, panel height `u16`, rotation `u8` (quarter turns of the drawing, as `MonochromeCanvas`), offset `u32`, then up to 224 framebuffer bytes |
+
+The framebuffer is the panel's: rows of `width` bits, most significant bit
+first, 1 white; its size is `ceil(width / 8) * height` bytes (remote-a: 280 x
+480, rotation 1, 16,800 bytes, 75 pieces). Width and height 0 mean no screen
+is available now (the display is installing a configuration and has lent its
+framebuffer out). The answer is queued like the firmware status; pieces taken
+while the screen changes may mix two pictures.
+
 ## Limits and behavior
 
 - Maximum decoded payload: 240 bytes.

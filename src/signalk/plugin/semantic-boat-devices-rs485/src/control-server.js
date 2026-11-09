@@ -11,6 +11,7 @@
 //   {"command": "firmware-status", "device": "<id>"}
 //   {"command": "install-config", "device": "<id>", "name": "<catalog file, e.g. navigation.json>"}
 //   {"command": "firmware-update", "device": "<id>", "image": "<absolute path of remote-a.bin>"}
+//   {"command": "screenshot", "device": "<id>"}  (reply: {"event": "done", "png": "<base64>"})
 // Replies: JSON lines; an update streams {"event": "progress", ...} and ends
 // with {"event": "done", ...} or {"event": "error", "message": ...}.
 
@@ -71,6 +72,9 @@ class ControlServer {
       } else if (request.command === 'firmware-status') {
         const status = await this.runtime.firmware(request.device).status();
         send({ event: 'done', status });
+      } else if (request.command === 'screenshot') {
+        const png = await this.runtime.screenshot(request.device);
+        send({ event: 'done', png: png.toString('base64') });
       } else if (request.command === 'firmware-update') {
         if (typeof request.image !== 'string' || !request.image.startsWith('/')) throw new Error('image must be an absolute path');
         if (this.updating.has(request.device)) throw new Error(`${request.device} is already being updated`);
@@ -79,7 +83,8 @@ class ControlServer {
         this.updating.add(request.device);
         this.log(`firmware update of ${request.device} from ${request.image}`);
         try {
-          const result = await update.run(image, progress => send({ event: 'progress', ...progress }));
+          const result = await this.runtime.exclusive(request.device,
+            () => update.run(image, progress => send({ event: 'progress', ...progress })));
           this.log(`firmware update of ${request.device} done: ${result.version}`);
           send({ event: 'done', ...result });
         } finally { this.updating.delete(request.device); }

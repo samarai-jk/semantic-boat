@@ -68,16 +68,17 @@ class AddressedBus {
       this.reconnect();
     });
   }
-  // One request to a device outside its display session (firmware updates):
-  // resolves with the reply message, rejects after three unanswered tries.
-  // Retries keep the token, so the device replays its reply instead of
-  // applying the request twice.
-  exchange(address, type, payload = Buffer.alloc(0)) {
+  // One request to a device outside its display session (firmware updates,
+  // screenshots): resolves with the reply message, rejects after three
+  // unanswered tries. Retries keep the token, so the device replays its reply
+  // instead of applying the request twice. With `keep` (a reply type) the
+  // display session stays alive: it gets the replies of other types.
+  exchange(address, type, payload = Buffer.alloc(0), keep = undefined) {
     const device = this.devices.find(entry => entry.address === address);
     if (!device) return Promise.reject(new Error(`No device at RS485 address ${address}`));
     if (device.exchange) return Promise.reject(new Error(`RS485 address ${address} is busy`));
     return new Promise((resolve, reject) => {
-      device.exchange = { message: { type, payload }, resolve, reject };
+      device.exchange = { message: { type, payload }, resolve, reject, keep };
       this.schedule(0);
     });
   }
@@ -176,7 +177,16 @@ class AddressedBus {
     if (request.exchange) {
       device.exchange = null;
       if (error) request.exchange.reject(error);
-      else { device.receivedFrames += 1; request.exchange.resolve(request.response); }
+      else {
+        device.receivedFrames += 1;
+        const { response } = request; const { keep } = request.exchange;
+        if (keep !== undefined) {
+          device.emit('heartbeat');
+          if (response.type !== keep && response.type !== this.protocol.MessageType.BUS_IDLE) device.emit('data',
+            this.protocol.encodeFrame(response.type, response.sequence, response.payload));
+        }
+        request.exchange.resolve(response);
+      }
       this.schedule();
       return;
     }

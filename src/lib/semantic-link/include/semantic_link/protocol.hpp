@@ -54,7 +54,15 @@ enum class MessageType : std::uint8_t {
     // points of one history source, the gateway answers from its database.
     historyRequest = 0x70u,
     historyData = 0x71u,
+    // Screenshot (PROTOCOL.md, "Screenshot"): the gateway reads the
+    // framebuffer piece by piece.
+    screenRequest = 0x80u,
+    screenData = 0x81u,
 };
+
+// screenData: header bytes before the framebuffer bytes, and bytes per piece.
+inline constexpr std::size_t screenDataHeaderBytes = 9u;
+inline constexpr std::size_t screenChunkBytes = 224u;
 
 // historyData: header bytes before the float32 values.
 inline constexpr std::size_t historyDataHeaderBytes = 13u;

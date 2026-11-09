@@ -174,6 +174,24 @@ void DisplayLinkService::pumpSubscriptions() {
     if (subscriptionStage_ == 3u && send(semantic_link::MessageType::subscriptionsEnd)) subscriptionStage_ = 0u;
 }
 
+// One piece of the framebuffer; width and height 0 while it is lent out
+// (configuration installation) or there is none.
+void DisplayLinkService::sendScreen(std::uint32_t offset) {
+    std::uint8_t reply[semantic_link::maxPayloadSize]{};
+    const bool available = screen_ && !display_.renderingPaused();
+    const std::uint32_t frameSize = available ? (screenWidth_ + 7u) / 8u * screenHeight_ : 0u;
+    semantic_link::writeU16(reply, available ? screenWidth_ : 0u);
+    semantic_link::writeU16(reply + 2u, available ? screenHeight_ : 0u);
+    reply[4] = screenRotation_;
+    semantic_link::writeU32(reply + 5u, offset);
+    std::size_t count{};
+    if (offset < frameSize) {
+        count = frameSize - offset < semantic_link::screenChunkBytes ? frameSize - offset : semantic_link::screenChunkBytes;
+        std::memcpy(reply + semantic_link::screenDataHeaderBytes, screen_ + offset, count);
+    }
+    (void)send(semantic_link::MessageType::screenData, reply, semantic_link::screenDataHeaderBytes + count);
+}
+
 bool DisplayLinkService::accepts(std::uint16_t sourceIndex) const {
     semantic_display::SourceView source{};
     return sourceIndex < data_.size() && package_.sourceByIndex(sourceIndex, source) &&
@@ -195,6 +213,10 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
             firmwareReceiver_.enterBootloader) {
             firmwareReceiver_.enterBootloader(firmwareReceiver_.context);
         }
+        return;
+    }
+    if (message.type == semantic_link::MessageType::screenRequest && size == 4u) {
+        sendScreen(semantic_link::readU32(payload));
         return;
     }
     const auto firstPeerFrame = !peerSeen_;

@@ -11,15 +11,21 @@ Python 3 (no packages). One-step build and update: script/remote-a-update.sh.
     remote-a-update.py install remote-a-1 navigation.json   install a catalog configuration ('all' too)
     remote-a-update.py update remote-a-1 [remote-a-2 ...] [--image remote-a.bin]
     remote-a-update.py update all              every display that is online
+    remote-a-update.py screenshot remote-a-1 [file.png]   what the display shows
 
 The image is the stamped remote-a.bin of the RS485 build (default:
 build/remote-a-rs485/release/src/dev/remote-a/remote-a.bin). An update
 restarts the display into its bootloader, sends the image (about 30 s), and
 waits until the new firmware runs and has confirmed itself. Exit status 0
 only if every update succeeded.
+
+A screenshot is saved as build/screenshots/<display id>.png unless a file is
+given; Signal K serves it too, at
+/plugins/semantic-boat-devices-rs485/screenshot/<display id>.
 """
 
 import argparse
+import base64
 import json
 import os
 import pathlib
@@ -101,6 +107,9 @@ def main():
     install = commands.add_parser("install", help="install a catalog configuration ('all': every display online)")
     install.add_argument("device")
     install.add_argument("name")
+    screenshot = commands.add_parser("screenshot", help="save what a display shows as a PNG")
+    screenshot.add_argument("device")
+    screenshot.add_argument("file", nargs="?", type=pathlib.Path)
     run = commands.add_parser("update", help="update displays ('all': every display online)")
     run.add_argument("devices", nargs="+")
     run.add_argument("--image", default=DEFAULT_IMAGE, type=pathlib.Path)
@@ -120,6 +129,12 @@ def main():
         for device in devices:
             single(socket_path, {"command": "install-config", "device": device, "name": arguments.name})
             print(f"{device}: {arguments.name} sent; the display compiles it and restarts")
+    elif arguments.command == "screenshot":
+        target = arguments.file or REPOSITORY / f"build/screenshots/{arguments.device}.png"
+        png = base64.b64decode(single(socket_path, {"command": "screenshot", "device": arguments.device})["png"])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(png)
+        print(f"{arguments.device}: saved {target}")
     elif arguments.command == "status":
         print(f"{arguments.device}: {describe(single(socket_path, {'command': 'firmware-status', 'device': arguments.device})['status'])}")
     else:

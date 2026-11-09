@@ -110,12 +110,23 @@ in it (`src/firmware-update.js`; messages in
 Tools on this computer reach it through a Unix socket in the plugin's data
 directory, `~/.signalk/plugin-config-data/semantic-boat-devices-rs485/control.sock`
 (owner only; JSON lines, `src/control-server.js`): `devices`, `bus` (counters),
-`firmware-status`, `firmware-update`. The client is
+`firmware-status`, `firmware-update`, `screenshot`. The client is
 [`src/tools/remote-a-update.py`](../../../tools/remote-a-update.py); one-step
 build and update: `script/remote-a-update.sh <display id | all>`.
 
 During an update the display's session is paused; firmware requests get every
 other bus turn, and displays that stopped answering are not probed meanwhile.
+
+## Screenshots
+
+`GET /plugins/semantic-boat-devices-rs485/screenshot/<display id>` answers
+with a PNG of what the display shows (the control socket command
+`screenshot`, and `remote-a-update.py screenshot <display id>`, give the same).
+The plugin reads the framebuffer in 75 pieces (`src/screenshot.js`; messages
+in [PROTOCOL.md, "Screenshot"](../../../lib/semantic-link/PROTOCOL.md#screenshot)),
+which takes a few seconds; meanwhile the display's session waits but still
+receives the display's other messages. One firmware update or screenshot per
+display at a time.
 
 ## Sensor Commissioning
 

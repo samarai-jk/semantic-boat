@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url');
 const { SerialLink } = require('./serial-link');
 const { AddressedBus } = require('./addressed-bus');
 const { FirmwareUpdate } = require('./firmware-update');
+const { ScreenCapture } = require('./screenshot');
 
 function validateOptions(options) {
   const buses = options.buses ?? [];
@@ -48,6 +49,7 @@ class Rs485Runtime {
   // history: function returning the hub's history(request) (or null).
   constructor(app, catalog, onError, history = () => null) {
     this.history = history;
+    this.busy = new Set(); // displays in a firmware update or screenshot
     this.app = app;
     this.catalog = catalog;
     this.onError = onError;
@@ -99,14 +101,29 @@ class Rs485Runtime {
 
   busStates() { return this.buses.map(bus => bus.snapshot()); }
 
-  // Firmware of a display on an addressed RS485 bus (firmware-update.js).
-  firmware(id) {
+  addressed(id) {
     const link = this.links.find(entry => entry.session.device.id === id);
     if (!link) throw new Error(`Unknown display ${id}`);
     const { bus, address } = link.session.device;
     const master = this.buses.find(entry => entry.bus.id === bus);
     if (!master) throw new Error(`${id} is not on an addressed RS485 bus`);
-    return new FirmwareUpdate({ master, address, protocol: this.protocol });
+    return { master, address, protocol: this.protocol };
+  }
+
+  // Firmware of a display on an addressed RS485 bus (firmware-update.js).
+  firmware(id) { return new FirmwareUpdate(this.addressed(id)); }
+
+  // A PNG of what the display shows (screenshot.js).
+  screenshot(id) {
+    const target = this.addressed(id);
+    return this.exclusive(id, () => new ScreenCapture(target).capture());
+  }
+
+  // One firmware update or screenshot of a display at a time.
+  async exclusive(id, action) {
+    if (this.busy.has(id)) throw new Error(`${id} is busy (firmware update or screenshot)`);
+    this.busy.add(id);
+    try { return await action(); } finally { this.busy.delete(id); }
   }
 
   install(id, name) {

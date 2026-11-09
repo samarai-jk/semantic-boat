@@ -135,6 +135,8 @@ public:
     void updateAlertQueue(std::uint8_t count, std::uint16_t overflowCount);
     void dismissAlert();
     void setRenderingPaused(bool paused);
+    // Paused: the framebuffer is lent out (configuration installation).
+    bool renderingPaused() const { return renderingPaused_; }
     void setHeaderStatus(HeaderStatus status) { headerStatus_ = status; }
     void setHistoryHandler(HistoryHandler handler) { historyHandler_ = handler; }
     // The time frame of a page's plot (the nearest to its sources' interval),

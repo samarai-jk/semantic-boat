@@ -427,6 +427,9 @@ extern "C" void remote_a_app_init(void) {
     if (!configureDataUart()) Error_Handler();
     disableInactiveDataUart();
     displayLink.setFirmwareReceiver(firmware.receiver());
+    displayLink.setScreen(frameBuffer.data(), slstm32::epd::Waveshare3In7::panelWidth,
+                          slstm32::epd::Waveshare3In7::panelHeight,
+                          static_cast<std::uint8_t>(slstm32::epd::Rotation::degrees90));
     remote_a::FirmwareService::restoreView(display, displayPackage);
     display.setHistoryHandler(historyService.handler());
     if (!application.init()) Error_Handler();

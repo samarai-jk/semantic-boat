@@ -66,6 +66,10 @@ public:
     void setAlertReceiver(AlertMessageReceiver receiver) { alertReceiver_ = receiver; }
     void setFirmwareReceiver(FirmwareMessageReceiver receiver) { firmwareReceiver_ = receiver; }
     void setHistoryReceiver(HistoryMessageReceiver receiver) { historyReceiver_ = receiver; }
+    // The framebuffer read by screenshots (semantic-link PROTOCOL.md, "Screenshot").
+    void setScreen(const std::uint8_t* frame, std::uint16_t width, std::uint16_t height, std::uint8_t rotation) {
+        screen_ = frame; screenWidth_ = width; screenHeight_ = height; screenRotation_ = rotation;
+    }
     bool requestHistory(std::uint16_t requestId, std::uint16_t sourceIndex, std::uint32_t intervalMs,
                         std::uint16_t points, std::uint8_t reducer);
     bool requestConfigList();
@@ -88,6 +92,7 @@ private:
     void sendSubscriptions();
     void pumpSubscriptions();
     void handle(const semantic_link::MessageView& message);
+    void sendScreen(std::uint32_t offset);
     bool accepts(std::uint16_t sourceIndex) const;
 
     slstm32::Runtime runtime_;
@@ -106,6 +111,10 @@ private:
     AlertMessageReceiver alertReceiver_{};
     FirmwareMessageReceiver firmwareReceiver_{};
     HistoryMessageReceiver historyReceiver_{};
+    const std::uint8_t* screen_{};
+    std::uint16_t screenWidth_{};
+    std::uint16_t screenHeight_{};
+    std::uint8_t screenRotation_{};
     std::uint16_t subscribedSection_{semantic_display::noIndex};
     std::uint32_t lastAnnouncementAt_{};
     std::uint32_t lastPeerAt_{};

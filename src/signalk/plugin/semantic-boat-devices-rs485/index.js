@@ -118,6 +118,14 @@ module.exports = app => {
       router.get('/state', (_request, response) => response.json(runtime
         ? { displays: transport.devices(), buses: runtime.busStates(), hub: Boolean(hub) }
         : { displays: [], buses: [], hub: Boolean(hub) }));
+      // What a display shows, as a PNG: /plugins/semantic-boat-devices-rs485/screenshot/<display id>
+      router.get('/screenshot/:id', async (request, response) => {
+        try {
+          if (!runtime) throw new Error('RS485 gateway is not running');
+          const png = await runtime.screenshot(request.params.id);
+          response.set('Cache-Control', 'no-store').type('png').send(png);
+        } catch (error) { response.status(503).type('text').send(error.message); }
+      });
     }
   };
   return plugin;

@@ -16,6 +16,7 @@
   let selected = decodeURIComponent(window.location.hash.slice(1)) || null; // "transport/id"
   let rendered = { key: null, version: 0 };
   const b1sCards = new Map(); // device ID -> { parameters, version, log state }
+  const screenshots = new Map(); // "transport/id" -> { url (object URL), takenAt }
 
   const keyOf = device => `${device.transport}/${device.id}`;
 
@@ -100,8 +101,8 @@
     const title = text('div');
     title.append(text('h2', device.label), text('span', device.status, `badge ${device.online ? '' : 'offline'}`));
     header.append(title);
+    const controls = text('div', '', 'install-controls');
     if (device.canInstall) {
-      const controls = text('div', '', 'install-controls');
       const select = document.createElement('select');
       select.setAttribute('aria-label', 'Configuration to install');
       for (const name of catalogNames) select.append(Object.assign(text('option', name), { value: name }));
@@ -112,9 +113,12 @@
           'POST', { name: select.value });
         notice(result.status);
       }, 'Send the configuration from the designer catalog to this display'));
-      header.append(controls);
     }
+    if (device.screenshot) controls.append(button('Screenshot', () => takeScreenshot(device),
+      'Show what the display shows (takes about 5 s)'));
+    if (controls.children.length) header.append(controls);
     const meta = text('p', `${device.transportLabel} · ${device.address ?? ''} · ${device.id}`, 'device-meta');
+    const picture = screenshots.get(keyOf(device));
     const rows = (info.subscriptions ?? []).map(source => {
       const row = cells(String(source.sourceIndex), source.path + (source.path !== source.resolvedPath ? ` → ${source.resolvedPath}` : ''),
         source.value === null || source.value === undefined ? 'Unavailable' : String(source.value), source.source ?? '');
@@ -125,9 +129,36 @@
     const stats = text('div', [`${info.receivedFrames ?? 0} RX`, `${info.sentFrames ?? 0} TX`, `${info.valuesSent ?? 0} values`,
       `${info.decodeErrors ?? 0} decode errors`, `${info.queuedFrames ?? 0} queued`].join(' · '), 'stats');
     const transfer = text('div', info.lastTransfer ? `Last install: ${info.lastTransfer.name}: ${info.lastTransfer.state}` : '', 'transfer');
-    detail.replaceChildren(header, meta, text('h3', 'Live values requested by the display'),
+    detail.replaceChildren(header, meta, ...(picture ? [screenshotFigure(device, picture)] : []),
+      text('h3', 'Live values requested by the display'),
       rows.length ? table(['#', 'Signal K path', 'Value (SI)', 'Source'], rows, 'subscriptions') : text('p', 'No subscriptions yet', 'empty'),
       stats, text('div', info.error ?? '', 'error-text'), transfer);
+  }
+
+  async function takeScreenshot(device) {
+    const response = await fetch(device.screenshot, { cache: 'no-store' });
+    if (response.status === 401 || response.status === 403) throw new Error('Sign in to Signal K, then reload this page.');
+    if (!response.ok) throw new Error(`Screenshot of ${device.label}: ${await response.text()}`);
+    const blob = await response.blob();
+    const previous = screenshots.get(keyOf(device));
+    if (previous) URL.revokeObjectURL(previous.url);
+    screenshots.set(keyOf(device), { url: URL.createObjectURL(blob), takenAt: new Date() });
+    rendered.key = null;
+    render();
+  }
+
+  function screenshotFigure(device, picture) {
+    const figure = text('figure', '', 'screenshot');
+    const image = Object.assign(document.createElement('img'), { src: picture.url, alt: `Screen of ${device.label}` });
+    const time = picture.takenAt.toLocaleTimeString();
+    const stamp = picture.takenAt.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+    const save = Object.assign(text('a', 'Save'), { href: picture.url, download: `${device.id}-${stamp}.png` });
+    const close = text('button', 'Close', 'small-button');
+    close.onclick = () => { URL.revokeObjectURL(picture.url); screenshots.delete(keyOf(device)); rendered.key = null; render(); };
+    const caption = text('figcaption', `Taken ${time} · `);
+    caption.append(save, close);
+    figure.append(image, caption);
+    return figure;
   }
 
   function updateDisplay(device) {

@@ -94,6 +94,9 @@ class Rs485Runtime {
         online: detail.ready,
         status: detail.ready ? 'online' : detail.open ? 'waiting for display' : 'disconnected',
         address: `${detail.bus} · ${String(detail.address).padStart(3, '0')}`,
+        // Addressed RS485 only (index.js serves it).
+        ...(this.buses.some(master => master.bus.id === detail.bus)
+          ? { screenshot: `/plugins/semantic-boat-devices-rs485/screenshot/${encodeURIComponent(detail.id)}` } : {}),
         detail
       };
     });

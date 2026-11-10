@@ -93,6 +93,7 @@ const unregister = hub.registerTransport({
     online: true,
     status: 'online',          // short state text
     address: 'rs485-main · 001',
+    screenshot: '/plugins/…/screenshot/remote-a-1', // optional: URL of a PNG of the screen (Screenshot button)
     detail: { /* transport-specific; displays: subscriptions, counters, lastTransfer, error */ }
   }],
   install: async (id, name) => { /* optional: send catalog configuration `name` to display `id` */ }

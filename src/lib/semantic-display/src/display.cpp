@@ -1616,6 +1616,17 @@ void DisplayService::renderTiles(const char* title, const char* const (&labels)[
         if (!wrap(name, 3u)) { scale = 2u; break; }
     }
 
+    // The full grid: lines between all columns and rows shown, also where the
+    // last row has fewer tiles, so every tile has its frame.
+    const auto gridHeight = static_cast<std::uint16_t>(shownRows * (tileHeight + gap) - gap);
+    for (std::uint16_t column = 1u; column < columns; ++column) {
+        canvas_.fillRect(static_cast<std::uint16_t>(horizontalSafeMargin + column * (tileWidth + gap) - gap), areaTop,
+                         gap, gridHeight, true);
+    }
+    for (std::uint16_t row = 1u; row < shownRows; ++row) {
+        canvas_.fillRect(horizontalSafeMargin, static_cast<std::uint16_t>(areaTop + row * (tileHeight + gap) - gap),
+                         static_cast<std::uint16_t>(columns * (tileWidth + gap) - gap), gap, true);
+    }
     for (std::uint16_t row = 0u; row < shownRows; ++row) {
         for (std::uint16_t column = 0u; column < columns; ++column) {
             const auto index = static_cast<std::uint16_t>((firstRow + row) * columns + column);
@@ -1626,14 +1637,6 @@ void DisplayService::renderTiles(const char* title, const char* const (&labels)[
             const auto y = static_cast<std::uint16_t>(areaTop + row * (tileHeight + gap));
             const bool selected = index == cursor;
             if (selected) canvas_.fillRect(x, y, tileWidth, tileHeight, true);
-            // Separators to the right and below, where a neighbour exists.
-            if (column + 1u < columns && index + 1u < count) {
-                canvas_.fillRect(static_cast<std::uint16_t>(x + tileWidth), y, gap, tileHeight, true);
-            }
-            if (row + 1u < shownRows && index + columns < count) {
-                canvas_.fillRect(x, static_cast<std::uint16_t>(y + tileHeight),
-                                 static_cast<std::uint16_t>(tileWidth + (column + 1u < columns ? gap : 0u)), gap, true);
-            }
 
             if (!wrap(name, scale)) {
                 fitText(first, sizeof first, textWidth, scale);

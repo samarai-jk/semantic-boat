@@ -13,7 +13,9 @@ namespace engine_mon {
 
 // EEPROM layout (AT24C256 on the can-mcu, 32 KiB), from the top down. The
 // first four areas sit where lab-test-01 has them; the B1S and channel areas
-// are larger (16 channels). About 21 KiB in all.
+// are larger (24 channels, B1S channel numbers 0..23). About 29 KiB in all.
+// Layout 2 (2026-11-16) grew them from 16; layout 1 records below the
+// health record are erased once (DeviceSettings::layout).
 // The last 256 bytes: device settings (the redundant store uses 128).
 inline constexpr std::uint32_t settingsOffset = 32u * 1024u - 256u;
 inline constexpr std::size_t settingsBytes = 256u;
@@ -28,20 +30,24 @@ inline constexpr std::size_t sensorSettingsSlots = 32u;
 inline constexpr std::uint32_t sensorSettingsOffset =
     healthRecordOffset - slstm32::storage::KeyedRecordStore::requiredBytes(sensorSettingsSlots);
 // B1S configuration set over CAN (device role; location, label, encoding,
-// periods of B1S channels 0..15).
-inline constexpr std::size_t b1sChannelSlots = 16u;
+// periods of B1S channels 0..23).
+inline constexpr std::size_t b1sChannelSlots = 24u;
 inline constexpr std::uint32_t b1sSettingsOffset = sensorSettingsOffset - b1s::ChannelSettings::requiredBytes(b1sChannelSlots);
 // Alarm rules, fault alarm, and output function of the measurement channels
 // (five 128-byte records per channel).
-inline constexpr std::size_t measurementChannels = 16u;
+inline constexpr std::size_t measurementChannels = 24u;
 inline constexpr std::uint32_t channelProcessingOffset =
     b1sSettingsOffset - slstm32::sensors::MeasurementRegistry::processingBytes(measurementChannels);
 static_assert(channelProcessingOffset < 32u * 1024u, "EEPROM layout fits");
+// The current layout; settings of an older one are erased at startup.
+inline constexpr std::uint8_t eepromLayout = 2u;
 
 struct DeviceSettings {
     std::uint32_t bootCount{};
     // Last claimed NMEA 2000 source address, tried first at the next start.
     std::uint8_t n2kAddress{b1s::product::engineMon.preferredAddress};
+    // EEPROM layout the stored channel settings belong to (1 before 2026-11-16).
+    std::uint8_t layout{eepromLayout};
 };
 
 class DeviceSettingsStore {

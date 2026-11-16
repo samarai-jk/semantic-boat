@@ -25,6 +25,7 @@
 #include "b1s/measurement_publisher.hpp"
 #include "b1s/registry.hpp"
 #include "b1s/service_server.hpp"
+#include "n2k/electrical.hpp"
 #include "n2k/name.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "semantic_modules/ad_input_iso_12v_calibration.hpp"
@@ -46,6 +47,7 @@
 #include "slstm32/drivers/npi19.hpp"
 #include "slstm32/drivers/one_wire.hpp"
 #include "slstm32/drivers/digital_input.hpp"
+#include "slstm32/drivers/frequency_input.hpp"
 #include "slstm32/drivers/led.hpp"
 #include "slstm32/drivers/pwm_led.hpp"
 #include "slstm32/drivers/pwm_output.hpp"
@@ -92,13 +94,13 @@ constexpr std::uint32_t inputDebounceMs = 20u;
 constexpr b1s::Product product = b1s::product::engineMon;
 // Builds with development tools say so in the software version, visible to
 // every NMEA 2000 tool (Signal K, can-bench) and in the image header.
-#define ENGINE_MON_VERSION "0.1.0"
+#define ENGINE_MON_VERSION "0.2.0"
 constexpr const char* softwareVersion =
     slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__;
 // Firmware image header for the bootloader; size and CRC are stamped in
 // after the link (src/lib/b1s/FIRMWARE.md).
 [[gnu::section(".image_header"), gnu::used]] const can_mcu::image::Header imageHeader =
-    can_mcu::image::makeHeader(product.code, 0u, 1u, 0u, slstm32::devTools,
+    can_mcu::image::makeHeader(product.code, 0u, 2u, 0u, slstm32::devTools,
                                slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__);
 // The application confirms a newly installed image once it has run normally this long.
 constexpr std::uint32_t firmwareConfirmAfterMs = 10000u;
@@ -182,6 +184,7 @@ Gear loggedGear{Gear::neutral};
 // serial code of the product information.
 char serialCode[25]{};
 constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange,
+                                           n2k::pgn::binarySwitchBankStatus,
                                            b1s::pgn::measurement,
                                            b1s::pgn::measurementRaw,
                                            b1s::pgn::channelDescription,
@@ -341,11 +344,46 @@ sensors::Measurement rawWaterTemperatureChannel{rawWaterTemperatureChannelConfig
 slstm32::drivers::Npi19Driver rawWaterSensor{runtime, i2c, logger, &rawWaterPressureChannel,
                                              &rawWaterTemperatureChannel, 2070000};
 
+// Analog inputs A10..A13 (AD1) and A20..A23 (AD2) as voltages at the module
+// terminals, one reading per second (module calibration: console "cal").
+// The engine's oil pressure and coolant senders are published as their
+// voltages until their curves are known. No alarms yet.
+constexpr sensors::MeasurementConfig moduleAnalogConfigs[engine_mon::board::moduleAnalogCount]{
+    {"oil-sender", sensors::Quantity::voltage, 0u},   {"coolant-sender", sensors::Quantity::voltage, 1u},
+    {"alternator-v", sensors::Quantity::voltage, 2u}, {"starter-v", sensors::Quantity::voltage, 3u},
+    {"system-v", sensors::Quantity::voltage, 4u},     {"a21", sensors::Quantity::voltage, 5u},
+    {"a22", sensors::Quantity::voltage, 6u},          {"a23", sensors::Quantity::voltage, 7u},
+};
+sensors::Measurement moduleAnalogChannels[engine_mon::board::moduleAnalogCount]{
+    sensors::Measurement{moduleAnalogConfigs[0]}, sensors::Measurement{moduleAnalogConfigs[1]},
+    sensors::Measurement{moduleAnalogConfigs[2]}, sensors::Measurement{moduleAnalogConfigs[3]},
+    sensors::Measurement{moduleAnalogConfigs[4]}, sensors::Measurement{moduleAnalogConfigs[5]},
+    sensors::Measurement{moduleAnalogConfigs[6]}, sensors::Measurement{moduleAnalogConfigs[7]},
+};
+constexpr std::uint32_t moduleAnalogPeriodMs = 1000u;
+std::uint32_t moduleAnalogAt{};
+
+// Engine speed from the alternator W terminal on D10: pulses per revolution
+// = pole pairs x pulley ratio. 15 (6 x 2.5) is a placeholder until it is
+// calibrated against a tachometer (B1S calibrate / calibrateSecondPoint);
+// 0 rpm while no pulses arrive (engine stopped).
+constexpr sensors::MeasurementConfig rpmChannelConfig{"rpm", sensors::Quantity::rotationalSpeed, 0u};
+sensors::Measurement rpmChannel{rpmChannelConfig};
+std::uint32_t cycleTicks() { return can_mcu::cycleCounter(); }
+// Glitch filter 300 us: up to 3.3 kHz, about 13000 rpm at 15 pulses.
+const slstm32::drivers::FrequencyInputConfig rpmConfig{&cycleTicks, can_mcu::coreClockHz, 15000u, true, 300u, 250u,
+                                                       2000u};
+slstm32::drivers::FrequencyInput rpmSensor{runtime, rpmConfig, &rpmChannel};
+
 sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &dryExhaustChannel,
                                        &wetExhaustChannel, &alternatorChannel, &heatExchangerChannel,
                                        &gearboxOilChannel, &calorifierChannel, &engineRoomChannel,
                                        &engineRoomHumidityChannel, &rawWaterPressureChannel,
-                                       &rawWaterTemperatureChannel};
+                                       &rawWaterTemperatureChannel, &rpmChannel,
+                                       &moduleAnalogChannels[0], &moduleAnalogChannels[1],
+                                       &moduleAnalogChannels[2], &moduleAnalogChannels[3],
+                                       &moduleAnalogChannels[4], &moduleAnalogChannels[5],
+                                       &moduleAnalogChannels[6], &moduleAnalogChannels[7]};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -381,7 +419,17 @@ const b1s::ChannelConfig b1sChannels[]{
     {&rawWaterPressureChannel, 16u, b1s::Publish::b1s, static_cast<std::uint8_t>(n2k::PressureSource::water), "",
      "Raw water pressure"},
     {&rawWaterTemperatureChannel, 17u, b1s::Publish::b1s, engineRoom, "", "Raw water temperature (sensor)"},
+    {&rpmChannel, 2u, b1s::Publish::b1s, 0u, "", "Engine speed (alternator W)"},
+    {&moduleAnalogChannels[0], 9u, b1s::Publish::b1s, 0u, "", "Oil pressure sender voltage"},
+    {&moduleAnalogChannels[1], 10u, b1s::Publish::b1s, 0u, "", "Coolant temp sender voltage"},
+    {&moduleAnalogChannels[2], 11u, b1s::Publish::b1s, 0u, "", "Alternator voltage"},
+    {&moduleAnalogChannels[3], 12u, b1s::Publish::b1s, 0u, "", "Starter voltage"},
+    {&moduleAnalogChannels[4], 13u, b1s::Publish::b1s, 0u, "", "12 V system voltage"},
+    {&moduleAnalogChannels[5], 18u, b1s::Publish::b1s, 0u, "", "Reserve input A21"},
+    {&moduleAnalogChannels[6], 19u, b1s::Publish::b1s, 0u, "", "Reserve input A22"},
+    {&moduleAnalogChannels[7], 20u, b1s::Publish::b1s, 0u, "", "Reserve input A23"},
 };
+static_assert(sizeof b1sChannels / sizeof b1sChannels[0] <= engine_mon::b1sChannelSlots, "B1S channel slots");
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
 b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
 b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
@@ -455,6 +503,7 @@ struct GearboxOilSensor;
 struct CalorifierSensor;
 struct EngineRoomSensor;
 struct RawWaterSensor;
+struct RpmSensor;
 struct Can;
 struct CanActivityLed;
 struct StatusLed;
@@ -493,6 +542,7 @@ auto application = slstm32::makeApplication(
         slstm32::bind<component::CalorifierSensor>(calorifierSensor),
         slstm32::bind<component::EngineRoomSensor>(engineRoomSensor),
         slstm32::bind<component::RawWaterSensor>(rawWaterSensor),
+        slstm32::bind<component::RpmSensor>(rpmSensor),
         slstm32::bind<component::Can>(can),
         slstm32::bind<component::CanActivityLed>(canActivityLed),
         slstm32::bind<component::StatusLed>(statusLed),
@@ -521,12 +571,31 @@ bool saveSettings() {
     return false;
 }
 
+// Settings of an older EEPROM layout (B1S and channel areas of another size)
+// would be read at the wrong places: erased once, the channels start from
+// their defaults.
+void eraseOldChannelSettings() {
+    std::uint8_t blank[64];
+    std::memset(blank, 0xFF, sizeof blank);
+    bool written = true;
+    for (auto address = engine_mon::channelProcessingOffset; address < engine_mon::sensorSettingsOffset;
+         address += sizeof blank) {
+        written = eeprom.write(address, blank, sizeof blank) && written;
+    }
+    logger.writef(written ? LogLevel::warning : LogLevel::error,
+                  "eeprom: layout %u -> %u, channel settings over CAN (alarms, labels, periods) reset%s",
+                  static_cast<unsigned>(settings.layout), static_cast<unsigned>(engine_mon::eepromLayout),
+                  written ? "" : ", erase failed");
+}
+
 void loadSettings() {
     if (!eepromBinding.present()) {
         logger.writef(LogLevel::error, "eeprom: no answer at 0x%02X", static_cast<unsigned>(eepromAddress));
         return;
     }
     const bool loaded = settingsStore.load(settings);
+    if (loaded && settings.layout != engine_mon::eepromLayout) eraseOldChannelSettings();
+    settings.layout = engine_mon::eepromLayout;
     ++settings.bootCount;
     settingsAvailable = saveSettings();
     if (!settingsAvailable) return;
@@ -634,6 +703,48 @@ void watchInputs() {
         logger.writef(LogLevel::info, "input: D10..D13 D20..D23 = %.4s %.4s (1 = 12 V)", text, text + 4);
         inputsKnown = true;
     }
+}
+
+// Module analog inputs into their channels, once a second; an input of a
+// module that does not answer is a fault.
+void updateModuleAnalogs(std::uint32_t now) {
+    if (static_cast<std::int32_t>(now - moduleAnalogAt) < 0) return;
+    moduleAnalogAt = now + moduleAnalogPeriodMs;
+    constexpr auto perModule = semantic_modules::AdInputIso12v::channels;
+    for (std::size_t index = 0u; index < engine_mon::board::moduleAnalogCount; ++index) {
+        const auto& module = *inputModules[index / perModule];
+        const auto input = index % perModule;
+        auto& channel = moduleAnalogChannels[index];
+        if (module.analogValid(input)) channel.update(module.analogMillivolts(input), now);
+        else channel.fail(sensors::Fault::noResponse, now);
+    }
+}
+
+// Digital inputs D10..D13, D20..D23 as NMEA 2000 Binary Switch Bank Status
+// (127501, bank 0, indicators 1..8 = D10..D23, on = 12 V present): on every
+// change and every 2 s.
+constexpr std::uint8_t switchBank = 0u;
+constexpr std::uint8_t switchBankPriority = 6u;
+constexpr std::uint32_t switchBankPeriodMs = 2000u;
+std::uint32_t switchBankAt{};
+std::uint8_t switchBankSent{0xFFu};
+
+void publishSwitchBank(std::uint32_t now) {
+    using engine_mon::board::digitalInputCount;
+    bool states[digitalInputCount]{};
+    std::uint8_t bits{};
+    for (std::size_t index = 0u; index < digitalInputCount; ++index) {
+        states[index] = digitalOn(index);
+        if (states[index]) bits = static_cast<std::uint8_t>(bits | 1u << index);
+    }
+    if (bits == switchBankSent && static_cast<std::int32_t>(now - switchBankAt) < 0) return;
+    if (!n2kNode.claimed()) return;
+    std::uint8_t data[8];
+    n2k::encodeBinarySwitchBankStatus(data, switchBank, states, digitalInputCount);
+    if (!n2kNode.sendSingle(switchBankPriority, n2k::pgn::binarySwitchBankStatus, n2k::broadcastAddress, data,
+                            sizeof data)) return;
+    switchBankSent = bits;
+    switchBankAt = now + switchBankPeriodMs;
 }
 
 void inputLogCommand(void*, std::size_t argc, const char* const* argv) {
@@ -760,6 +871,14 @@ extern "C" void engine_mon_app_init(void) {
     for (std::size_t index = 0u; index < engine_mon::board::analogInputCount; ++index) {
         analogInputs[index] = mcu.addInput(engine_mon::board::analogChannels[index]);
     }
+    // Identities: stored calibrations follow the module input and the board.
+    for (std::size_t index = 0u; index < engine_mon::board::moduleAnalogCount; ++index) {
+        constexpr auto perModule = semantic_modules::AdInputIso12v::channels;
+        const auto address = index < perModule ? engine_mon::board::ad1Address : engine_mon::board::ad2Address;
+        moduleAnalogChannels[index].setIdentity(
+            sensors::Identity::i2c(0u, 0u, address, static_cast<std::uint8_t>(index % perModule)));
+    }
+    rpmChannel.setIdentity(sensors::Identity::internal(2u));
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&onN2kMessage, nullptr);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
@@ -797,6 +916,11 @@ extern "C" void engine_mon_app_run(void) {
     events.process();
     application.run();
     watchInputs();
+    {
+        const auto now = runtime.millis();
+        updateModuleAnalogs(now);
+        publishSwitchBank(now);
+    }
     if (clickPending) {
         clickPending = false;
         buzzer.play(2700u, 25u, 0.05f);
@@ -821,5 +945,9 @@ extern "C" void engine_mon_app_tick(void) {
 }
 
 extern "C" void HAL_GPIO_EXTI_Callback(std::uint16_t pin) {
+    if (pin == engine_mon::board::digitalInputMask(engine_mon::board::rpmInput)) {
+        rpmSensor.onEdge();
+        return;
+    }
     (void)buttons.onInterrupt(pin);
 }

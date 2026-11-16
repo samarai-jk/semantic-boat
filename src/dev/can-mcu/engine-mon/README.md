@@ -82,12 +82,19 @@ update support, and the health, I2C scan, and CAN monitor services.
 - **Channels on B1S:** 0 enclosure (TMP75), 1 MCU die; as standard PGN their
   source would be "engine room". Default alarms: enclosure warning above
   65 °C and alarm above 75 °C (60 s average), MCU alarm above 80 °C,
-  enclosure sensor fault a warning after 10 s.
+  enclosure sensor fault a warning after 10 s. The engine channels are
+  listed in [ENGINE-SETUP.md](ENGINE-SETUP.md#b1s-channels).
+- **Digital inputs** D10..D13, D20..D23: NMEA 2000 Binary Switch Bank Status
+  (127501), bank 0, indicators 1..8 in that order (on = 12 V present), on
+  every change and every 2 s. Signal K: `electrical.switches.bank.0.<1..8>.state`.
+- **EEPROM layout 2** (2026-11-16, 24 channel slots): an engine monitor with
+  layout 1 settings erases its channel settings set over CAN once at the
+  first start of the new firmware.
 - **Window pool:** 24 windows of 32 buckets (about 5.8 KiB of RAM): an
   engine monitor can spend its memory on averages and alarms.
 - **EEPROM** (from the top): settings, input module calibration, health
-  record (as on LT1), sensor calibration (32 slots), B1S configuration (16
-  channel slots), alarm rules and outputs (16 channels); about 21 KiB.
+  record (as on LT1), sensor calibration (32 slots), B1S configuration (24
+  channel slots), alarm rules and outputs (24 channels); about 29 KiB.
 - **Console** (VCP and over CAN): `help`, `health`, `sensors`, `sensor`,
   `ack`, `io`; with development tools also `do`.
 - **Identify** over CAN blinks the yellow CAN LED fast.

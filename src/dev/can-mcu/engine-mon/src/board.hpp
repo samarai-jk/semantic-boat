@@ -44,6 +44,9 @@ inline constexpr std::size_t moduleAnalogCount = 8u;
 inline constexpr const char* moduleAnalogNames[moduleAnalogCount]{
     "A10 oil pressure", "A11 coolant temperature", "A12 alternator voltage", "A13 starter voltage",
     "A20 12 V system",  "A21 reserve 1",           "A22 reserve 2",          "A23 reserve 3"};
+// D10 counts pulses for the rpm (interrupt on the falling module output,
+// where 12 V appears; HAL_GPIO_EXTI_Callback with digitalInputMask(rpmInput)).
+inline constexpr std::size_t rpmInput = 0u;
 // Indices of the gearbox reed switches (12 V while the gear is engaged).
 inline constexpr std::size_t gearReverseInput = 4u;
 inline constexpr std::size_t gearForwardInput = 5u;

@@ -160,6 +160,27 @@ on the sunk LED it just keeps the LED off. Until then the firmware drives
 green on PA2.
 | Buttons BF5, BF6 | PB10, PB11 | Frontends BTN_FUN_4/5, bridges R51, R52 fitted (as now) |
 
+## B1S channels
+
+As implemented (2026-11-16). Every channel goes out as B1S Measurement
+(65280); locations, labels, alarms, and send periods can be set over CAN.
+
+| Channel | Signal | Quantity | Note |
+| --- | --- | --- | --- |
+| 0, 1 | Enclosure, MCU die | temperature | |
+| 2 | Engine speed (D10, alternator W) | rotational speed | 15 pulses per revolution (placeholder) until calibrated against a tachometer |
+| 3..8 | Dry exhaust, wet exhaust, alternator, heat exchanger, gearbox oil, calorifier water | temperature | |
+| 9 | Oil pressure sender (A10) | voltage | until the sender curve is known |
+| 10 | Coolant temperature sender (A11) | voltage | until the sender curve is known |
+| 11, 12, 13 | Alternator, starter, 12 V system (A12, A13, A20) | voltage | |
+| 14, 15 | Engine room | temperature, humidity | |
+| 16, 17 | Raw water | pressure, temperature | |
+| 18, 19, 20 | Reserve A21, A22, A23 | voltage | |
+
+Voltages are at the module terminals (module calibration: console `cal`).
+The digital inputs go out as Binary Switch Bank Status, bank 0
+([README](README.md#host-io)).
+
 ## MCU pin map (all 21 host GPIOs)
 
 | Pin | Use | | Pin | Use |

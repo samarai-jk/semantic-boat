@@ -15,10 +15,14 @@ namespace {
 struct InputPin {
     GPIO_TypeDef* port;
     std::uint16_t pin;
+    IRQn_Type irq{}; // counted input: interrupt on the falling edge (12 V appears)
+    bool counted{};
 };
 
+constexpr std::uint32_t countedInputIrqPriority = 5u; // as the buttons
+
 InputPin inputPins[digitalInputCount]{
-    {GPIOB, GPIO_PIN_4},  // D10, rpm
+    {GPIOB, GPIO_PIN_4, EXTI4_IRQn, true}, // D10, rpm
     {GPIOB, GPIO_PIN_5},  // D11, ignition
     {GPIOB, GPIO_PIN_14}, // D12, starter solenoid
     {GPIOC, GPIO_PIN_13}, // D13, fuel stop solenoid
@@ -32,9 +36,13 @@ bool configureInput(void* context) {
     const auto& input = *static_cast<InputPin*>(context);
     GPIO_InitTypeDef gpio{};
     gpio.Pin = input.pin;
-    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Mode = input.counted ? GPIO_MODE_IT_FALLING : GPIO_MODE_INPUT;
     gpio.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(input.port, &gpio);
+    if (input.counted) {
+        HAL_NVIC_SetPriority(input.irq, countedInputIrqPriority, 0u);
+        HAL_NVIC_EnableIRQ(input.irq);
+    }
     return true;
 }
 

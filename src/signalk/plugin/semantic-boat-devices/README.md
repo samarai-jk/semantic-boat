@@ -144,7 +144,8 @@ API of the hub: `GET /devices` (transports and all devices),
   section/page and sources used by widgets are protected from deletion.
 - Each page can select one History source. Expand the source panel and enable
   Record history to set its interval, retained points and reducer. The designer
-  shows the shared 1024-byte history RAM budget; 120 points cost 512 bytes.
+  shows the shared 4096-byte history RAM budget (remote-a firmware from
+  2026-11-16; 1024 bytes before); 120 points cost 512 bytes.
   Set the graph title, display unit, decimals and optional fixed Y bounds on the
   page. Updated remote-a firmware uses B4 (third bottom button) to toggle
   GRAPH / VALUES; page navigation resets to values. Plot sources are protected
@@ -310,7 +311,14 @@ Credentials go in an HTTP Basic header; the status never shows the password.
   `outdated_ms`, 10 s; COG 60 s and position 30 s, as the GPS sends COG
   only every 10..30 s while the boat does not move) instead of disappearing
   (no `stale_ms`); values Signal K reports as unavailable show `--` at once.
-- `engine.json`: `propulsion.port` RPM, coolant, oil pressure, alternator, hours.
+- `engine.json`: engine watch for engine-mon (B1S device 719643, paths below
+  `semantic.`): an rpm dial (0..3000, engine hours, chips for ignition,
+  charging, forward and reverse, side values coolant and oil sender
+  voltages, battery, dry exhaust), then TEMPS, ELECTRICS, ENGINE ROOM and
+  INPUTS (ON/OFF). Every page has a graph of up to three values over 1 h by
+  default; 13 histories of 56 points use 3328 of the 4096 bytes (remote-a
+  firmware from 2026-11-16). Oil pressure and coolant are sender voltages
+  until the senders are converted.
 - `electrics.json`: the Victron battery monitor and solar charger that
   signalk-victron-ble publishes. HOUSE BATTERY: charge, voltage, current,
   power, time left, consumed Ah (`C` shown as `Ah`). SOLAR: panel power,

@@ -70,6 +70,12 @@ std::uint32_t MeasurementPublisher::rawPeriodMs(const ChannelConfig& channel) co
     return period != 0u && period < minimumPeriodMs ? minimumPeriodMs : period;
 }
 
+bool MeasurementPublisher::onChange(const ChannelConfig& channel) const {
+    const auto* stored = settings_ ? settings_->overrideOf(channel.channel) : nullptr;
+    if (stored && stored->onChange <= 1u) return stored->onChange == 1u;
+    return channel.onChange;
+}
+
 void MeasurementPublisher::text(ChannelSettings::Text which, const ChannelConfig& channel,
                                 char (&out)[maxTextLength + 1u]) const {
     if (settings_ && settings_->readText(which, channel.channel, out)) return;
@@ -139,6 +145,15 @@ void MeasurementPublisher::run() {
             const auto period = periodMs(channel);
             state.nextAt += period;
             if (reached(now, state.nextAt)) state.nextAt = nextSlot(now, period);
+        } else if (onChange(channel) && reached(now, state.sentAt + minimumPeriodMs) &&
+                   channel.measurement->status() != Status::unknown &&
+                   (!state.sent || wireValue(*channel.measurement, false) != state.sentValue)) {
+            // A change (or the first value) goes out at once; the period
+            // stays where it was.
+            if (send(channel, state, false) == Sent::busy) {
+                next_ = index;
+                return;
+            }
         }
         const auto rawPeriod = rawPeriodMs(channel);
         if (rawPeriod != 0u && reached(now, state.rawNextAt)) {
@@ -178,6 +193,10 @@ MeasurementPublisher::Sent MeasurementPublisher::send(const ChannelConfig& chann
     if (!node_.sendSingle(measurementPriority, number, n2k::broadcastAddress, data, sizeof data)) return Sent::busy;
     (raw ? state.rawSentSamples : state.sentSamples) = samples;
     (raw ? state.rawSent : state.sent) = true;
+    if (!raw) {
+        state.sentAt = runtime_.millis();
+        state.sentValue = wireValue(measurement, false);
+    }
     return Sent::sent;
 }
 

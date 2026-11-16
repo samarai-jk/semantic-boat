@@ -58,7 +58,8 @@
     if (unit === 'K' && absolute) return { text: `${(si - 273.15).toFixed(2)} °C`, value: (si - 273.15).toFixed(3), unit: '°C' };
     if (unit === 'ratio') return { text: `${(si * 100).toFixed(2)} %`, value: (si * 100).toFixed(4), unit: '%' };
     const value = Number(si.toPrecision(7));
-    return { text: `${value} ${unit ?? ''}`.trim(), value: String(value), unit: unit ?? '' };
+    const shown = unit === '1' ? '' : unit ?? '';
+    return { text: `${value} ${shown}`.trim(), value: String(value), unit: shown };
   }
   function fromDisplay(input, unit, absolute) {
     const number = Number(input);
@@ -209,11 +210,17 @@
     return `${Math.floor(seconds / 3600)} h ago`;
   }
 
+  // A state (digital input, switch): 1 on, 0 off.
+  function stateText(value) {
+    return value === null || value === undefined ? '–' : value ? 'on' : 'off';
+  }
+
   // What the channel header shows: value (or off), how it is sent, age, path.
   function channelState(channel) {
     const via = channel.encoding === 'standard' ? `standard PGN ${channel.standardPgn ?? ''}, instance ${channel.standardInstance}`
       : channel.encoding === 'off' ? 'off: not sent' : 'B1S message';
-    const value = channel.encoding === 'off' ? 'off' : display(channel.value, channel.unit, true).text;
+    const value = channel.encoding === 'off' ? 'off' : channel.quantity === 'state' ? stateText(channel.value)
+      : display(channel.value, channel.unit, true).text;
     const stale = channel.ageMs !== null && channel.period && channel.ageMs > Math.max(3 * channel.period * 1000, 10000);
     const path = channel.path ?? (channel.encoding === 'standard' ? 'path appears with the first value Signal K maps' : '');
     return { via, value, age: channel.encoding === 'off' ? '' : age(channel.ageMs), stale, path };
@@ -422,6 +429,8 @@
     windowPart.append(text('span', 'over', 'muted'), length, lengthUnit);
     const period = numberField(current.period ? current.period / 10 : '', 'Send every', 'default');
     const rawPeriod = numberField(current.rawPeriod ? current.rawPeriod / 10 : '', 'Send the raw value every', 'never');
+    const onChange = Object.assign(document.createElement('input'), { type: 'checkbox', checked: current.flags.includes('onChange') });
+    onChange.setAttribute('aria-label', 'Also send at once on a change');
     const show = () => {
       windowPart.hidden = !windowed(fn.value);
       if (fn.value === 'median') lengthUnit.value = 'samples';
@@ -430,7 +439,7 @@
     show();
     const read = () => ({
       function: fn.value,
-      flags: lengthUnit.value === 'samples' ? ['windowSamples'] : [],
+      flags: [...(lengthUnit.value === 'samples' ? ['windowSamples'] : []), ...(onChange.checked ? ['onChange'] : [])],
       window: windowed(fn.value) ? wholeNumber(length, 'Window') : 0,
       period: tenths(period, 'Send every'),
       rawPeriod: tenths(rawPeriod, 'Raw value')
@@ -450,19 +459,26 @@
     periodRow.append(text('span', 'Send every', 'field-label'), periodControls,
       text('small', 'Empty = firmware default. Shorter than the window: a rolling value (e.g. the 10 s average every second); ' +
         'equal to the window: one value per window. Only new samples are sent.', 'field-hint'));
+    const changeRow = text('div', '', 'field');
+    const changeControls = text('label', '', 'field-value inline-group');
+    changeControls.append(onChange, ' also at once on a change');
+    changeRow.append(text('span', 'On change', 'field-label'), changeControls,
+      text('small', 'The value goes out as soon as it changes (at most every 0.1 s), and every period as a sign of life. ' +
+        'For states and switches; a measured value changes with nearly every sample.', 'field-hint'));
     const rawRow = text('div', '', 'field');
     const rawControls = text('span', '', 'field-value');
     rawControls.append(rawPeriod, text('span', 's', 'field-unit'));
     rawRow.append(text('span', 'Raw value every', 'field-label'), rawControls,
       text('small', `Empty = not sent. The raw value as the device defines it, usually the latest sample, on ${channel.rawPath ?? 'the channel path + "Raw"'}.`, 'field-hint'));
-    return block('Output', 'What the channel sends, and how often.', [valueRow, periodRow, rawRow],
+    const rows = channel.quantity === 'state' ? [periodRow, changeRow] : [valueRow, periodRow, changeRow, rawRow];
+    return block('Output', 'What the channel sends, and how often.', rows,
       [saveButton(device, 'Save output', [edit])]);
   }
 
   function calibrationPane(device, channel, card) {
     const offset = editor(parameter(card, 'calibrationOffset', channel.channel));
     const gain = editor(parameter(card, 'calibrationGain', channel.channel), { factor: 1e6, unit: '×' });
-    if (!offset && !gain) return [text('p', 'This channel has no calibration.', 'empty')];
+    if ((!offset && !gain) || channel.quantity === 'state') return [text('p', 'This channel has no calibration.', 'empty')];
     const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit;
     const reference = Object.assign(document.createElement('input'), { placeholder: `e.g. ${unit === '°C' ? '21.5' : '50'}` });
     reference.setAttribute('aria-label', 'Reference value');
@@ -573,6 +589,47 @@
     return { element, edit: { element, unit: '', entry, change: () => (snapshot() === original ? null : read()) } };
   }
 
+  // An alarm rule of a state as a sentence: "[Warning] when [on] for [5] s;
+  // [ ] latching". Stored as a rule on the latest value: at least 1 (on) or
+  // at most 0 (off).
+  const stateComparisons = { atLeast: 'on', above: 'on', atMost: 'off', below: 'off' };
+  function isStateRule(fields) {
+    return fields.function === 'none' || (fields.function === 'last' && fields.comparison in stateComparisons);
+  }
+
+  function stateAlarmRow(entry, state, onRemove) {
+    const fields = entry.value;
+    const draft = fields.function === 'none';
+    const severity = choice({ warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' }, fields.severity ?? 'warning', 'Severity');
+    const when = choice({ on: 'on', off: 'off' }, draft ? 'on' : stateComparisons[fields.comparison], 'On or off');
+    const delay = numberField(draft ? '0' : String(fields.delay ?? 0), 'Minimum time in seconds');
+    const latching = Object.assign(document.createElement('input'), { type: 'checkbox', checked: fields.flags?.includes('latching') ?? false });
+    latching.setAttribute('aria-label', 'Latching');
+    const latchLabel = text('label', '', 'inline-group');
+    latchLabel.append(latching, ' latching');
+    const sentence = text('div', '', 'alarm-sentence');
+    sentence.append(severity, text('span', 'when', 'muted'), when, text('span', 'for at least', 'muted'), delay,
+      text('span', 's;', 'muted'), latchLabel);
+    const footer = text('div', '', 'alarm-footer');
+    footer.append(text('span', draft ? 'new, not saved yet' : state, `alarm-state${state === 'ACTIVE' ? ' active' : ''}`));
+    if (onRemove) footer.append(button(draft ? 'Discard' : 'Remove', onRemove, draft ? 'Discard this new rule' : 'Remove this rule from the device'));
+    const element = text('div', '', `alarm-row ${severity.value}`);
+    severity.onchange = () => { element.className = `alarm-row ${severity.value}`; };
+    element.append(sentence, footer);
+    const read = () => {
+      const level = when.value === 'on' ? 1 : 0;
+      return {
+        value: { function: 'last', comparison: when.value === 'on' ? 'atLeast' : 'atMost', severity: severity.value,
+          flags: latching.checked ? ['latching'] : [], window: 0, delay: wholeNumber(delay, 'Minimum time'),
+          threshold: 0, upper: 0, hysteresis: 0 },
+        si: { threshold: level, upper: level, hysteresis: 0 }
+      };
+    };
+    const snapshot = () => [severity.value, when.value, delay.value, latching.checked].join('|');
+    const original = draft ? null : snapshot();
+    return { element, edit: { element, unit: '', entry, change: () => (snapshot() === original ? null : read()) } };
+  }
+
   function alarmsPane(device, channel, card) {
     const fault = parameter(card, 'faultAlarm', channel.channel);
     if (!fault || fault.status !== 'done') return [text('p', 'This channel has no alarms.', 'empty')];
@@ -591,7 +648,8 @@
     const faultSentence = text('div', '', 'alarm-sentence');
     const faultLatch = text('label', '', 'inline-group');
     faultLatch.append(faultLatching, ' latching');
-    faultSentence.append(faultSeverity, text('span', 'when the sensor gives no valid value for', 'muted'), faultDelay,
+    faultSentence.append(faultSeverity, text('span', channel.quantity === 'state' ? 'when the input gives no valid value for'
+      : 'when the sensor gives no valid value for', 'muted'), faultDelay,
       text('span', 's;', 'muted'), faultLatch);
     const faultFooter = text('div', '', 'alarm-footer');
     const faultState = stateOf(4);
@@ -620,7 +678,8 @@
         await loadParameters(device.id);
         render();
       };
-      const row = alarmRow(channel, entry, stateOf(slot), remove);
+      const row = channel.quantity === 'state' && isStateRule(entry.value) ? stateAlarmRow(entry, stateOf(slot), remove)
+        : alarmRow(channel, entry, stateOf(slot), remove);
       (used ? rows : draftRows).push(row.element);
       edits.push(row.edit);
     }
@@ -646,7 +705,8 @@
     }
     return [
       block('Sensor fault', '', [faultRow], []),
-      block('Alarm rules', rows.length + draftRows.length ? `Up to 4 rules. ${poolText}` : `No rules yet. ${poolText}`,
+      block('Alarm rules', channel.quantity === 'state' ? 'Up to 4 rules, each when the input is on or off for at least a minimum time.'
+        : rows.length + draftRows.length ? `Up to 4 rules. ${poolText}` : `No rules yet. ${poolText}`,
         [...rows, ...draftRows], [add]),
       block('', '', [], [save, reset])
     ];

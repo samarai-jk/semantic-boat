@@ -101,6 +101,8 @@ quantities:
      description: "Dimensionless 0..1 (levels, duty, state of charge) when no specific quantity exists"}
   - {code: 22, id: count,              unit: "1",    scale: 1,     encoding: int32, signalk: "{location}.count"}
   - {code: 23, id: duration,           unit: s,      scale: 0.001, encoding: int32, signalk: "{location}.duration"}
+  - {code: 24, id: state,              unit: "1",    scale: 1,     encoding: int32, signalk: "{location}.state",
+     description: "On/off of a digital input, switch, or contact: 1 on, 0 off"}
 
 # Event types of the Event message; parameters are int32 in the given units.
 events:
@@ -172,7 +174,7 @@ parameters:
 records:
   output:
     - {name: function,   type: enum,   values: [none, last, average, minimum, maximum, change, rate, range, median], description: "Value sent: last, average, minimum, maximum, median (a reading; change, rate, range are refused); none = last"}
-    - {name: flags,      type: flags,  bits: [windowSamples], description: "windowSamples: the window counts samples, not seconds"}
+    - {name: flags,      type: flags,  bits: [windowSamples, onChange], description: "windowSamples: the window counts samples, not seconds; onChange: the value is also sent at once when it changes (at most every 0.1 s), besides every period"}
     - {name: window,     type: uint16, description: "Window length in seconds (or samples) for average, minimum, maximum; median: 1..15 samples"}
     - {name: period,     type: uint16, unit: "0.1 s", description: "How often the value is sent; 0 = firmware default"}
     - {name: rawPeriod,  type: uint16, unit: "0.1 s", description: "How often the raw value (Measurement Raw) is sent; 0 = never"}

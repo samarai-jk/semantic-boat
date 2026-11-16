@@ -55,7 +55,8 @@ plugins have their own.
       it is sent, the standard PGN's source by name and instance; Save
       setup; then **Output**: the value sent, latest sample or average,
       minimum, maximum over seconds or samples, or the median of a few
-      samples, how often it is sent, and how
+      samples, how often it is sent, whether it also goes out at once on a
+      change, and how
       often the raw value is sent; Save output), **Calibration** (calibrate
       against a reference entered in °C or %: one point for the offset, a
       second for the gain; the calibration values with Save calibration
@@ -66,6 +67,8 @@ plugins have their own.
       minute, changes over a window, its state; + Add alarm and Remove; the device's free windows;
       Save alarms; Reset alarms and output to firmware defaults). A Save stores only the
       edited fields, then reads the device again.
+      States (digital inputs, quantity `state`) show on/off, have no
+      calibration, and their rules read "Warning when on for at least 5 s".
     - **Standard PGN values**: what the device sends besides its channels
       (switch inputs as 127501), with the path Signal K mapped, the value
       (switch states as on/off), and its age.

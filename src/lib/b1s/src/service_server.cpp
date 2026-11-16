@@ -247,6 +247,7 @@ CommandResult ServiceServer::runCommand(Command command, std::uint8_t channel, s
             if (stored) {
                 auto changed = *stored;
                 changed.period = changed.rawPeriod = ChannelSettings::periodNotSet;
+                changed.onChange = ChannelSettings::notSet;
                 if (!settings->writeOverride(channel, changed)) return CommandResult::busy;
             }
             config_.publisher->describe(*config);
@@ -358,7 +359,8 @@ ParameterStatus ServiceServer::read(Parameter parameter, std::uint8_t channel, V
         value.recordLength = record::outputSize;
         auto* out = value.record;
         out[0] = static_cast<std::uint8_t>(output.function);
-        out[1] = output.window.samples ? 0x01u : 0x00u;
+        out[1] = static_cast<std::uint8_t>((output.window.samples ? 0x01u : 0x00u) |
+                                           (config_.publisher->onChange(*config) ? 0x02u : 0x00u));
         n2k::bytes::put16(out + 2, output.window.length);
         const auto period = stored && stored->period != ChannelSettings::periodNotSet ? stored->period : 0u;
         n2k::bytes::put16(out + 4, static_cast<std::uint16_t>(period));
@@ -509,7 +511,9 @@ ParameterStatus ServiceServer::writeOutput(const ChannelConfig& config, const Va
     // Periods: 0 = the firmware default (value), never (raw).
     const auto* stored = settings ? settings->overrideOf(config.channel) : nullptr;
     const std::uint16_t storedPeriod = stored && stored->period != ChannelSettings::periodNotSet ? stored->period : 0u;
-    const bool periodsChanged = period != storedPeriod || rawPeriod != config_.publisher->rawPeriodMs(config) / 100u;
+    const bool onChange = (in[1] & 0x02u) != 0u;
+    const bool periodsChanged = period != storedPeriod || rawPeriod != config_.publisher->rawPeriodMs(config) / 100u ||
+                                onChange != config_.publisher->onChange(config);
     if (periodsChanged && !stored) return ParameterStatus::readOnly;
     if (auto* measurements = config_.measurements) {
         const auto index = measurementIndex(config);
@@ -528,6 +532,7 @@ ParameterStatus ServiceServer::writeOutput(const ChannelConfig& config, const Va
         auto changed = *stored;
         changed.period = period == 0u ? ChannelSettings::periodNotSet : period;
         changed.rawPeriod = rawPeriod;
+        if (onChange != config_.publisher->onChange(config)) changed.onChange = onChange ? 1u : 0u;
         if (!settings->writeOverride(config.channel, changed)) return ParameterStatus::busy;
     }
     config_.publisher->describe(config);

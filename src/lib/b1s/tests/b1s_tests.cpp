@@ -2,12 +2,77 @@
 // firmware toolchain needed), from the repository root:
 //   g++ -std=c++17 -Wall -Wextra -Isrc/lib/b1s/include -Isrc/lib/n2k/include
 //       -Isrc/lib/slstm32/include src/lib/b1s/tests/b1s_tests.cpp src/lib/b1s/src/quantity.cpp
+//       src/lib/b1s/src/channel_settings.cpp src/lib/slstm32/src/storage/redundant_blob_store.cpp
 //       -o build/b1s_tests && build/b1s_tests
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <vector>
+#include "b1s/channel_settings.hpp"
 #include "b1s/messages.hpp"
 #include "b1s/quantity.hpp"
+
+namespace {
+
+class MemoryStorage final : public slstm32::storage::ByteStorage {
+public:
+    explicit MemoryStorage(std::size_t size) : bytes_(size, 0xFFu) {}
+    std::size_t capacity() const override { return bytes_.size(); }
+    bool read(std::uint32_t address, std::uint8_t* data, std::size_t size) override {
+        std::memcpy(data, bytes_.data() + address, size);
+        return true;
+    }
+    bool write(std::uint32_t address, const std::uint8_t* data, std::size_t size) override {
+        std::memcpy(bytes_.data() + address, data, size);
+        return true;
+    }
+    std::vector<std::uint8_t> bytes_;
+};
+
+// Overrides and texts survive a reload in both layouts; the packed one keeps
+// the neighbours of a channel in the same item.
+void channelSettingsTests() {
+    using b1s::ChannelSettings;
+    assert(ChannelSettings::requiredBytes(24u) == 73u * 128u);
+    assert(ChannelSettings::requiredBytes(29u, ChannelSettings::Layout::packed) == 65u * 128u);
+    for (const auto layout : {ChannelSettings::Layout::perChannel, ChannelSettings::Layout::packed}) {
+        MemoryStorage storage(ChannelSettings::requiredBytes(29u, layout));
+        ChannelSettings::Override overrides[29u]{};
+        ChannelSettings settings(storage, 0u, overrides, layout);
+        settings.load();
+        assert(overrides[7].onChange == ChannelSettings::notSet && overrides[7].period == ChannelSettings::periodNotSet);
+        ChannelSettings::Override changed{};
+        changed.onChange = 1u;
+        changed.period = 1200u;
+        assert(settings.writeOverride(7u, changed));
+        changed.onChange = 0u;
+        changed.rawPeriod = 0u;
+        assert(settings.writeOverride(8u, changed));
+        assert(settings.writeOverride(28u, changed));
+        assert(!settings.writeOverride(29u, changed));
+        assert(settings.writeText(ChannelSettings::Text::label, 8u, "Ignition"));
+        ChannelSettings::Override reloaded[29u]{};
+        ChannelSettings again(storage, 0u, reloaded, layout);
+        again.load();
+        assert(reloaded[7].onChange == 1u && reloaded[7].period == 1200u && reloaded[7].rawPeriod == 0xFFFFu);
+        assert(reloaded[8].onChange == 0u && reloaded[8].rawPeriod == 0u && reloaded[28].period == 1200u);
+        assert(reloaded[6].publish == ChannelSettings::notSet && reloaded[9].period == ChannelSettings::periodNotSet);
+        char text[b1s::maxTextLength + 1u];
+        assert(again.readText(ChannelSettings::Text::label, 8u, text) && std::strcmp(text, "Ignition") == 0);
+        assert(!again.readText(ChannelSettings::Text::location, 8u, text));
+    }
+    // A perChannel record of 7 bytes (before on change) still loads.
+    MemoryStorage storage(ChannelSettings::requiredBytes(2u));
+    ChannelSettings::Override overrides[2u]{};
+    slstm32::storage::RedundantBlobStore record(storage, 3u * 128u, 128u);
+    const std::uint8_t old[7]{2u, 0xFFu, 0xFFu, 50u, 0u, 0u, 0u};
+    assert(record.commit(old, sizeof old));
+    ChannelSettings settings(storage, 0u, overrides);
+    settings.load();
+    assert(overrides[0].publish == 2u && overrides[0].period == 50u && overrides[0].onChange == ChannelSettings::notSet);
+}
+
+} // namespace
 
 int main() {
     using namespace b1s;
@@ -33,6 +98,9 @@ int main() {
     assert(toRaw(SlQuantity::rotationalSpeed, 3000000) == 50000);   // 3000 rpm -> 50 Hz
     assert(toRaw(SlQuantity::angle, 90000) == 1570797);             // 90° -> 1.5708 rad
     assert(quantityOf(SlQuantity::concentration) == Quantity::co2);
+    assert(toRaw(SlQuantity::state, 1000) == 1 && toRaw(SlQuantity::state, 0) == 0);
+    assert(fromRaw(SlQuantity::state, 1) == 1000);
+    assert(quantityOf(SlQuantity::state) == Quantity::state);
 
     // Channel description with STRING_LAU texts.
     std::uint8_t description[channelDescriptionCapacity];
@@ -68,6 +136,8 @@ int main() {
     assert(standardCategory(130316u) == StandardCategory::display);
     assert(standardCategory(127250u) == StandardCategory::navigation);
     assert(standardCategory(12345u) == StandardCategory::unlisted);
+
+    channelSettingsTests();
 
     std::puts("b1s tests passed");
     return 0;

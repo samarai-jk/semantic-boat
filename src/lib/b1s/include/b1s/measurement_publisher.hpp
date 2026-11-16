@@ -29,12 +29,15 @@ struct ChannelConfig {
     const char* label{""};         // for people
     std::uint32_t periodMs{};      // how often the value is sent; 0 = the publisher's period
     std::uint32_t rawPeriodMs{};   // how often its raw value is sent; 0 = never
+    bool onChange{};               // also sent at once when the value changes (states, switches)
 };
 
 // Send schedule of one channel (RAM provided by the device, one per channel).
 struct ChannelState {
     std::uint32_t nextAt{};
     std::uint32_t rawNextAt{};
+    std::uint32_t sentAt{};      // time of the last send of the value
+    std::int32_t sentValue{};    // wire value of the last send
     std::uint16_t sentSamples{}; // sample count at the last send (low bits)
     std::uint16_t rawSentSamples{};
     bool sent{};
@@ -52,6 +55,9 @@ struct ChannelState {
 //   a new sample arrived since the last send; a channel without any result
 //   yet is not sent; a stale or faulted one is sent as "not available" /
 //   "error" at every period.
+// - channels set to send on change also at once when their value (as sent)
+//   changes, and their first value at once, at most every minimumPeriodMs,
+//   besides every period.
 // - optionally the raw value (Measurement::rawValue()) as Measurement Raw at
 //   its own period, under the same rules.
 // - the Channel Descriptions of all channels after every address claim, of
@@ -60,7 +66,7 @@ struct ChannelState {
 //   n2k::Node::onRequest), one fast packet per run() call.
 //
 // With ChannelSettings, configuration set over CAN overrides the defaults.
-// At most 32 channels, periods 100 ms .. 6553.5 s. RAM: a ChannelState (16
+// At most 32 channels, periods 100 ms .. 6553.5 s. RAM: a ChannelState (24
 // bytes) per channel; the fast packet is built on the stack and copied into
 // the node's buffer.
 class MeasurementPublisher final : public slstm32::Service {
@@ -91,6 +97,7 @@ public:
     std::uint8_t standardSource(const ChannelConfig& channel) const;
     std::uint32_t periodMs(const ChannelConfig& channel) const;
     std::uint32_t rawPeriodMs(const ChannelConfig& channel) const;
+    bool onChange(const ChannelConfig& channel) const;
     // How the channel is sent after resolving Publish::automatic.
     Encoding encoding(const ChannelConfig& channel) const;
     // Sends the channel's description again and restarts its schedule

@@ -277,7 +277,10 @@ channel, [CONFIGURATION.md](CONFIGURATION.md)). Sent at the channel's
 period (firmware default, typically 1..2 s for environment values, faster
 for control values; configurable per channel, 0.1 s at the shortest) at
 multiples of the period, so a period equal to the window gives one value
-per window and a shorter one a rolling value. A value goes out only if a
+per window and a shorter one a rolling value. A channel set to send on
+change (states such as digital inputs; configurable per channel) also
+sends at once when its value changes, at most every 0.1 s, and keeps its
+period as a heartbeat. A value goes out only if a
 new sample arrived since the last one. A channel whose sensor is missing
 keeps being sent with "not available" at every period, so consumers can
 tell "missing" from "device gone".

@@ -97,7 +97,7 @@ is sent.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `function` | enum `none`, `last`, `average`, `minimum`, `maximum`, `change`, `rate`, `range`, `median` | Value sent: a reading, so `last`, `average`, `minimum`, `maximum`, or `median` (`none` = `last`) |
-| `flags` | bit 0 `windowSamples` | The window counts samples, not seconds |
+| `flags` | bit 0 `windowSamples`, bit 1 `onChange` | `windowSamples`: the window counts samples, not seconds. `onChange`: the value also goes out at once when it changes (at most every 0.1 s), besides every period; reads back the effective setting (firmware default or stored) |
 | `window` | uint16 | Window length for average, minimum, maximum; median: 1..15 samples |
 | `period` | uint16, 0.1 s | How often the value is sent; 0 = firmware default |
 | `rawPeriod` | uint16, 0.1 s | How often the raw value is sent (Measurement Raw); 0 = never |
@@ -175,7 +175,7 @@ One-shot operations, as Command messages (61184, registry `commands`):
 | `calibrate` | channel | reference (int32, quantity) | Offset calibration against a reference at the current reading, like `sensor <name> cal` |
 | `calibrateSecondPoint` | channel | reference | Gain and offset from both points (`cal2`) |
 | `resetCalibration` | channel | — | Calibration back to the defaults (offset 0, gain 1) |
-| `resetAlarmsAndOutput` | channel | — | Alarm rules, fault alarm, output function, and send periods back to the firmware defaults |
+| `resetAlarmsAndOutput` | channel | — | Alarm rules, fault alarm, output function, send periods, and sending on change back to the firmware defaults |
 | `acknowledgeAlarms` | 0xFF | — | Like any button or `ack` |
 | `restart` | 0xFF | — | Software restart after the reply |
 

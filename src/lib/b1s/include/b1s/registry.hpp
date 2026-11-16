@@ -50,6 +50,7 @@ enum class Quantity : std::uint8_t {
     ratio = 21u,
     count = 22u,
     duration = 23u,
+    state = 24u,
 };
 
 // Physical value = raw x scale, in the quantity's SI unit.
@@ -78,6 +79,7 @@ constexpr double scale(Quantity quantity) {
     case Quantity::ratio: return 1e-06; // ratio
     case Quantity::count: return 1.0; // 1
     case Quantity::duration: return 0.001; // s
+    case Quantity::state: return 1.0; // 1
     }
     return 0.0;
 }

@@ -2,20 +2,23 @@
 
 namespace b1s {
 
-namespace {
-
 using slstm32::storage::RedundantBlobStore;
 
-} // namespace
-
-// Items: 0 role; channel c: 1 + 3c location, 2 + 3c label, 3 + 3c overrides.
-std::size_t ChannelSettings::itemOf(Text text, std::uint8_t channel) {
+// Items: 0 role. perChannel: channel c 1 + 3c location, 2 + 3c label, 3 + 3c
+// overrides. packed: 1 + 2c location, 2 + 2c label, then the overrides of
+// channels 5k..5k+4 in item 1 + 2 * slots + k.
+std::size_t ChannelSettings::itemOf(Text text, std::uint8_t channel) const {
+    const std::size_t stride = layout_ == Layout::packed ? 2u : 3u;
     switch (text) {
     case Text::role: return 0u;
-    case Text::location: return 1u + 3u * channel;
-    case Text::label: return 2u + 3u * channel;
+    case Text::location: return 1u + stride * channel;
+    case Text::label: return 2u + stride * channel;
     }
     return 0u;
+}
+
+std::size_t ChannelSettings::overrideItem(std::uint8_t channel) const {
+    return layout_ == Layout::packed ? 1u + 2u * slots_ + channel / packedOverrides : 3u + 3u * channel;
 }
 
 RedundantBlobStore ChannelSettings::store(std::size_t item) {
@@ -23,24 +26,75 @@ RedundantBlobStore ChannelSettings::store(std::size_t item) {
                               RedundantBlobStore::requiredBytes};
 }
 
-// Override record: publish, instance, source, period, raw period (uint16 each).
+namespace {
+
+// Override record: publish, instance, source, period, raw period (uint16
+// each), on change. Records written before on change had 7 bytes.
+constexpr std::size_t overrideBytes = 8u;
+constexpr std::size_t overrideBytesWithoutOnChange = 7u;
+
+ChannelSettings::Override decodeOverride(const std::uint8_t* data, std::size_t size) {
+    return ChannelSettings::Override{data[0], data[1], data[2],
+                                     size > overrideBytesWithoutOnChange ? data[7] : ChannelSettings::notSet,
+                                     static_cast<std::uint16_t>(data[3] | data[4] << 8u),
+                                     static_cast<std::uint16_t>(data[5] | data[6] << 8u)};
+}
+
+void encodeOverride(const ChannelSettings::Override& value, std::uint8_t* data) {
+    data[0] = value.publish;
+    data[1] = value.standardInstance;
+    data[2] = value.standardSource;
+    data[3] = static_cast<std::uint8_t>(value.period);
+    data[4] = static_cast<std::uint8_t>(value.period >> 8u);
+    data[5] = static_cast<std::uint8_t>(value.rawPeriod);
+    data[6] = static_cast<std::uint8_t>(value.rawPeriod >> 8u);
+    data[7] = value.onChange;
+}
+
+} // namespace
+
 void ChannelSettings::load() {
+    static_assert(packedOverrides * overrideBytes <= RedundantBlobStore::maxPayloadBytes, "packed overrides fit an item");
+    if (layout_ == Layout::packed) {
+        for (std::size_t first = 0u; first < slots_; first += packedOverrides) {
+            std::uint8_t data[packedOverrides * overrideBytes]{};
+            std::size_t size = 0u;
+            if (!store(overrideItem(static_cast<std::uint8_t>(first))).load(data, sizeof data, size)) continue;
+            for (std::size_t index = 0u; index < packedOverrides && first + index < slots_; ++index) {
+                if ((index + 1u) * overrideBytes <= size) {
+                    overrides_[first + index] = decodeOverride(data + index * overrideBytes, overrideBytes);
+                }
+            }
+        }
+        return;
+    }
     for (std::size_t channel = 0u; channel < slots_; ++channel) {
-        std::uint8_t data[7]{};
+        std::uint8_t data[overrideBytes]{};
         std::size_t size = 0u;
-        if (store(3u + 3u * channel).load(data, sizeof data, size) && size == sizeof data) {
-            overrides_[channel] = Override{data[0], data[1], data[2], static_cast<std::uint16_t>(data[3] | data[4] << 8u),
-                                           static_cast<std::uint16_t>(data[5] | data[6] << 8u)};
+        if (store(overrideItem(static_cast<std::uint8_t>(channel))).load(data, sizeof data, size) &&
+            (size == overrideBytes || size == overrideBytesWithoutOnChange)) {
+            overrides_[channel] = decodeOverride(data, size);
         }
     }
 }
 
 bool ChannelSettings::writeOverride(std::uint8_t channel, const Override& value) {
     if (channel >= slots_) return false;
-    const std::uint8_t data[7]{value.publish, value.standardInstance, value.standardSource,
-                               static_cast<std::uint8_t>(value.period), static_cast<std::uint8_t>(value.period >> 8u),
-                               static_cast<std::uint8_t>(value.rawPeriod), static_cast<std::uint8_t>(value.rawPeriod >> 8u)};
-    if (!store(3u + 3u * channel).commit(data, sizeof data)) return false;
+    if (layout_ == Layout::packed) {
+        // The group's item with this channel's new value; the others as in RAM.
+        const std::size_t first = channel - channel % packedOverrides;
+        std::uint8_t data[packedOverrides * overrideBytes]{};
+        std::size_t size = 0u;
+        for (std::size_t index = 0u; index < packedOverrides && first + index < slots_; ++index) {
+            encodeOverride(first + index == channel ? value : overrides_[first + index], data + size);
+            size += overrideBytes;
+        }
+        if (!store(overrideItem(channel)).commit(data, size)) return false;
+    } else {
+        std::uint8_t data[overrideBytes]{};
+        encodeOverride(value, data);
+        if (!store(overrideItem(channel)).commit(data, sizeof data)) return false;
+    }
     overrides_[channel] = value;
     return true;
 }

@@ -345,11 +345,12 @@ slstm32::drivers::Npi19Driver rawWaterSensor{runtime, i2c, logger, &rawWaterPres
 // Analog inputs A10..A13 (AD1) and A20..A23 (AD2) as voltages at the module
 // terminals, one reading per second (module calibration: console "cal").
 // The engine's oil pressure and coolant senders are published as their
-// voltages until their curves are known. No alarms yet. A10 is the starter
-// and A13 the oil pressure sender (swapped 2026-11-16 to match the wiring).
+// voltages until their curves are known. No alarms yet. A12 is the
+// alternator's D+ (its output is the starter voltage on A13: a thick wire
+// joins them).
 constexpr sensors::MeasurementConfig moduleAnalogConfigs[engine_mon::board::moduleAnalogCount]{
-    {"starter-v", sensors::Quantity::voltage, 0u},    {"coolant-sender", sensors::Quantity::voltage, 1u},
-    {"alternator-v", sensors::Quantity::voltage, 2u}, {"oil-sender", sensors::Quantity::voltage, 3u},
+    {"oil-sender", sensors::Quantity::voltage, 0u},   {"coolant-sender", sensors::Quantity::voltage, 1u},
+    {"alternator-d", sensors::Quantity::voltage, 2u}, {"starter-v", sensors::Quantity::voltage, 3u},
     {"system-v", sensors::Quantity::voltage, 4u},     {"a21", sensors::Quantity::voltage, 5u},
     {"a22", sensors::Quantity::voltage, 6u},          {"a23", sensors::Quantity::voltage, 7u},
 };
@@ -445,10 +446,10 @@ const b1s::ChannelConfig b1sChannels[]{
      "Raw water pressure"},
     {&rawWaterTemperatureChannel, 17u, b1s::Publish::b1s, engineRoom, "", "Raw water temperature (sensor)"},
     {&rpmChannel, 2u, b1s::Publish::b1s, 0u, "", "Engine speed (alternator W)"},
-    {&moduleAnalogChannels[3], 9u, b1s::Publish::b1s, 0u, "", "Oil pressure sender voltage"},
+    {&moduleAnalogChannels[0], 9u, b1s::Publish::b1s, 0u, "", "Oil pressure sender voltage"},
     {&moduleAnalogChannels[1], 10u, b1s::Publish::b1s, 0u, "", "Coolant temp sender voltage"},
-    {&moduleAnalogChannels[2], 11u, b1s::Publish::b1s, 0u, "", "Alternator voltage"},
-    {&moduleAnalogChannels[0], 12u, b1s::Publish::b1s, 0u, "", "Starter voltage"},
+    {&moduleAnalogChannels[2], 11u, b1s::Publish::b1s, 0u, "", "Alternator D+ voltage"},
+    {&moduleAnalogChannels[3], 12u, b1s::Publish::b1s, 0u, "", "Starter voltage"},
     {&moduleAnalogChannels[4], 13u, b1s::Publish::b1s, 0u, "", "12 V system voltage"},
     {&moduleAnalogChannels[5], 18u, b1s::Publish::b1s, 0u, "", "Reserve input A21"},
     {&moduleAnalogChannels[6], 19u, b1s::Publish::b1s, 0u, "", "Reserve input A22"},

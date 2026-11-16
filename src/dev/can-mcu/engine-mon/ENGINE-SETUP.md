@@ -27,7 +27,7 @@ energize-to-stop. This firmware monitors only.
          PA0, PA1, PA3, PA7 ── module AD2 D20..D23  gearbox reverse/forward, preheater relay, reserve
  Status  PA15 green LED (sunk), PA2 buzzer (TIM15) -- after the rewiring below
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
- I2C1    PB8/PB9 ── AD1 (ADS1115 0x49): A10..A13  starter voltage, coolant temperature, alternator, oil pressure
+ I2C1    PB8/PB9 ── AD1 (ADS1115 0x49): A10..A13  oil pressure, coolant temperature, alternator D+, starter voltage
                  ── AD2 (ADS1115 0x48): A20..A23  12 V system, reserve x3
                  ── NPI-19 (0x28) ................. raw water pressure 0..2.07 bar
                  ── DHT20 (0x38) .................. engine room temperature and humidity
@@ -61,9 +61,9 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 
 | Signal | Sensor | Pin / input | B1S channel |
 | --- | --- | --- | --- |
-| Oil pressure | engine's sender | AD1 A13 | 9 |
-| Alternator output voltage | direct | AD1 A12 | 11 |
-| Starter voltage | direct | AD1 A10 | 12 |
+| Oil pressure | engine's sender | AD1 A10 | 9 |
+| Alternator D+ (excitation, charge lamp) | direct | AD1 A12 | 11 |
+| Starter voltage (also the alternator output: a thick wire joins them) | direct | AD1 A13 | 12 |
 | 12 V system | direct | AD2 A20 | 13 |
 | Reserve | | AD2 A21, A22, A23 | later |
 | Raw water pressure, 0..2.07 bar | Amphenol NovaSensor NPI-19, I2C, 30 psi gauge | I2C 0x28 | 16 |
@@ -170,9 +170,9 @@ As implemented (2026-11-16). Every channel goes out as B1S Measurement
 | 0, 1 | Enclosure, MCU die | temperature | |
 | 2 | Engine speed (D10, alternator W) | rotational speed | 15 pulses per revolution (placeholder) until calibrated against a tachometer |
 | 3..8 | Dry exhaust, wet exhaust, alternator, heat exchanger, gearbox oil, calorifier water | temperature | |
-| 9 | Oil pressure sender (A13) | voltage | until the sender curve is known |
+| 9 | Oil pressure sender (A10) | voltage | until the sender curve is known |
 | 10 | Coolant temperature sender (A11) | voltage | until the sender curve is known |
-| 11, 12, 13 | Alternator, starter, 12 V system (A12, A10, A20) | voltage | A10 and A13 swapped in firmware 0.3.0 to match the wiring |
+| 11, 12, 13 | Alternator D+, starter, 12 V system (A12, A13, A20) | voltage | |
 | 14, 15 | Engine room | temperature, humidity | |
 | 16, 17 | Raw water | pressure, temperature | |
 | 18, 19, 20 | Reserve A21, A22, A23 | voltage | |
@@ -338,10 +338,42 @@ After regenerating: commit, then pull the firmware changes (the
 - **Raw water pressure (NPI-19): read (2026-10-26).** On a shielded
   cable made from a USB-C cable: 2.8 hPa at atmospheric
   pressure (1656 counts, nominal 1638), within the ±1 % FSO error band.
-- **Raw water temperature scaling** of the NPI-19 (see above).
-- **RPM:** pulses per revolution against a tachometer.
-- **Inputs and outputs** once the firmware has the new pin map: each input
-  with 12 V on its module terminal, each output with the arming switch.
+- **Raw water temperature scaling** of the NPI-19 (see above). The sensor
+  is not installed on the engine yet (2026-11-16).
+- **Digital inputs: passed (2026-11-16).** Each of D10..D23 with test
+  pulses on its terminal, in the engine box: every input switched alone. The
+  first engine run had A10..A13 and D10..D13 wired in reverse order in the
+  box; fixed the same day.
+- **Engine runs (2026-11-16, recordings in `build/logs/e2e*-20261116/`).**
+  Second run: preheat 4.2 s, cranking 0.97 s (battery down to 10.8 V),
+  13 min at the panel's 1200 rpm, stop with the fuel stop solenoid.
+  - **RPM:** 1141 rpm shown at the tachometer's 1200 with the placeholder
+    of 15 pulses: about **14.26 pulses per revolution** (285 Hz at W), to be
+    confirmed with the oscilloscope before the gain is set. W measured
+    +-8.5 V on the oscilloscope: the digital inputs block negative
+    voltages (1N4148 in series, bidirectional TVS), and +8.5 V is well above
+    the 4 V threshold.
+  - **D11 "ignition"** stays on after the key is turned off for as long as
+    the engine runs: most likely the alternator's D+ feeding back through
+    the charge lamp. It means "key on or engine running", not the key
+    position. The gauges lose power with the key (the sender voltages drop at
+    once).
+  - **A12** is the alternator's D+ (about 14.6 V while running); the
+    alternator output is the starter voltage (A13).
+  - **Senders, read through the panel gauges** (A10, A11; probably Murphy
+    ESP-80 oil pressure, 240..33 ohm, and EST-250 water temperature,
+    40..120 C; not confirmed). As a share of the battery voltage: oil 0.425
+    at 0 psi (ignition on, engine stopped), 0.413 at about 50 psi (gauge,
+    1200 rpm, cold), 0.421 when warm. Coolant 0.625 at 32 C, 0.598 at 43 C,
+    0.568 at 53 C, 0.545 at 60 C, 0.524 at 66 C, 0.513 at 69 C (heat
+    exchanger probe, on the same housing; the gauge showed about 55..60 C at
+    the end). Neither fits a sender in series with a resistive gauge: the
+    gauges shape the voltage. Next: a table with known resistors in place of
+    each sender (ignition on, engine off).
+  - **Dry exhaust** rose 27 -> 75 C at idle and fell after the stop (the first
+    run read falling values and "thermocouple shorted to GND": fixed with the
+    rewiring). Heat exchanger 32 -> 69 C, flat from the thermostat on.
+- **Outputs** with the arming switch: still to do.
 
 ## Follow-up work
 

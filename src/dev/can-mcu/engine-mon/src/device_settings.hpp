@@ -14,7 +14,8 @@ namespace engine_mon {
 // EEPROM layout (AT24C256 on the can-mcu, 32 KiB), from the top down. The
 // first four areas sit where lab-test-01 has them; the B1S and channel areas
 // are larger (29 channels, B1S channel numbers 0..28, the B1S overrides
-// packed five to an item). 31 KiB in all: 896 bytes are left at the bottom.
+// packed five to an item). 31 KiB in all; the bottom 896 bytes hold the
+// engine hours (128) and are otherwise free.
 // Layout 2 (2026-11-16) grew them from 16 to 24 channels, layout 3 (the same
 // day) to 29 with the digital inputs; records of an older layout below the
 // sensor settings are erased once (DeviceSettings::layout).
@@ -43,6 +44,11 @@ inline constexpr std::size_t measurementChannels = 29u;
 inline constexpr std::uint32_t channelProcessingOffset =
     b1sSettingsOffset - slstm32::sensors::MeasurementRegistry::processingBytes(measurementChannels);
 static_assert(channelProcessingOffset < 32u * 1024u, "EEPROM layout fits");
+// Engine hours counted by this monitor (a redundant store at the bottom, in
+// the space left below the channel areas; never erased with them).
+inline constexpr std::uint32_t runTimeOffset = 0u;
+static_assert(runTimeOffset + slstm32::storage::RedundantBlobStore::requiredBytes <= channelProcessingOffset,
+              "engine hours below the channel areas");
 // The current layout; settings of an older one are erased at startup.
 inline constexpr std::uint8_t eepromLayout = 3u;
 

@@ -101,6 +101,9 @@ int main() {
     assert(toRaw(SlQuantity::state, 1000) == 1 && toRaw(SlQuantity::state, 0) == 0);
     assert(fromRaw(SlQuantity::state, 1) == 1000);
     assert(quantityOf(SlQuantity::state) == Quantity::state);
+    assert(toRaw(SlQuantity::runTime, 1234500) == 4444200);         // 1234.5 h -> s
+    assert(fromRaw(SlQuantity::runTime, 4444200) == 1234500);
+    assert(quantityOf(SlQuantity::runTime) == Quantity::runTime);
 
     // Channel description with STRING_LAU texts.
     std::uint8_t description[channelDescriptionCapacity];

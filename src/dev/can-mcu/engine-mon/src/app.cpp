@@ -62,6 +62,7 @@
 #include "slstm32/sensors/registry.hpp"
 #include "slstm32/sensors/rtd.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
+#include "slstm32/storage/redundant_blob_store.hpp"
 #include <array>
 #include <climits>
 #include <cstdint>
@@ -363,28 +364,49 @@ sensors::Measurement moduleAnalogChannels[engine_mon::board::moduleAnalogCount]{
 constexpr std::uint32_t moduleAnalogPeriodMs = 1000u;
 std::uint32_t moduleAnalogAt{};
 
-// Digital inputs D10..D13 (AD1) and D20..D23 (AD2) as states, 1 = 12 V
-// present (an unplugged input reads 0). Updated at once on a change and
-// otherwise once a second; on B1S they go out at once on a change and every
-// 120 s (D10, the rpm pulses, every 10 s and not on change). Alarms: rules on
-// the latest value, e.g. "warning when at least 1 for 5 s" (on for 5 s).
-constexpr sensors::MeasurementConfig digitalConfigs[engine_mon::board::digitalInputCount]{
-    {"d10-w", sensors::Quantity::state, 0u},      {"ignition", sensors::Quantity::state, 1u},
-    {"starter-sol", sensors::Quantity::state, 2u}, {"fuel-stop", sensors::Quantity::state, 3u},
-    {"gear-rev", sensors::Quantity::state, 4u},    {"gear-fwd", sensors::Quantity::state, 5u},
-    {"preheat", sensors::Quantity::state, 6u},     {"d23", sensors::Quantity::state, 7u},
+// Digital inputs D11..D13 (AD1) and D20..D23 (AD2) as states, 1 = 12 V
+// present (an unplugged input reads 0); D10 carries the rpm pulses and has
+// no state. Updated at once on a change and otherwise once a second; on B1S
+// they go out at once on a change and every 120 s. Alarms: rules on the
+// latest value, e.g. "warning when at least 1 for 5 s" (on for 5 s).
+// digitalChannels[i] is input i + 1 (D11 first).
+constexpr std::size_t stateInputCount = engine_mon::board::digitalInputCount - 1u;
+constexpr sensors::MeasurementConfig digitalConfigs[stateInputCount]{
+    {"ignition", sensors::Quantity::state, 0u}, {"starter-sol", sensors::Quantity::state, 1u},
+    {"fuel-stop", sensors::Quantity::state, 2u}, {"gear-rev", sensors::Quantity::state, 3u},
+    {"gear-fwd", sensors::Quantity::state, 4u},  {"preheat", sensors::Quantity::state, 5u},
+    {"d23", sensors::Quantity::state, 6u},
 };
-sensors::Measurement digitalChannels[engine_mon::board::digitalInputCount]{
+sensors::Measurement digitalChannels[stateInputCount]{
     sensors::Measurement{digitalConfigs[0]}, sensors::Measurement{digitalConfigs[1]},
     sensors::Measurement{digitalConfigs[2]}, sensors::Measurement{digitalConfigs[3]},
     sensors::Measurement{digitalConfigs[4]}, sensors::Measurement{digitalConfigs[5]},
-    sensors::Measurement{digitalConfigs[6]}, sensors::Measurement{digitalConfigs[7]},
+    sensors::Measurement{digitalConfigs[6]},
 };
 constexpr std::uint32_t digitalChannelPeriodMs = 1000u;
 constexpr std::uint32_t digitalSendPeriodMs = 120000u;
-constexpr std::uint32_t rpmInputSendPeriodMs = 10000u;
 std::uint32_t digitalChannelsAt{};
-bool digitalChannelStates[engine_mon::board::digitalInputCount]{};
+bool digitalChannelStates[stateInputCount]{};
+
+// Engine hours: counted while the engine turns faster than 300 rpm, in whole
+// seconds, kept in EEPROM (saved every 3 minutes of running and when the
+// engine stops: a power loss while running loses at most 3 minutes). The
+// channel shows hours; it is set to the panel's hour meter with an offset
+// calibration (B1S calibrate with the meter reading), stored as the
+// channel's calibration.
+constexpr std::int32_t engineRunningRpm = 300000; // 0.001 rpm
+constexpr std::uint32_t runTimeSavePeriodMs = 180000u;
+constexpr std::uint32_t runTimeSendPeriodMs = 10000u;
+constexpr sensors::MeasurementConfig runTimeChannelConfig{"engine-hours", sensors::Quantity::runTime, 0u};
+sensors::Measurement runTimeChannel{runTimeChannelConfig};
+slstm32::storage::RedundantBlobStore runTimeStore{eeprom, engine_mon::runTimeOffset,
+                                                  slstm32::storage::RedundantBlobStore::requiredBytes};
+std::uint32_t runSeconds{};
+std::uint32_t runRemainderMs{};
+std::uint32_t runTimeCheckedAt{};
+std::uint32_t runTimeSavedAt{};
+bool runTimeStorable{}; // the EEPROM answered at startup: saving cannot overwrite unread hours
+bool engineRunning{};
 
 // Engine speed from the alternator W terminal on D10: pulses per revolution
 // = pole pairs x pulley ratio. 15 (6 x 2.5) is a placeholder until it is
@@ -407,9 +429,9 @@ sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &
                                        &moduleAnalogChannels[2], &moduleAnalogChannels[3],
                                        &moduleAnalogChannels[4], &moduleAnalogChannels[5],
                                        &moduleAnalogChannels[6], &moduleAnalogChannels[7],
-                                       &digitalChannels[0], &digitalChannels[1], &digitalChannels[2],
-                                       &digitalChannels[3], &digitalChannels[4], &digitalChannels[5],
-                                       &digitalChannels[6], &digitalChannels[7]};
+                                       &runTimeChannel, &digitalChannels[0], &digitalChannels[1],
+                                       &digitalChannels[2], &digitalChannels[3], &digitalChannels[4],
+                                       &digitalChannels[5], &digitalChannels[6]};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -455,14 +477,14 @@ const b1s::ChannelConfig b1sChannels[]{
     {&moduleAnalogChannels[6], 19u, b1s::Publish::b1s, 0u, "", "Reserve input A22"},
     {&moduleAnalogChannels[7], 20u, b1s::Publish::b1s, 0u, "", "Reserve input A23"},
     // Fields after the label: send period, raw period, also on change.
-    {&digitalChannels[0], 21u, b1s::Publish::b1s, 0u, "", "Rpm input D10 (alternator W)", rpmInputSendPeriodMs, 0u, false},
-    {&digitalChannels[1], 22u, b1s::Publish::b1s, 0u, "", "Ignition (D11)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[2], 23u, b1s::Publish::b1s, 0u, "", "Starter solenoid (D12)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[3], 24u, b1s::Publish::b1s, 0u, "", "Fuel stop solenoid (D13)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[4], 25u, b1s::Publish::b1s, 0u, "", "Gearbox reverse (D20)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[5], 26u, b1s::Publish::b1s, 0u, "", "Gearbox forward (D21)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[6], 27u, b1s::Publish::b1s, 0u, "", "Preheater relay (D22)", digitalSendPeriodMs, 0u, true},
-    {&digitalChannels[7], 28u, b1s::Publish::b1s, 0u, "", "Reserve input D23", digitalSendPeriodMs, 0u, true},
+    {&runTimeChannel, 21u, b1s::Publish::b1s, 0u, "", "Engine hours", runTimeSendPeriodMs, 0u, false},
+    {&digitalChannels[0], 22u, b1s::Publish::b1s, 0u, "", "Ignition (D11)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[1], 23u, b1s::Publish::b1s, 0u, "", "Starter solenoid (D12)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[2], 24u, b1s::Publish::b1s, 0u, "", "Fuel stop solenoid (D13)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[3], 25u, b1s::Publish::b1s, 0u, "", "Gearbox reverse (D20)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[4], 26u, b1s::Publish::b1s, 0u, "", "Gearbox forward (D21)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[5], 27u, b1s::Publish::b1s, 0u, "", "Preheater relay (D22)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[6], 28u, b1s::Publish::b1s, 0u, "", "Reserve input D23", digitalSendPeriodMs, 0u, true},
 };
 static_assert(sizeof b1sChannels / sizeof b1sChannels[0] <= engine_mon::b1sChannelSlots, "B1S channel slots");
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
@@ -760,12 +782,61 @@ void updateModuleAnalogs(std::uint32_t now) {
 void updateDigitalChannels(std::uint32_t now) {
     const bool due = static_cast<std::int32_t>(now - digitalChannelsAt) >= 0;
     if (due) digitalChannelsAt = now + digitalChannelPeriodMs;
-    for (std::size_t index = 0u; index < engine_mon::board::digitalInputCount; ++index) {
-        const bool on = digitalOn(index);
+    for (std::size_t index = 0u; index < stateInputCount; ++index) {
+        const bool on = digitalOn(index + 1u);
         if (!due && on == digitalChannelStates[index]) continue;
         digitalChannelStates[index] = on;
         digitalChannels[index].update(on ? 1000 : 0, now);
     }
+}
+
+std::uint32_t tenthsOfHours(std::uint32_t seconds) { return seconds / 360u; }
+
+// Reads the counted engine hours; without an EEPROM they count in RAM only.
+void loadRunTime() {
+    if (!eepromBinding.present()) return;
+    std::uint8_t data[4]{};
+    std::size_t size = 0u;
+    if (runTimeStore.load(data, sizeof data, size) && size == sizeof data) {
+        runSeconds = static_cast<std::uint32_t>(data[0]) | static_cast<std::uint32_t>(data[1]) << 8u |
+                     static_cast<std::uint32_t>(data[2]) << 16u | static_cast<std::uint32_t>(data[3]) << 24u;
+    }
+    runTimeStorable = true;
+    const auto tenths = tenthsOfHours(runSeconds);
+    logger.writef(LogLevel::info, "engine hours: %lu.%lu h counted by this monitor",
+                  static_cast<unsigned long>(tenths / 10u), static_cast<unsigned long>(tenths % 10u));
+}
+
+void saveRunTime(std::uint32_t now) {
+    runTimeSavedAt = now;
+    if (!runTimeStorable) return;
+    const std::uint8_t data[4]{static_cast<std::uint8_t>(runSeconds), static_cast<std::uint8_t>(runSeconds >> 8u),
+                               static_cast<std::uint8_t>(runSeconds >> 16u), static_cast<std::uint8_t>(runSeconds >> 24u)};
+    if (!runTimeStore.commit(data, sizeof data)) logger.write(LogLevel::error, "engine hours: not saved (EEPROM)");
+}
+
+// Counts the engine hours once a second and feeds their channel.
+void updateRunTime(std::uint32_t now) {
+    const auto elapsed = now - runTimeCheckedAt;
+    if (elapsed < 1000u) return;
+    runTimeCheckedAt = now;
+    const bool running = rpmChannel.valid() && rpmChannel.value() > engineRunningRpm;
+    if (running && engineRunning) {
+        runRemainderMs += elapsed;
+        runSeconds += runRemainderMs / 1000u;
+        runRemainderMs %= 1000u;
+    }
+    if (running != engineRunning) {
+        engineRunning = running;
+        const auto tenths = tenthsOfHours(runSeconds);
+        logger.writef(LogLevel::info, "engine: %s, %lu.%lu h counted", running ? "running" : "stopped",
+                      static_cast<unsigned long>(tenths / 10u), static_cast<unsigned long>(tenths % 10u));
+        if (running) runTimeSavedAt = now;
+        else saveRunTime(now);
+    } else if (running && now - runTimeSavedAt >= runTimeSavePeriodMs) {
+        saveRunTime(now);
+    }
+    runTimeChannel.update(static_cast<std::int32_t>(static_cast<std::uint64_t>(runSeconds) * 1000u / 3600u), now);
 }
 
 void inputLogCommand(void*, std::size_t argc, const char* const* argv) {
@@ -900,7 +971,10 @@ extern "C" void engine_mon_app_init(void) {
             sensors::Identity::i2c(0u, 0u, address, static_cast<std::uint8_t>(index % perModule)));
     }
     rpmChannel.setIdentity(sensors::Identity::internal(2u));
-    // The digital inputs have no calibration and so no identity.
+    // The digital inputs have no calibration and so no identity; the engine
+    // hours keep their offset to the panel's hour meter as calibration.
+    runTimeChannel.setIdentity(sensors::Identity::internal(3u));
+    loadRunTime();
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&onN2kMessage, nullptr);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
@@ -942,6 +1016,7 @@ extern "C" void engine_mon_app_run(void) {
         const auto now = runtime.millis();
         updateModuleAnalogs(now);
         updateDigitalChannels(now);
+        updateRunTime(now);
     }
     if (clickPending) {
         clickPending = false;

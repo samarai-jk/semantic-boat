@@ -51,6 +51,7 @@ enum class Quantity : std::uint8_t {
     count = 22u,
     duration = 23u,
     state = 24u,
+    runTime = 25u,
 };
 
 // Physical value = raw x scale, in the quantity's SI unit.
@@ -80,6 +81,7 @@ constexpr double scale(Quantity quantity) {
     case Quantity::count: return 1.0; // 1
     case Quantity::duration: return 0.001; // s
     case Quantity::state: return 1.0; // 1
+    case Quantity::runTime: return 1.0; // s
     }
     return 0.0;
 }

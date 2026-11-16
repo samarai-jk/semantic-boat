@@ -103,6 +103,8 @@ quantities:
   - {code: 23, id: duration,           unit: s,      scale: 0.001, encoding: int32, signalk: "{location}.duration"}
   - {code: 24, id: state,              unit: "1",    scale: 1,     encoding: int32, signalk: "{location}.state",
      description: "On/off of a digital input, switch, or contact: 1 on, 0 off"}
+  - {code: 25, id: runTime,            unit: s,      scale: 1,     encoding: int32, signalk: "{location}.runTime",
+     description: "Accumulated running time (engine hours), as Signal K propulsion.<id>.runTime; whole seconds last 68 years"}
 
 # Event types of the Event message; parameters are int32 in the given units.
 events:

@@ -52,9 +52,11 @@
     return row;
   }
 
-  // SI value <-> what people read: °C for absolute temperatures, % for ratios.
+  // SI value <-> what people read: °C for absolute temperatures, % for
+  // ratios; unit 'h' shows seconds as hours (engine hours, unitOf()).
   function display(si, unit, absolute) {
     if (si === null || si === undefined) return { text: '–', value: '' };
+    if (unit === 'h') return { text: `${(si / 3600).toFixed(1)} h`, value: (si / 3600).toFixed(3), unit: 'h' };
     if (unit === 'K' && absolute) return { text: `${(si - 273.15).toFixed(2)} °C`, value: (si - 273.15).toFixed(3), unit: '°C' };
     if (unit === 'ratio') return { text: `${(si * 100).toFixed(2)} %`, value: (si * 100).toFixed(4), unit: '%' };
     const value = Number(si.toPrecision(7));
@@ -66,6 +68,7 @@
     if (!Number.isFinite(number)) throw new Error(`Not a number: ${input}`);
     if (unit === 'K' && absolute) return number + 273.15;
     if (unit === 'ratio') return number / 100;
+    if (unit === 'h') return number * 3600;
     return number;
   }
 
@@ -210,6 +213,11 @@
     return `${Math.floor(seconds / 3600)} h ago`;
   }
 
+  // The unit a channel's values are shown in: run times (engine hours) in hours.
+  function unitOf(channel) {
+    return channel.quantity === 'runTime' ? 'h' : channel.unit;
+  }
+
   // A state (digital input, switch): 1 on, 0 off.
   function stateText(value) {
     return value === null || value === undefined ? '–' : value ? 'on' : 'off';
@@ -220,7 +228,7 @@
     const via = channel.encoding === 'standard' ? `standard PGN ${channel.standardPgn ?? ''}, instance ${channel.standardInstance}`
       : channel.encoding === 'off' ? 'off: not sent' : 'B1S message';
     const value = channel.encoding === 'off' ? 'off' : channel.quantity === 'state' ? stateText(channel.value)
-      : display(channel.value, channel.unit, true).text;
+      : display(channel.value, unitOf(channel), true).text;
     const stale = channel.ageMs !== null && channel.period && channel.ageMs > Math.max(3 * channel.period * 1000, 10000);
     const path = channel.path ?? (channel.encoding === 'standard' ? 'path appears with the first value Signal K maps' : '');
     return { via, value, age: channel.encoding === 'off' ? '' : age(channel.ageMs), stale, path };
@@ -259,10 +267,11 @@
       original = (entry.value / options.factor).toFixed(6);
       read = () => element.value === original ? null : { value: Math.round(Number(element.value) * options.factor) };
     } else if (entry.si !== null && entry.si !== undefined) {
-      const shown = display(entry.si, entry.siUnit, entry.absolute);
+      const siUnit = options.siUnit ?? entry.siUnit;
+      const shown = display(entry.si, siUnit, entry.absolute);
       original = shown.value;
       unit = shown.unit;
-      read = () => element.value === original ? null : { si: fromDisplay(element.value, entry.siUnit, entry.absolute) };
+      read = () => element.value === original ? null : { si: fromDisplay(element.value, siUnit, entry.absolute) };
     } else {
       original = String(entry.value);
       read = () => element.value === original ? null : { value: Number(element.value) };
@@ -411,7 +420,7 @@
 
   // Unit people read for a value of a channel; differences of temperatures in °C too.
   function unitLabel(channel, perMinute = false) {
-    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit ?? '';
+    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : unitOf(channel) ?? '';
     return perMinute ? `${unit}/min` : unit;
   }
 
@@ -476,11 +485,12 @@
   }
 
   function calibrationPane(device, channel, card) {
-    const offset = editor(parameter(card, 'calibrationOffset', channel.channel));
+    const offset = editor(parameter(card, 'calibrationOffset', channel.channel), { siUnit: unitOf(channel) });
     const gain = editor(parameter(card, 'calibrationGain', channel.channel), { factor: 1e6, unit: '×' });
     if ((!offset && !gain) || channel.quantity === 'state') return [text('p', 'This channel has no calibration.', 'empty')];
-    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : channel.unit;
-    const reference = Object.assign(document.createElement('input'), { placeholder: `e.g. ${unit === '°C' ? '21.5' : '50'}` });
+    const unit = channel.unit === 'K' ? '°C' : channel.unit === 'ratio' ? '%' : unitOf(channel);
+    const reference = Object.assign(document.createElement('input'),
+      { placeholder: `e.g. ${unit === '°C' ? '21.5' : unit === 'h' ? '1234.5 (the hour meter)' : '50'}` });
     reference.setAttribute('aria-label', 'Reference value');
     const referenceRow = text('div', '', 'field');
     const referenceValue = text('span', '', 'field-value');
@@ -489,7 +499,7 @@
     const apply = (command, label, title) => button(label, async () => {
       if (!reference.value.trim()) throw new Error('Enter the reference value first');
       const result = await api(`b1s/devices/${device.id}/commands/${command}`, 'POST',
-        { channel: channel.channel, si: fromDisplay(reference.value, channel.unit, true) });
+        { channel: channel.channel, si: fromDisplay(reference.value, unitOf(channel), true) });
       notice(`${label}: ${result.result}`, result.result !== 'done');
       await loadParameters(device.id);
       render();
@@ -522,7 +532,8 @@
     const draft = fields.function === 'none';
     const si = entry.si ?? {};
     const absolute = entry.absolute ?? {};
-    const shown = name => fields[name] === undefined || draft ? '' : display(si[name], entry.siUnit, absolute[name]).value;
+    const siUnit = channel.quantity === 'runTime' ? 'h' : entry.siUnit;
+    const shown = name => fields[name] === undefined || draft ? '' : display(si[name], siUnit, absolute[name]).value;
     const severity = choice({ warning: 'Warning', alarm: 'Alarm', emergency: 'Emergency' }, fields.severity ?? 'warning', 'Severity');
     const fn = choice({ last: 'latest value', average: 'average', minimum: 'minimum', maximum: 'maximum',
       median: 'median', range: 'range (max − min)', change: 'change', rate: 'rate of change' },
@@ -578,9 +589,9 @@
         value: { function: fn.value, comparison: comparison.value, severity: severity.value, flags,
           window: windowed(fn.value) ? wholeNumber(length, 'Window') : 0, delay: wholeNumber(delay, 'Delay'),
           threshold: 0, upper: 0, hysteresis: 0 },
-        si: { threshold: fromDisplay(threshold.value, channel.unit, isAbsolute),
-          upper: fromDisplay(band ? upper.value : threshold.value, channel.unit, isAbsolute),
-          hysteresis: hysteresis.value.trim() === '' ? 0 : fromDisplay(hysteresis.value, channel.unit, false) }
+        si: { threshold: fromDisplay(threshold.value, unitOf(channel), isAbsolute),
+          upper: fromDisplay(band ? upper.value : threshold.value, unitOf(channel), isAbsolute),
+          hysteresis: hysteresis.value.trim() === '' ? 0 : fromDisplay(hysteresis.value, unitOf(channel), false) }
       };
     };
     const snapshot = () => [severity, fn, length, lengthUnit, comparison, threshold, upper, delay, hysteresis]

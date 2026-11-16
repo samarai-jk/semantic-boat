@@ -14,6 +14,7 @@ const char* quantityName(Quantity quantity) {
     case Quantity::concentration: return "concentration";
     case Quantity::rotationalSpeed: return "rotational speed";
     case Quantity::state: return "state";
+    case Quantity::runTime: return "run time";
     }
     return "?";
 }
@@ -30,6 +31,7 @@ const char* unitName(Quantity quantity) {
     case Quantity::concentration: return "ppm";
     case Quantity::rotationalSpeed: return "rpm";
     case Quantity::state: return "";
+    case Quantity::runTime: return "h";
     }
     return "";
 }

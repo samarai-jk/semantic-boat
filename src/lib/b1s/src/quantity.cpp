@@ -18,6 +18,7 @@ static_assert(scale(Quantity::angle) == 1e-6, "angle: 1e-6 rad");
 static_assert(scale(Quantity::co2) == 1e-9, "CO2: 1e-9 mole fraction");
 static_assert(scale(Quantity::rotationalSpeed) == 0.001, "rotational speed: mHz");
 static_assert(scale(Quantity::state) == 1.0, "state: 0 off, 1 on");
+static_assert(scale(Quantity::runTime) == 1.0, "run time: s");
 
 } // namespace
 
@@ -33,6 +34,7 @@ Quantity quantityOf(SlQuantity quantity) {
     case SlQuantity::concentration: return Quantity::co2;
     case SlQuantity::rotationalSpeed: return Quantity::rotationalSpeed;
     case SlQuantity::state: return Quantity::state;
+    case SlQuantity::runTime: return Quantity::runTime;
     }
     return static_cast<Quantity>(0u); // invalid code
 }
@@ -51,6 +53,7 @@ std::int32_t fromRawDelta(SlQuantity quantity, std::int32_t raw) {
     case SlQuantity::angle: return static_cast<std::int32_t>(static_cast<std::int64_t>(raw) * 10000 / 174533);
     case SlQuantity::rotationalSpeed: return raw * 60;
     case SlQuantity::state: return raw * 1000;
+    case SlQuantity::runTime: return static_cast<std::int32_t>(static_cast<std::int64_t>(raw) * 5 / 18); // s -> 0.001 h
     case SlQuantity::temperature:
     case SlQuantity::voltage:
     case SlQuantity::illuminance:
@@ -70,6 +73,8 @@ std::int32_t toRawDelta(SlQuantity quantity, std::int32_t value) {
         return static_cast<std::int32_t>(static_cast<std::int64_t>(value) * 174533 / 10000);
     case SlQuantity::rotationalSpeed: return value / 60;                 // 0.001 rpm -> mHz
     case SlQuantity::state: return value / 1000;                         // 1000 on -> 1
+    case SlQuantity::runTime:                                            // 0.001 h -> s
+        return static_cast<std::int32_t>(static_cast<std::int64_t>(value) * 18 / 5);
     case SlQuantity::voltage:                                            // mV
     case SlQuantity::illuminance:                                        // mlx
     case SlQuantity::uvIndex:                                            // 0.001

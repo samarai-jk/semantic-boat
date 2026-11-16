@@ -84,10 +84,17 @@ update support, and the health, I2C scan, and CAN monitor services.
   65 °C and alarm above 75 °C (60 s average), MCU alarm above 80 °C,
   enclosure sensor fault a warning after 10 s. The engine channels are
   listed in [ENGINE-SETUP.md](ENGINE-SETUP.md#b1s-channels).
-- **Digital inputs** D10..D13, D20..D23: B1S channels 21..28 of quantity
-  `state` (1 = 12 V present), at once on a change and every 120 s (D10,
-  which carries the rpm pulses, every 10 s); configurable like every other
-  channel ([ENGINE-SETUP.md](ENGINE-SETUP.md#b1s-channels)).
+- **Digital inputs** D11..D13, D20..D23: B1S channels 22..28 of quantity
+  `state` (1 = 12 V present), at once on a change and every 120 s;
+  configurable like every other channel
+  ([ENGINE-SETUP.md](ENGINE-SETUP.md#b1s-channels)). D10 carries the rpm
+  pulses and has no state channel.
+- **Engine hours:** B1S channel 21 (quantity `runTime`, Signal K
+  `<location>.runTime` in seconds), counted while the engine turns above
+  300 rpm, kept in EEPROM (bottom 128 bytes; saved every 3 minutes of
+  running and at every stop). Set to the panel's hour meter with an offset
+  calibration of the channel (the hub's Calibrate with the meter reading in
+  hours).
 - **EEPROM layout 3** (2026-11-16, 29 channel slots, the B1S overrides
   packed five to an item): an engine monitor with settings of an older
   layout erases its channel settings set over CAN once at the first start

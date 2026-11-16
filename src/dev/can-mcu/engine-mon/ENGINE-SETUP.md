@@ -176,7 +176,7 @@ As implemented (2026-11-16). Every channel goes out as B1S Measurement
 | 14, 15 | Engine room | temperature, humidity | |
 | 16, 17 | Raw water | pressure, temperature | |
 | 18, 19, 20 | Reserve A21, A22, A23 | voltage | |
-| 21 | Rpm input D10 (alternator W) | state | every 10 s, not on change (it carries the rpm pulses) |
+| 21 | Engine hours | run time (s; shown in hours) | counted while above 300 rpm, saved every 3 min of running and at the stop; synchronize with the panel's hour meter by an offset calibration (Calibrate with the meter reading in hours) |
 | 22..24 | Ignition (D11), starter solenoid (D12), fuel stop solenoid (D13) | state | at once on a change and every 120 s |
 | 25..28 | Gearbox reverse (D20), gearbox forward (D21), preheater relay (D22), reserve D23 | state | at once on a change and every 120 s |
 

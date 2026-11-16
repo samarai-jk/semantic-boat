@@ -158,3 +158,21 @@ test('age-capable subscriptions carry preferred sample age for numeric and posit
   emit({ updates: [{ values: [{ path: 'navigation.position' }] }] }); session.flush(14000);
   assert.equal(sent.at(-1).payload.readUInt32LE(sent.at(-1).payload.length - 4), 0);
 });
+test('a path with alternatives sends the first fresh one, else the first with a value', async () => {
+  const { session, protocol, sent, values, snapshot, source, frame, emit } = await fixture();
+  const old = new Date(Date.now() - 60000).toISOString();
+  values['navigation.speedThroughWater'] = { value: 2.5, timestamp: old };
+  values['navigation.speedOverGround'] = { value: 3, timestamp: new Date().toISOString() };
+  snapshot(); source(0, 'navigation.speedThroughWater|navigation.speedOverGround'); frame(protocol.MessageType.SUBSCRIPTIONS_END);
+  session.flush(1000);
+  assert.equal(sent[0].payload.readFloatLE(2), 3); // the log is old: SOG
+  values['navigation.speedThroughWater'] = { value: 2.75, timestamp: new Date().toISOString() };
+  emit({ updates: [{ values: [{ path: 'navigation.speedThroughWater', value: 2.75 }] }] });
+  session.flush(2000);
+  assert.equal(sent[1].payload.readFloatLE(2), 2.75); // fresh STW wins
+  delete values['navigation.speedOverGround'];
+  values['navigation.speedThroughWater'].timestamp = old;
+  emit({ updates: [{ values: [{ path: 'navigation.speedOverGround', value: null }] }] });
+  session.flush(3000);
+  assert.equal(sent[2].payload.readFloatLE(2), 2.75); // nothing fresh: the first with a value
+});

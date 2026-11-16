@@ -178,8 +178,11 @@ class SerialLink {
     let values = [];
     if (source && history && ['signalk', 'signalk-ugm3'].includes(source.provider)) {
       try {
-        values = await history({ path: source.resolvedPath ?? source.path, intervalMs: request.intervalMs,
-          points: request.points, reducer: request.reducer });
+        // Alternatives: the first path the database has values for.
+        for (const path of source.alternatives ?? [source.resolvedPath ?? source.path]) {
+          values = await history({ path, intervalMs: request.intervalMs, points: request.points, reducer: request.reducer });
+          if (values.some(value => value !== null)) break;
+        }
         if (source.provider === 'signalk-ugm3') values = values.map(value => value === null ? null : value * 1e9);
       } catch (error) { this.historyError = error.message; values = []; }
     }

@@ -123,7 +123,9 @@ public:
     void dismissModal();
     void showTransientModal(const char* title, const char* message, const char* prompt = nullptr);
     void dismissTransientModal();
-    bool showSelection(const char* title, SelectionList list, std::size_t selectedIndex = 0u);
+    // A list (up/down, B2 cancel, B3 select), or with tiles a grid like the
+    // page menu (arrows move, action 1 cancels, action 2 selects).
+    bool showSelection(const char* title, SelectionList list, std::size_t selectedIndex = 0u, bool tiles = false);
     void dismissSelection();
     // Page menu: the sections as tiles, then the pages of the chosen section.
     // Previous/next section move the cursor up/down, previous/next page
@@ -178,6 +180,7 @@ private:
         SelectionList list{};
         std::uint16_t selected{};
         bool visible{};
+        bool tiles{};
     };
 
     struct AlertState {
@@ -232,6 +235,15 @@ private:
     bool plotUsesSource(std::uint16_t sourceIndex) const;
     void graphValues(const HistoryPlotView& plot, char* output, std::size_t capacity) const;
     void renderPageMenu();
+    // A grid of named tiles (page menu, time frames, tile selections).
+    struct TileNames {
+        const void* context{};
+        bool (*name)(const void* context, std::uint16_t index, char* name, std::size_t size, char* detail,
+                     std::size_t detailSize){};
+    };
+    void renderTiles(const char* title, const char* const (&labels)[4], std::uint16_t count, std::uint16_t cursor,
+                     TileNames names);
+    static void moveTileCursor(InputAction action, std::uint16_t count, std::uint16_t& cursor);
     void renderBars(const char* title, const char* const (&labels)[4], bool upArrow, bool downArrow);
     void renderSleepScreen();
     void renderModal(const ModalState& modal);

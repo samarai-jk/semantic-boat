@@ -473,7 +473,14 @@ void DisplayService::handle(InputAction action) {
                 list.completed(list.context, result, selected);
             }
         };
-        if (action == InputAction::previousSection) {
+        if (selection_.tiles) {
+            if (action == InputAction::action1 || action == InputAction::action2) {
+                complete(action == InputAction::action2 ? SelectionResult::selected : SelectionResult::cancelled);
+            } else {
+                moveTileCursor(action, static_cast<std::uint16_t>(count), selection_.selected);
+                invalidate(0u);
+            }
+        } else if (action == InputAction::previousSection) {
             if (selection_.selected != 0u) --selection_.selected;
             invalidate(0u);
         } else if (action == InputAction::nextSection) {
@@ -681,10 +688,11 @@ void DisplayService::dismissTransientModal() {
 }
 
 bool DisplayService::showSelection(const char* title, SelectionList list,
-                                   std::size_t selectedIndex) {
+                                   std::size_t selectedIndex, bool tiles) {
     if (list.count == 0u || list.count > UINT16_MAX || !list.item) return false;
     copyText(selection_.title, sizeof selection_.title, title);
     selection_.list = list;
+    selection_.tiles = tiles;
     selection_.selected = static_cast<std::uint16_t>(
         selectedIndex < list.count ? selectedIndex : 0u);
     selection_.visible = true;
@@ -788,28 +796,41 @@ bool DisplayService::menuEntryName(std::uint16_t index, char* name, std::size_t 
     return true;
 }
 
-void DisplayService::handlePageMenu(InputAction action) {
-    const auto count = pageMenuCount();
-    if (count == 0u) { dismissPageMenu(); return; }
+// Tiles in up to three columns: left/right step through them, up/down walk
+// the columns; past the last tile of a column they continue at the top of
+// the next one (the bottom of the previous one), wrapping.
+void DisplayService::moveTileCursor(InputAction action, std::uint16_t count, std::uint16_t& cursor) {
+    if (count == 0u) return;
     const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
-    auto& cursor = pageMenu_.cursor;
     switch (action) {
     case InputAction::previousPage: cursor = static_cast<std::uint16_t>(cursor == 0u ? count - 1u : cursor - 1u); break;
     case InputAction::nextPage: cursor = static_cast<std::uint16_t>(cursor + 1u >= count ? 0u : cursor + 1u); break;
-    // Up/down walk the columns: past the last tile of a column they continue
-    // at the top of the next one (the bottom of the previous one), wrapping.
     case InputAction::previousSection:
         if (cursor >= columns) {
             cursor = static_cast<std::uint16_t>(cursor - columns);
         } else {
-            const auto column = static_cast<std::uint16_t>(cursor == 0u ? columns - 1u : cursor - 1u);
-            cursor = column;
+            cursor = static_cast<std::uint16_t>(cursor == 0u ? columns - 1u : cursor - 1u);
             while (cursor + columns < count) cursor = static_cast<std::uint16_t>(cursor + columns);
         }
         break;
     case InputAction::nextSection:
         if (cursor + columns < count) cursor = static_cast<std::uint16_t>(cursor + columns);
         else cursor = static_cast<std::uint16_t>((cursor % columns + 1u) % columns);
+        break;
+    default: break;
+    }
+}
+
+void DisplayService::handlePageMenu(InputAction action) {
+    const auto count = pageMenuCount();
+    if (count == 0u) { dismissPageMenu(); return; }
+    auto& cursor = pageMenu_.cursor;
+    switch (action) {
+    case InputAction::previousPage:
+    case InputAction::nextPage:
+    case InputAction::previousSection:
+    case InputAction::nextSection:
+        moveTileCursor(action, count, cursor);
         break;
     case InputAction::action1:
         if (pageMenu_.timeFrames || pageMenu_.section == noIndex) { dismissPageMenu(); return; }
@@ -1489,6 +1510,19 @@ void DisplayService::renderModal(const ModalState& modal) {
 }
 
 void DisplayService::renderSelection() {
+    if (selection_.tiles) {
+        constexpr const char* tileLabels[4]{"<", ">", "CANCEL", "SELECT"};
+        renderTiles(selection_.title, tileLabels, static_cast<std::uint16_t>(selection_.list.count), selection_.selected,
+                    {this, [](const void* context, std::uint16_t index, char* name, std::size_t size, char* detail,
+                              std::size_t) {
+                         const auto& self = *static_cast<const DisplayService*>(context);
+                         detail[0] = '\0';
+                         if (index >= self.selection_.list.count) return false;
+                         copyView(name, size, self.selection_.list.item(self.selection_.list.context, index));
+                         return true;
+                     }});
+        return;
+    }
     constexpr std::uint16_t rowHeight = 30u;
     const auto bodyHeight = static_cast<std::uint16_t>(canvas_.height() - headerHeight - footerHeight);
     const auto visibleRows = static_cast<std::uint16_t>(bodyHeight / rowHeight);
@@ -1522,15 +1556,6 @@ void DisplayService::renderSelection() {
 // like a page's widgets: the content area divided by separator lines, the
 // cursor's cell filled black.
 void DisplayService::renderPageMenu() {
-    const auto count = pageMenuCount();
-    const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
-    if (columns == 0u) return;
-    const auto rows = static_cast<std::uint16_t>((count + columns - 1u) / columns);
-    constexpr std::uint16_t visibleRows = 3u;
-    const auto shownRows = rows < visibleRows ? rows : visibleRows;
-    const auto cursorRow = static_cast<std::uint16_t>(pageMenu_.cursor / columns);
-    const auto firstRow = cursorRow >= shownRows ? static_cast<std::uint16_t>(cursorRow - shownRows + 1u) : 0u;
-
     char title[48]{"MENU"};
     if (pageMenu_.timeFrames) {
         copyText(title, sizeof title, "TIME FRAME");
@@ -1540,6 +1565,22 @@ void DisplayService::renderPageMenu() {
     }
     const char* labels[4]{"<", ">", pageMenu_.section == noIndex || pageMenu_.timeFrames ? "CLOSE" : "BACK",
                           pageMenu_.timeFrames ? "SELECT" : "OPEN"};
+    renderTiles(title, labels, pageMenuCount(), pageMenu_.cursor,
+                {this, [](const void* context, std::uint16_t index, char* name, std::size_t size, char* detail,
+                          std::size_t detailSize) {
+                     return static_cast<const DisplayService*>(context)->menuEntryName(index, name, size, detail, detailSize);
+                 }});
+}
+
+void DisplayService::renderTiles(const char* title, const char* const (&labels)[4], std::uint16_t count,
+                                 std::uint16_t cursor, TileNames names) {
+    const auto columns = static_cast<std::uint16_t>(count <= 3u ? count : count == 4u ? 2u : 3u);
+    if (columns == 0u) return;
+    const auto rows = static_cast<std::uint16_t>((count + columns - 1u) / columns);
+    constexpr std::uint16_t visibleRows = 3u;
+    const auto shownRows = rows < visibleRows ? rows : visibleRows;
+    const auto cursorRow = static_cast<std::uint16_t>(cursor / columns);
+    const auto firstRow = cursorRow >= shownRows ? static_cast<std::uint16_t>(cursorRow - shownRows + 1u) : 0u;
     renderBars(title, labels, cursorRow != 0u, cursorRow + 1u < rows);
 
     constexpr std::uint16_t gap = widgetSeparatorWidth;
@@ -1571,7 +1612,7 @@ void DisplayService::renderPageMenu() {
     for (std::uint16_t index = static_cast<std::uint16_t>(firstRow * columns);
          index < count && index < (firstRow + shownRows) * columns; ++index) {
         char name[48]{}, detail[16]{};
-        if (!menuEntryName(index, name, sizeof name, detail, sizeof detail)) continue;
+        if (!names.name(names.context, index, name, sizeof name, detail, sizeof detail)) continue;
         if (!wrap(name, 3u)) { scale = 2u; break; }
     }
 
@@ -1580,10 +1621,10 @@ void DisplayService::renderPageMenu() {
             const auto index = static_cast<std::uint16_t>((firstRow + row) * columns + column);
             if (index >= count) break;
             char name[48]{}, detail[16]{};
-            if (!menuEntryName(index, name, sizeof name, detail, sizeof detail)) continue;
+            if (!names.name(names.context, index, name, sizeof name, detail, sizeof detail)) continue;
             const auto x = static_cast<std::uint16_t>(horizontalSafeMargin + column * (tileWidth + gap));
             const auto y = static_cast<std::uint16_t>(areaTop + row * (tileHeight + gap));
-            const bool selected = index == pageMenu_.cursor;
+            const bool selected = index == cursor;
             if (selected) canvas_.fillRect(x, y, tileWidth, tileHeight, true);
             // Separators to the right and below, where a neighbour exists.
             if (column + 1u < columns && index + 1u < count) {

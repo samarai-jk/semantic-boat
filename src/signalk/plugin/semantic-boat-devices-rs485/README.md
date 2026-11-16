@@ -71,6 +71,13 @@ server's `propulsion.port.revolutions` without reinstalling the display app.
 They do not change Signal K values or source priorities. New configurations
 should use actual Signal K paths directly; all bundled templates do so and
 need no mappings. Keep legacy aliases only while older installed apps need them.
+
+A source path may list alternatives separated by `|`, for example
+`navigation.speedThroughWater|navigation.speedOverGround`: the display gets
+the first alternative with a value newer than 15 s, otherwise the first that
+has any value. Graph history comes from the first alternative the database
+has values for. Mappings apply to each alternative.
+
 An addressed bus uses the configured address on the wire and opens its serial
 port once. Device IDs remain stable plugin identifiers; an address is not a
 hardware identity or authentication. For `serial-point-to-point`, addresses

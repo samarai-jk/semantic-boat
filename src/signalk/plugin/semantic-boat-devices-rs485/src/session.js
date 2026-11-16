@@ -1,5 +1,7 @@
 'use strict';
 
+const alternativeFreshMs = 15000;
+
 class DeviceSession {
   constructor({ app, device, protocol, send, mappings = {}, onError = () => {} }) {
     this.app = app;
@@ -63,24 +65,39 @@ class DeviceSession {
     }
   }
 
+  // A path may list alternatives, "navigation.speedThroughWater|navigation.speedOverGround":
+  // the first with a value newer than alternativeFreshMs wins, else the first
+  // with any value.
   subscribe() {
     const paths = new Map();
     for (const source of this.active.values()) {
-      source.resolvedPath = this.mappings[source.path] ?? source.path;
+      source.alternatives = source.path.split('|').map(path => this.mappings[path] ?? path);
+      source.resolvedPath = source.alternatives[0];
       source.nextAt = 0;
       if (!['signalk', 'signalk-text', 'signalk-ugm3'].includes(source.provider)) {
         this.queue(source, null);
         continue;
       }
-      const sources = paths.get(source.resolvedPath) ?? [];
-      sources.push(source);
-      paths.set(source.resolvedPath, sources);
+      for (const path of source.alternatives) {
+        const sources = paths.get(path) ?? [];
+        sources.push(source);
+        paths.set(path, sources);
+      }
     }
     const generation = this.generation;
+    const sampleOf = source => {
+      if (source.alternatives.length === 1) return this.app.getSelfPath(source.resolvedPath);
+      const samples = source.alternatives.map(path => this.app.getSelfPath(path))
+        .filter(sample => sample?.value !== undefined && sample?.value !== null);
+      const fresh = samples.find(sample => Date.now() - (Date.parse(sample.timestamp) || 0) < alternativeFreshMs);
+      return fresh ?? samples[0];
+    };
     const publish = path => {
       if (generation !== this.generation) return;
-      const sample = this.app.getSelfPath(path);
-      for (const source of paths.get(path) ?? []) this.queue(source, sample?.value, sample?.timestamp);
+      for (const source of paths.get(path) ?? []) {
+        const sample = sampleOf(source);
+        this.queue(source, sample?.value, sample?.timestamp);
+      }
     };
     for (const path of paths.keys()) publish(path);
     if (paths.size === 0) return;

@@ -80,7 +80,7 @@ A source gives widgets and data connectors a stable local ID:
 | --- | --- |
 | `id` | Required identifier used by widgets. |
 | `provider` | Connector name; defaults to `signalk`. The test config uses `fake`. |
-| `path` | Required provider-specific data path. |
+| `path` | Required provider-specific data path. The Semantic Boat gateway also accepts alternatives, `a|b`: the first with a fresh value. |
 | `unit` | Unit of incoming numeric values. |
 | `stale_ms` | Optional age after which the widget shows unavailable. Zero disables it. |
 | `outdated_ms` | Optional earlier age at which the value is retained with an inverted `OLD` age badge. Zero disables the badge. |
@@ -365,7 +365,13 @@ real fixed memory are supplied by each firmware in `CompileLimits`:
   bounded token and call storage.
 
 The compiler returns a precise error instead of accepting a document that the
-runtime cannot hold. The current remote-a composition allows up to 64 sources,
+runtime cannot hold. Installed over RS485 (the usual way), remote-a stages the JSON and the new
+package in its framebuffer: at most 10,240 bytes of JSON (the hub sends it
+minified) and a 6,144-byte package. The engine configuration of 2026-11-16
+uses 10,175 JSON bytes, a 4,774-byte package, 3,808 history bytes and 31
+sources: JSON over RS485 is the limit that binds first.
+
+The current remote-a composition allows up to 64 sources,
 4,096 history bytes, 8,192 compiled-package bytes, 16,368 staged JSON bytes,
 255 bytes per decoded string, and 16 JSON nesting levels. These are code
 constants, not schema promises, and may be tuned for another MCU.

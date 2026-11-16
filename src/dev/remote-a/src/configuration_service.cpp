@@ -159,8 +159,9 @@ void ConfigurationService::listEnd(std::uint16_t listId) {
     listActive_ = false;
     display_.dismissTransientModal();
     indicateTransfer(false);
+    // Tiles like the page menu.
     (void)display_.showSelection("APPS",
-        {this, nameCount_, &selectionItem, &selectionCompleted});
+        {this, nameCount_, &selectionItem, &selectionCompleted}, 0u, true);
 }
 
 std::string_view ConfigurationService::selectionItem(void* context, std::size_t index) {

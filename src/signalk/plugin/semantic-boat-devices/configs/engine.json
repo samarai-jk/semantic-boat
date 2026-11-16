@@ -1,78 +1,120 @@
 {
   "schema": "semantic-display/v1", "name": "Engine",
   "sections": [
-    {"id": "engine", "title": "ENGINE", "button_labels": {"action_2": "MENU"},
+    {"id": "engine", "title": "ENGINE",
      "sources": [
-       {"id": "rpm", "provider": "signalk", "path": "semantic.propulsion.engine.revolutions", "unit": "Hz", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "hours", "provider": "signalk", "path": "semantic.propulsion.engine.runTime", "unit": "s", "outdated_ms": 30000, "stale_ms": 120000},
-       {"id": "oil", "provider": "signalk", "path": "semantic.electrical.engine.oil.sender.voltage", "unit": "V", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "coolant", "provider": "signalk", "path": "semantic.electrical.engine.coolant.sender.voltage", "unit": "V", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "hx", "provider": "signalk", "path": "semantic.environment.engine.heatex.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "dry", "provider": "signalk", "path": "semantic.environment.engine.exhaust.dry.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "wet", "provider": "signalk", "path": "semantic.environment.engine.exhaust.wet.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "alt-temp", "provider": "signalk", "path": "semantic.environment.engine.alternator.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "gearbox", "provider": "signalk", "path": "semantic.environment.engine.gearbox.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "battery", "provider": "signalk", "path": "semantic.electrical.engine.system.voltage", "unit": "V", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "starter", "provider": "signalk", "path": "semantic.electrical.engine.starter.voltage", "unit": "V", "outdated_ms": 10000, "stale_ms": 30000},
-       {"id": "dplus", "provider": "signalk", "path": "semantic.electrical.engine.alternator.D.voltage", "unit": "V", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "room", "provider": "signalk", "path": "semantic.environment.engine.environment.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "humidity", "provider": "signalk", "path": "semantic.environment.engine.environment.relativeHumidity", "unit": "ratio", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "calorifier", "provider": "signalk", "path": "semantic.environment.calorifier.output.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000, "history": {"interval_ms": 65455, "points": 56, "reducer": "mean"}},
-       {"id": "box", "provider": "signalk", "path": "semantic.environment.engine.monitor.case.temperature", "unit": "K", "outdated_ms": 10000, "stale_ms": 30000},
-       {"id": "ign", "provider": "signalk", "path": "semantic.engine.ignition.state", "unit": "", "stale_ms": 300000},
-       {"id": "starter-sol", "provider": "signalk", "path": "semantic.engine.starter.solenoid.state", "unit": "", "stale_ms": 300000},
-       {"id": "fuel-stop", "provider": "signalk", "path": "semantic.engine.fuelStop.state", "unit": "", "stale_ms": 300000},
-       {"id": "reverse", "provider": "signalk", "path": "semantic.engine.gearbox.reverse.state", "unit": "", "stale_ms": 300000},
-       {"id": "forward", "provider": "signalk", "path": "semantic.engine.gearbox.forward.state", "unit": "", "stale_ms": 300000},
-       {"id": "preheat", "provider": "signalk", "path": "semantic.engine.preheat.state", "unit": "", "stale_ms": 300000}
+       {"id": "rpm", "path": "semantic.propulsion.engine.revolutions", "unit": "Hz", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "hours", "path": "semantic.propulsion.engine.runTime", "unit": "s", "stale_ms": 120000},
+       {"id": "oil", "path": "semantic.electrical.engine.oil.sender.voltage", "unit": "V", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "coolant", "path": "semantic.electrical.engine.coolant.sender.voltage", "unit": "V", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "battery", "path": "semantic.electrical.engine.system.voltage", "unit": "V", "stale_ms": 30000},
+       {"id": "dry", "path": "semantic.environment.engine.exhaust.dry.temperature", "unit": "K", "stale_ms": 30000},
+       {"id": "dplus", "path": "semantic.electrical.engine.alternator.D.voltage", "unit": "V", "stale_ms": 30000},
+       {"id": "ign", "path": "semantic.engine.ignition.state", "stale_ms": 300000},
+       {"id": "starter-sol", "path": "semantic.engine.starter.solenoid.state", "stale_ms": 300000},
+       {"id": "fuel-stop", "path": "semantic.engine.fuelStop.state", "stale_ms": 300000},
+       {"id": "reverse", "path": "semantic.engine.gearbox.reverse.state", "stale_ms": 300000},
+       {"id": "forward", "path": "semantic.engine.gearbox.forward.state", "stale_ms": 300000},
+       {"id": "preheat", "path": "semantic.engine.preheat.state", "stale_ms": 300000}
      ],
      "pages": [
       {"id": "dial", "title": "RPM",
        "history_plot": {"source": "rpm", "title": "RPM", "display_unit": "rpm", "decimals": 0, "y_min": 0, "y_max": 3000, "series": [{"source": "coolant", "title": "COOLANT V", "display_unit": "V", "decimals": 1, "y_min": 0, "y_max": 15}, {"source": "oil", "title": "OIL V", "display_unit": "V", "decimals": 1, "y_min": 0, "y_max": 15}]},
-       "grid": {"columns": 1, "rows": 1, "gap": 4},
+       "grid": {"columns": 1, "rows": 1},
        "widgets": [
-         {"type": "gauge", "source": "rpm", "display_unit": "rpm", "label": "RPM", "decimals": 0, "cell": {"column": 0, "row": 0}, "min": 0, "max": 3000, "major": 500, "minor": 100, "label_step": 500, "label_divisor": 100, "values": [{"source": "hours", "display_unit": "h", "decimals": 1, "text": "H"}], "chips": [{"source": "ign", "text": "IGN"}, {"source": "dplus", "text": "CHG", "above": 13}, {"source": "forward", "text": "FWD"}, {"source": "reverse", "text": "REV"}], "side": [{"source": "coolant", "text": "COOLANT SENDER", "display_unit": "V", "decimals": 2}, {"source": "oil", "text": "OIL SENDER", "display_unit": "V", "decimals": 2}, {"source": "battery", "text": "BATTERY", "display_unit": "V", "decimals": 2}, {"source": "dry", "text": "DRY EXHAUST", "display_unit": "C", "decimals": 0}]}
-       ]},
-      {"id": "temps", "title": "TEMPS",
-       "history_plot": {"source": "dry", "title": "DRY EXH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 300, "series": [{"source": "wet", "title": "WET EXH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}, {"source": "hx", "title": "HEAT EXCH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
-       "grid": {"columns": 3, "rows": 2, "gap": 4},
-       "widgets": [
-         {"type": "value", "source": "coolant", "label": "COOLANT V", "cell": {"column": 0, "row": 0}, "display_unit": "V", "decimals": 2},
-         {"type": "value", "source": "hx", "label": "HEAT EXCH.", "cell": {"column": 1, "row": 0}, "display_unit": "C", "decimals": 0},
-         {"type": "value", "source": "dry", "label": "DRY EXHAUST", "cell": {"column": 2, "row": 0}, "display_unit": "C", "decimals": 0},
-         {"type": "value", "source": "wet", "label": "WET EXHAUST", "cell": {"column": 0, "row": 1}, "display_unit": "C", "decimals": 0},
-         {"type": "value", "source": "alt-temp", "label": "ALTERNATOR", "cell": {"column": 1, "row": 1}, "display_unit": "C", "decimals": 0},
-         {"type": "value", "source": "gearbox", "label": "GEARBOX OIL", "cell": {"column": 2, "row": 1}, "display_unit": "C", "decimals": 0}
-       ]},
-      {"id": "electrics", "title": "ELECTRICS",
-       "history_plot": {"source": "battery", "title": "BATTERY", "display_unit": "V", "decimals": 1, "y_min": 11, "y_max": 15, "series": [{"source": "dplus", "title": "D+", "display_unit": "V", "decimals": 0, "y_min": 0, "y_max": 15}, {"source": "alt-temp", "title": "ALT. TEMP", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
-       "grid": {"columns": 2, "rows": 2, "gap": 4},
-       "widgets": [
-         {"type": "value", "source": "battery", "label": "BATTERY", "cell": {"column": 0, "row": 0}, "display_unit": "V", "decimals": 2},
-         {"type": "value", "source": "starter", "label": "STARTER", "cell": {"column": 1, "row": 0}, "display_unit": "V", "decimals": 2},
-         {"type": "value", "source": "dplus", "label": "ALTERNATOR D+", "cell": {"column": 0, "row": 1}, "display_unit": "V", "decimals": 1},
-         {"type": "value", "source": "alt-temp", "label": "ALTERNATOR TEMP", "cell": {"column": 1, "row": 1}, "display_unit": "C", "decimals": 0}
-       ]},
-      {"id": "room", "title": "ENGINE ROOM",
-       "history_plot": {"source": "room", "title": "ROOM AIR", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 60, "series": [{"source": "humidity", "title": "HUMIDITY", "display_unit": "%", "decimals": 0, "y_min": 0, "y_max": 100}, {"source": "calorifier", "title": "CALORIFIER", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 90}]},
-       "grid": {"columns": 2, "rows": 2, "gap": 4},
-       "widgets": [
-         {"type": "value", "source": "room", "label": "ROOM AIR", "cell": {"column": 0, "row": 0}, "display_unit": "C", "decimals": 1},
-         {"type": "value", "source": "humidity", "label": "HUMIDITY", "cell": {"column": 1, "row": 0}, "display_unit": "%", "decimals": 0},
-         {"type": "value", "source": "calorifier", "label": "CALORIFIER", "cell": {"column": 0, "row": 1}, "display_unit": "C", "decimals": 0},
-         {"type": "value", "source": "box", "label": "MONITOR BOX", "cell": {"column": 1, "row": 1}, "display_unit": "C", "decimals": 0}
+         {"type": "gauge", "source": "rpm", "display_unit": "rpm", "label": "RPM", "decimals": 0, "min": 0, "max": 3000, "major": 500, "minor": 100, "label_step": 500, "label_divisor": 100, "values": [{"source": "hours", "display_unit": "h", "decimals": 1, "text": "H"}], "chips": [{"source": "ign", "text": "IGN"}, {"source": "dplus", "text": "CHG", "above": 13}, {"source": "forward", "text": "FWD"}, {"source": "reverse", "text": "REV"}], "side": [{"source": "coolant", "text": "COOLANT SENDER", "display_unit": "V", "decimals": 2}, {"source": "oil", "text": "OIL SENDER", "display_unit": "V", "decimals": 2}, {"source": "battery", "text": "BATTERY", "display_unit": "V", "decimals": 2}, {"source": "dry", "text": "DRY EXHAUST", "display_unit": "C", "decimals": 0}], "cell": {"column": 0, "row": 0}}
        ]},
       {"id": "inputs", "title": "INPUTS",
-       "history_plot": {"source": "alt-temp", "title": "ALTERNATOR", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100, "series": [{"source": "gearbox", "title": "GEARBOX OIL", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
-       "grid": {"columns": 4, "rows": 2, "gap": 4},
+       "grid": {"columns": 4, "rows": 2},
        "widgets": [
-         {"type": "value", "source": "ign", "label": "IGNITION", "cell": {"column": 0, "row": 0}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "preheat", "label": "PREHEAT", "cell": {"column": 1, "row": 0}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "starter-sol", "label": "STARTER", "cell": {"column": 2, "row": 0}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "fuel-stop", "label": "FUEL STOP", "cell": {"column": 3, "row": 0}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "forward", "label": "FORWARD", "cell": {"column": 0, "row": 1}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "reverse", "label": "REVERSE", "cell": {"column": 1, "row": 1}, "states": ["OFF", "ON"], "max_digits": 4},
-         {"type": "value", "source": "hours", "label": "ENGINE HOURS", "cell": {"column": 2, "row": 1, "column_span": 2}, "display_unit": "h", "decimals": 1, "max_digits": 7}
+         {"type": "value", "source": "ign", "label": "IGNITION", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 0, "row": 0}},
+         {"type": "value", "source": "preheat", "label": "PREHEAT", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 1, "row": 0}},
+         {"type": "value", "source": "starter-sol", "label": "STARTER", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 2, "row": 0}},
+         {"type": "value", "source": "fuel-stop", "label": "FUEL STOP", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 3, "row": 0}},
+         {"type": "value", "source": "forward", "label": "FORWARD", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 0, "row": 1}},
+         {"type": "value", "source": "reverse", "label": "REVERSE", "states": ["OFF", "ON"], "max_digits": 4, "cell": {"column": 1, "row": 1}},
+         {"type": "value", "source": "hours", "label": "ENGINE HOURS", "display_unit": "h", "decimals": 1, "max_digits": 7, "cell": {"column": 2, "row": 1, "column_span": 2}}
+       ]}
+     ]},
+    {"id": "underway", "title": "UNDERWAY",
+     "sources": [
+       {"id": "rpm", "path": "semantic.propulsion.engine.revolutions", "unit": "Hz", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "speed", "path": "navigation.speedThroughWater|navigation.speedOverGround", "unit": "m/s", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "sog", "path": "navigation.speedOverGround", "unit": "m/s", "stale_ms": 30000},
+       {"id": "awa", "path": "environment.wind.angleApparent", "unit": "rad", "stale_ms": 30000},
+       {"id": "aws", "path": "environment.wind.speedApparent", "unit": "m/s", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}}
+     ],
+     "pages": [
+      {"id": "speed", "title": "RPM VS SPEED",
+       "history_plot": {"source": "rpm", "title": "RPM", "display_unit": "rpm", "decimals": 0, "y_min": 0, "y_max": 3000, "series": [{"source": "speed", "title": "SPEED", "display_unit": "kn", "decimals": 1, "y_min": 0, "y_max": 8}, {"source": "aws", "title": "APP. WIND", "display_unit": "kn", "decimals": 0, "y_min": 0, "y_max": 40}]},
+       "grid": {"columns": 3, "rows": 2},
+       "widgets": [
+         {"type": "value", "source": "rpm", "label": "RPM", "display_unit": "rpm", "max_digits": 5, "cell": {"column": 0, "row": 0, "row_span": 2}},
+         {"type": "value", "source": "speed", "label": "SPEED", "display_unit": "kn", "decimals": 1, "max_digits": 5, "cell": {"column": 1, "row": 0}},
+         {"type": "value", "source": "sog", "label": "SOG", "display_unit": "kn", "decimals": 1, "max_digits": 5, "cell": {"column": 1, "row": 1}},
+         {"type": "value", "source": "awa", "label": "APP. ANGLE", "display_unit": "deg", "max_digits": 5, "cell": {"column": 2, "row": 0}},
+         {"type": "value", "source": "aws", "label": "APP. WIND", "display_unit": "kn", "decimals": 1, "max_digits": 5, "cell": {"column": 2, "row": 1}}
+       ]}
+     ]},
+    {"id": "temps", "title": "TEMPS",
+     "sources": [
+       {"id": "coolant", "path": "semantic.electrical.engine.coolant.sender.voltage", "unit": "V", "stale_ms": 30000},
+       {"id": "hx", "path": "semantic.environment.engine.heatex.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "dry", "path": "semantic.environment.engine.exhaust.dry.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "wet", "path": "semantic.environment.engine.exhaust.wet.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "alt-temp", "path": "semantic.environment.engine.alternator.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "gearbox", "path": "semantic.environment.engine.gearbox.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}}
+     ],
+     "pages": [
+      {"id": "cooling", "title": "COOLING",
+       "history_plot": {"source": "dry", "title": "DRY EXH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 300, "series": [{"source": "wet", "title": "WET EXH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}, {"source": "hx", "title": "HEAT EXCH.", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
+       "grid": {"columns": 2, "rows": 2},
+       "widgets": [
+         {"type": "value", "source": "coolant", "label": "COOLANT SENDER", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}},
+         {"type": "value", "source": "hx", "label": "HEAT EXCHANGER", "display_unit": "C", "cell": {"column": 1, "row": 0}},
+         {"type": "value", "source": "dry", "label": "DRY EXHAUST", "display_unit": "C", "cell": {"column": 0, "row": 1}},
+         {"type": "value", "source": "wet", "label": "WET EXHAUST", "display_unit": "C", "cell": {"column": 1, "row": 1}}
+       ]},
+      {"id": "machinery", "title": "MACHINERY",
+       "history_plot": {"source": "alt-temp", "title": "ALTERNATOR", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100, "series": [{"source": "gearbox", "title": "GEARBOX OIL", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
+       "grid": {"columns": 2, "rows": 1},
+       "widgets": [
+         {"type": "value", "source": "alt-temp", "label": "ALTERNATOR", "display_unit": "C", "cell": {"column": 0, "row": 0}},
+         {"type": "value", "source": "gearbox", "label": "GEARBOX OIL", "display_unit": "C", "cell": {"column": 1, "row": 0}}
+       ]}
+     ]},
+    {"id": "electrics", "title": "ELECTRICS",
+     "sources": [
+       {"id": "battery", "path": "semantic.electrical.engine.system.voltage", "unit": "V", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "starter", "path": "semantic.electrical.engine.starter.voltage", "unit": "V", "stale_ms": 30000},
+       {"id": "dplus", "path": "semantic.electrical.engine.alternator.D.voltage", "unit": "V", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "alt-temp", "path": "semantic.environment.engine.alternator.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}}
+     ],
+     "pages": [
+      {"id": "electrics", "title": "ELECTRICS",
+       "history_plot": {"source": "battery", "title": "BATTERY", "display_unit": "V", "decimals": 1, "y_min": 11, "y_max": 15, "series": [{"source": "dplus", "title": "D+", "display_unit": "V", "decimals": 0, "y_min": 0, "y_max": 15}, {"source": "alt-temp", "title": "ALT. TEMP", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 100}]},
+       "grid": {"columns": 2, "rows": 2},
+       "widgets": [
+         {"type": "value", "source": "battery", "label": "BATTERY", "display_unit": "V", "decimals": 2, "cell": {"column": 0, "row": 0}},
+         {"type": "value", "source": "starter", "label": "STARTER", "display_unit": "V", "decimals": 2, "cell": {"column": 1, "row": 0}},
+         {"type": "value", "source": "dplus", "label": "ALTERNATOR D+", "display_unit": "V", "decimals": 1, "cell": {"column": 0, "row": 1}},
+         {"type": "value", "source": "alt-temp", "label": "ALTERNATOR TEMP", "display_unit": "C", "cell": {"column": 1, "row": 1}}
+       ]}
+     ]},
+    {"id": "room", "title": "ENGINE ROOM",
+     "sources": [
+       {"id": "room", "path": "semantic.environment.engine.environment.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "humidity", "path": "semantic.environment.engine.environment.relativeHumidity", "unit": "ratio", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}},
+       {"id": "calorifier", "path": "semantic.environment.calorifier.output.temperature", "unit": "K", "stale_ms": 30000, "history": {"interval_ms": 76596, "points": 48, "reducer": "mean"}}
+     ],
+     "pages": [
+      {"id": "room", "title": "ENGINE ROOM",
+       "history_plot": {"source": "room", "title": "ROOM AIR", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 60, "series": [{"source": "humidity", "title": "HUMIDITY", "display_unit": "%", "decimals": 0, "y_min": 0, "y_max": 100}, {"source": "calorifier", "title": "CALORIFIER", "display_unit": "C", "decimals": 0, "y_min": 0, "y_max": 90}]},
+       "grid": {"columns": 3, "rows": 1},
+       "widgets": [
+         {"type": "value", "source": "room", "label": "ROOM AIR", "display_unit": "C", "decimals": 1, "cell": {"column": 0, "row": 0}},
+         {"type": "value", "source": "humidity", "label": "HUMIDITY", "display_unit": "%", "cell": {"column": 1, "row": 0}},
+         {"type": "value", "source": "calorifier", "label": "CALORIFIER", "display_unit": "C", "cell": {"column": 2, "row": 0}}
        ]}
      ]}
   ]

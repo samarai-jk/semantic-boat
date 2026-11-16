@@ -52,6 +52,12 @@ void save(const std::array<std::uint8_t, 16800>& frame, const char* directory, c
     std::fclose(file);
 }
 
+constexpr const char* apps[]{"ENGINE", "ELECTRICS", "NAVIGATION", "WEATHER STATION", "SERVER"};
+std::string_view appName(void*, std::size_t index) { return apps[index]; }
+std::size_t chosenApp{99u};
+semantic_display::SelectionResult appResult{};
+void appChosen(void*, semantic_display::SelectionResult result, std::size_t index) { appResult = result; chosenApp = index; }
+
 constexpr auto json = R"json({
   "schema":"semantic-display/v1",
   "sections":[{"id":"engine","title":"ENGINE","sources":[
@@ -152,6 +158,14 @@ int main(int argc, char** argv) {
     for (std::uint16_t y = 60u; y < 220u; ++y)
         for (std::uint16_t x = 10u; x < 470u; ++x) (x < 240u ? left : right) += black(frame, x, y) ? 1u : 0u;
     assert(left > 500u && right > 500u);
+    // A selection as tiles: three columns, down moves a row, action 2 selects.
+    assert(display.showSelection("APPS", {nullptr, 5u, &appName, &appChosen}, 0u, true));
+    display.handle(semantic_display::InputAction::nextSection);
+    display.handle(semantic_display::InputAction::nextPage);
+    for (int step = 0; step < 5; ++step) { now += 1000u; display.run(); panel.state = slstm32::epd::UpdateState::idle; }
+    save(frame, directory, "apps");
+    display.handle(semantic_display::InputAction::action2);
+    assert(appResult == semantic_display::SelectionResult::selected && chosenApp == 4u);
     std::puts("gauge tests passed");
     return 0;
 }

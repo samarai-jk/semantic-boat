@@ -312,13 +312,15 @@ Credentials go in an HTTP Basic header; the status never shows the password.
   only every 10..30 s while the boat does not move) instead of disappearing
   (no `stale_ms`); values Signal K reports as unavailable show `--` at once.
 - `engine.json`: engine watch for engine-mon (B1S device 719643, paths below
-  `semantic.`): an rpm dial (0..3000, engine hours, chips for ignition,
-  charging, forward and reverse, side values coolant and oil sender
-  voltages, battery, dry exhaust), then TEMPS, ELECTRICS, ENGINE ROOM and
-  INPUTS (ON/OFF). Every page has a graph of up to three values over 1 h by
-  default; 13 histories of 56 points use 3328 of the 4096 bytes (remote-a
-  firmware from 2026-11-16). Oil pressure and coolant are sender voltages
-  until the senders are converted.
+  `semantic.`), five sections for one-press selection in the menu: ENGINE
+  (rpm dial with engine hours, chips and side values; INPUTS as ON/OFF),
+  UNDERWAY (rpm against speed through the water, or over ground when there
+  is none: path alternatives of the RS485 gateway, with apparent wind angle
+  and speed), TEMPS (cooling, machinery), ELECTRICS and ENGINE ROOM. Graphs
+  of up to three values over 1 h by default; 17 histories of 48 points use
+  3808 of the 4096 bytes (remote-a firmware from 2026-11-16). Oil pressure
+  and coolant are sender voltages until the senders are converted. The
+  minified JSON (10,175 bytes) is just under the 10,240-byte RS485 limit.
 - `electrics.json`: the Victron battery monitor and solar charger that
   signalk-victron-ble publishes. HOUSE BATTERY: charge, voltage, current,
   power, time left, consumed Ah (`C` shown as `Ah`). SOLAR: panel power,

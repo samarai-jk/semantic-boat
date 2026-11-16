@@ -815,9 +815,129 @@ private:
         return true;
     }
 
+    // Gauge settings while a widget is parsed: the dial and its further
+    // values, encoded as the widget record's tail (PackageView::gauge).
+    struct GaugeSettings {
+        float values[7]{0.0f, 0.0f, NAN, 0.0f, 0.0f, 0.0f, 1.0f}; // min, max, redline, major, minor, label step, divisor
+        bool hasMinimum{}, hasMaximum{};
+        std::uint8_t references[maxGaugeReferences * (gaugeReferenceBytes + 32u + 16u + 8u)]{};
+        std::size_t referenceBytes{};
+        std::uint8_t referenceCount{};
+    };
+
+    // One value inside the dial or one chip: source, text, display unit,
+    // decimals, threshold (chips: lit above it).
+    __attribute__((noinline)) __attribute__((optimize("Os"))) bool parseGaugeReference(GaugeSettings& gauge, GaugeReferenceKind kind) {
+        if (!reader_.consume('{')) return false;
+        Token source{}, text{}, unit{};
+        std::uint32_t decimals{};
+        float threshold{0.5f};
+        if (!reader_.consume('}')) {
+            bool done{};
+            while (!done) {
+                Token key{};
+                if (!keyValuePrefix(key)) return false;
+                if (key.equals("source")) { if (!reader_.string(source)) return false; }
+                else if (key.equals("text")) { if (!reader_.string(text)) return false; }
+                else if (key.equals("display_unit")) { if (!reader_.string(unit)) return false; }
+                else if (key.equals("decimals")) { if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false; }
+                else if (key.equals("above")) { if (!reader_.number(threshold)) return false; }
+                else if (!reader_.skipValue()) return false;
+                if (!nextObjectMember(done)) return false;
+            }
+        }
+        if (source.size == 0u || source.size > 32u || text.size > 16u || unit.size > 8u ||
+            gauge.referenceCount == maxGaugeReferences) {
+            fail(CompileError::invalidProperty, "gauge: at most ten values, chips and side values, each with a source");
+            return false;
+        }
+        auto* cursor = gauge.references + gauge.referenceBytes;
+        cursor[0] = static_cast<std::uint8_t>(kind);
+        cursor[1] = static_cast<std::uint8_t>(decimals);
+        std::uint32_t raw{};
+        std::memcpy(&raw, &threshold, sizeof raw);
+        write32(cursor + 2u, raw);
+        write16(cursor + 6u, noIndex);
+        cursor[8] = source.size; cursor[9] = text.size; cursor[10] = unit.size;
+        cursor += gaugeReferenceBytes;
+        std::memcpy(cursor, source.bytes, source.size); cursor += source.size;
+        std::memcpy(cursor, text.bytes, text.size); cursor += text.size;
+        std::memcpy(cursor, unit.bytes, unit.size); cursor += unit.size;
+        gauge.referenceBytes = static_cast<std::size_t>(cursor - gauge.references);
+        ++gauge.referenceCount;
+        return true;
+    }
+
+    __attribute__((optimize("Os"))) bool parseGaugeReferences(GaugeSettings& gauge, GaugeReferenceKind kind) {
+        if (!reader_.consume('[')) return false;
+        if (reader_.consume(']')) return true;
+        bool last{};
+        while (!last) {
+            if (!parseGaugeReference(gauge, kind) || !nextArrayItem(last)) return false;
+        }
+        return true;
+    }
+
+    // "states": ["OFF", "ON"] becomes the text "OFF|ON".
+    __attribute__((noinline)) __attribute__((optimize("Os"))) bool parseStates(Token& text) {
+        if (!reader_.consume('[')) return false;
+        text.size = 0u;
+        if (reader_.consume(']')) return true;
+        bool last{};
+        while (!last) {
+            Token state{};
+            if (!reader_.string(state)) return false;
+            if (text.size + state.size + 1u >= sizeof text.bytes) {
+                fail(CompileError::invalidProperty, "states too long");
+                return false;
+            }
+            if (text.size != 0u) text.bytes[text.size++] = '|';
+            std::memcpy(text.bytes + text.size, state.bytes, state.size);
+            text.size = static_cast<std::uint8_t>(text.size + state.size);
+            if (!nextArrayItem(last)) return false;
+        }
+        return true;
+    }
+
+    __attribute__((optimize("Os"))) bool parseGaugeProperty(const Token& key, GaugeSettings& gauge, bool& known) {
+        constexpr const char* names[]{"min", "max", "redline", "major", "minor", "label_step", "label_divisor"};
+        known = true;
+        for (std::size_t index = 0u; index < 7u; ++index) {
+            if (!key.equals(names[index])) continue;
+            if (index == 0u) gauge.hasMinimum = true;
+            if (index == 1u) gauge.hasMaximum = true;
+            return reader_.number(gauge.values[index]);
+        }
+        if (key.equals("values")) return parseGaugeReferences(gauge, GaugeReferenceKind::value);
+        if (key.equals("chips")) return parseGaugeReferences(gauge, GaugeReferenceKind::chip);
+        if (key.equals("side")) return parseGaugeReferences(gauge, GaugeReferenceKind::side);
+        known = false;
+        return true;
+    }
+
+    // Defaults and checks: a finite increasing range, ticks that fit.
+    __attribute__((optimize("Os"))) bool gaugeValid(GaugeSettings& gauge) {
+        auto& v = gauge.values;
+        const auto span = v[1] - v[0];
+        if (!gauge.hasMinimum || !gauge.hasMaximum || !(span > 0.0f) || !std::isfinite(span)) {
+            fail(CompileError::invalidProperty, "gauge requires min and max, min below max");
+            return false;
+        }
+        if (!(v[3] > 0.0f)) v[3] = span / 10.0f;
+        if (!(v[5] > 0.0f)) v[5] = v[3];
+        if (!(v[6] > 0.0f)) v[6] = 1.0f;
+        if (!(v[4] >= 0.0f)) v[4] = 0.0f;
+        if (span / v[3] > 60.0f || span / v[5] > 20.0f || (v[4] > 0.0f && span / v[4] > 200.0f)) {
+            fail(CompileError::invalidProperty, "gauge: too many ticks or labels");
+            return false;
+        }
+        return true;
+    }
+
     bool parseWidget(std::uint16_t sectionIndex, std::uint16_t pageIndex) {
         if (widgetCount_ == noIndex || !reader_.consume('{')) return false;
         Token type{}, source{}, label{}, unit{}, text{}, positionFormat{};
+        GaugeSettings gauge{};
         std::uint8_t column{}, row{}, columnSpan{1u}, rowSpan{1u};
         std::uint32_t decimals{};
         std::uint32_t maxDigits{defaultValueMaxDigits};
@@ -831,6 +951,7 @@ private:
                 else if (key.equals("label")) { if (!reader_.string(label)) return false; }
                 else if (key.equals("display_unit")) { if (!reader_.string(unit)) return false; }
                 else if (key.equals("text")) { if (!reader_.string(text)) return false; }
+                else if (key.equals("states")) { if (!parseStates(text)) return false; }
                 else if (key.equals("position_format")) { if (!reader_.string(positionFormat)) return false; }
                 else if (key.equals("decimals")) {
                     if (!reader_.unsignedInteger(decimals) || decimals > 6u) return false;
@@ -839,7 +960,11 @@ private:
                         maxDigits > maximumValueMaxDigits) return false;
                 } else if (key.equals("cell")) {
                     if (!parseCell(column, row, columnSpan, rowSpan)) return false;
-                } else if (!reader_.skipValue()) return false;
+                } else {
+                    bool known{};
+                    if (!parseGaugeProperty(key, gauge, known)) return false;
+                    if (!known && !reader_.skipValue()) return false;
+                }
                 if (!nextObjectMember(done)) return false;
             }
         }
@@ -852,14 +977,16 @@ private:
         if (type.equals("text")) { widgetType = WidgetType::text; storedType.size = 0u; }
         else if (type.equals("value")) { widgetType = WidgetType::value; storedType.size = 0u; }
         else if (type.equals("local-clock")) { widgetType = WidgetType::localClock; storedType.size = 0u; }
-        if (widgetType == WidgetType::value && source.size == 0u) {
-            fail(CompileError::missingProperty, "value widget requires source");
+        else if (type.equals("gauge")) { widgetType = WidgetType::gauge; storedType.size = 0u; }
+        if ((widgetType == WidgetType::value || widgetType == WidgetType::gauge) && source.size == 0u) {
+            fail(CompileError::missingProperty, "value and gauge widgets require source");
             return false;
         }
         if (widgetType == WidgetType::text && text.size == 0u) {
             fail(CompileError::missingProperty, "text widget requires text");
             return false;
         }
+        if (widgetType == WidgetType::gauge && !gaugeValid(gauge)) return false;
         auto storedPositionFormat = PositionFormat::ddm;
         if (positionFormat.size != 0u) {
             if (positionFormat.equals("DD")) storedPositionFormat = PositionFormat::dd;
@@ -869,7 +996,7 @@ private:
                 return false;
             }
         }
-        std::uint8_t payload[19u + 5u * 255u]{};
+        std::uint8_t payload[19u + 5u * 255u + gaugeFixedBytes + sizeof gauge.references]{};
         write16(payload, sectionIndex);
         write16(payload + 2u, pageIndex);
         write16(payload + 4u, noIndex);
@@ -890,7 +1017,19 @@ private:
             std::memcpy(cursor, token.bytes, token.size); cursor += token.size;
         };
         append(storedType); append(source); append(label); append(unit); append(text);
-        if (storedPositionFormat != PositionFormat::ddm) *cursor++ = static_cast<std::uint8_t>(storedPositionFormat);
+        if (widgetType == WidgetType::gauge) {
+            for (const auto value : gauge.values) {
+                std::uint32_t raw{};
+                std::memcpy(&raw, &value, sizeof raw);
+                write32(cursor, raw);
+                cursor += 4u;
+            }
+            *cursor++ = gauge.referenceCount;
+            std::memcpy(cursor, gauge.references, gauge.referenceBytes);
+            cursor += gauge.referenceBytes;
+        } else if (storedPositionFormat != PositionFormat::ddm) {
+            *cursor++ = static_cast<std::uint8_t>(storedPositionFormat);
+        }
         if (!output_.appendRecord(RecordType::widget, payload,
                                   static_cast<std::size_t>(cursor - payload))) {
             fail(CompileError::outputTooLarge, "compiled configuration exceeds package limit");
@@ -1107,6 +1246,29 @@ private:
         return false;
     }
 
+    // The source indices of a gauge's further values.
+    __attribute__((optimize("Os"))) bool resolveGauge(std::uint8_t* payload, std::size_t size) {
+        const auto sectionIndex = read16(payload);
+        std::size_t offset = 18u;
+        for (std::size_t index = 12u; index <= 16u; ++index) offset += payload[index];
+        if (offset + gaugeFixedBytes > size) return false;
+        const auto count = payload[offset + gaugeFixedBytes - 1u];
+        offset += gaugeFixedBytes;
+        for (std::uint8_t reference = 0u; reference < count; ++reference) {
+            if (offset + gaugeReferenceBytes > size) return false;
+            auto* entry = payload + offset;
+            const std::string_view id{reinterpret_cast<const char*>(entry + gaugeReferenceBytes), entry[8]};
+            std::uint16_t sourceIndex{};
+            if (!findSource(sectionIndex, id, sourceIndex)) {
+                fail(CompileError::unresolvedSource, "gauge references an unknown source");
+                return false;
+            }
+            write16(entry + 6u, sourceIndex);
+            offset += gaugeReferenceBytes + entry[8] + entry[9] + entry[10];
+        }
+        return offset == size;
+    }
+
     bool resolveAndValidate() {
         if (duplicateIdentifiers()) return false;
         for (std::size_t offset = packageHeaderSize; offset < output_.size();) {
@@ -1160,6 +1322,9 @@ private:
                         return false;
                     }
                     write16(payload + 4u, sourceIndex);
+                }
+                if (payload[6] == static_cast<std::uint8_t>(WidgetType::gauge) && !resolveGauge(payload, recordSize - 4u)) {
+                    return false;
                 }
                 std::uint8_t columns{}, rows{};
                 if (!pageGrid(pageIndex, columns, rows) || payload[9] == 0u || payload[10] == 0u ||

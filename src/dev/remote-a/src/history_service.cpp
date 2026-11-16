@@ -129,6 +129,10 @@ void HistoryService::timeFrameChangedThunk(void* context, std::uint16_t pageInde
     self.inFlight_ = display::noIndex;
 }
 
+void HistoryService::graphShownThunk(void* context, std::uint16_t pageIndex) {
+    static_cast<HistoryService*>(context)->enqueuePlot(pageIndex, true);
+}
+
 void HistoryService::dataThunk(void* context, std::uint16_t requestId, std::uint16_t sourceIndex,
                                std::uint32_t intervalMs, std::uint16_t total, std::uint16_t first,
                                const float* values, std::size_t count) {

@@ -50,8 +50,8 @@ test('history plots require storage, valid ranges and the device RAM budget', ()
   plotted.sections[0].sources = [{ id: 'temperature', path: 'local.temperature' }];
   assert.throws(() => catalog.validate(plotted), /history storage/);
   delete plotted.sections[0].sources;
-  plotted.permanent_sources[0].history.points = 249;
-  assert.throws(() => catalog.validate(plotted), /1024/);
+  plotted.permanent_sources[0].history.points = 1017;
+  assert.throws(() => catalog.validate(plotted), /4096/);
   plotted.permanent_sources[0].history.points = 120;
   plotted.permanent_sources[0].provider = 'signalk-text';
   assert.throws(() => catalog.validate(plotted), /numeric/);

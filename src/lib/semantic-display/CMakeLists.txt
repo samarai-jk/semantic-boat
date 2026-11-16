@@ -36,6 +36,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         target_link_libraries(semantic_display_runtime_tests PRIVATE semantic_display)
         add_test(NAME semantic_display_runtime_tests COMMAND semantic_display_runtime_tests)
 
+        add_executable(semantic_display_gauge_tests tests/gauge_tests.cpp)
+        target_link_libraries(semantic_display_gauge_tests PRIVATE semantic_display)
+        add_test(NAME semantic_display_gauge_tests COMMAND semantic_display_gauge_tests)
+
         add_executable(semantic_display_storage_tests tests/storage_tests.cpp)
         target_link_libraries(semantic_display_storage_tests PRIVATE semantic_display)
         add_test(NAME semantic_display_storage_tests COMMAND semantic_display_storage_tests)

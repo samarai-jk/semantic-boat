@@ -17,7 +17,12 @@ inline constexpr std::uint8_t defaultValueMaxDigits = 6u;
 inline constexpr std::uint8_t maximumValueMaxDigits = 32u;
 
 enum class RecordType : std::uint8_t { source = 1u, section = 2u, page = 3u, widget = 4u, historyPlot = 5u };
-enum class WidgetType : std::uint8_t { text = 1u, value = 2u, localClock = 3u, unknown = 0xffu };
+enum class WidgetType : std::uint8_t { text = 1u, value = 2u, localClock = 3u, gauge = 4u, unknown = 0xffu };
+// A gauge shows up to this many further values: numbers inside the dial,
+// chips lit while their value is above a threshold, values beside the dial.
+inline constexpr std::size_t maxGaugeReferences = 10u;
+inline constexpr std::size_t gaugeFixedBytes = 29u;     // seven floats and the reference count
+inline constexpr std::size_t gaugeReferenceBytes = 11u; // per reference, before its strings
 enum class PositionFormat : std::uint8_t { ddm, dd, dms };
 enum class HistoryReducer : std::uint8_t { none, last, mean, minimum, maximum };
 
@@ -94,7 +99,35 @@ struct WidgetView {
     std::string_view sourceId{};
     std::string_view label{};
     std::string_view displayUnit{};
+    // value: state names separated by '|' ("OFF|ON"), chosen by the rounded
+    // value; text: the text.
     std::string_view text{};
+    // gauge: the dial's settings and further values (PackageView::gauge).
+    const std::uint8_t* extra{};
+    std::uint16_t extraSize{};
+};
+
+enum class GaugeReferenceKind : std::uint8_t { value = 0u, chip = 1u, side = 2u };
+
+// A further value of a gauge: a number inside the dial ("607.1 H"), a chip
+// lit while the value is above its threshold ("IGN"), or a value in the
+// column beside the dial (text is its label).
+struct GaugeReference {
+    GaugeReferenceKind kind{GaugeReferenceKind::value};
+    std::uint8_t decimals{};
+    float threshold{0.5f};
+    std::uint16_t sourceIndex{noIndex};
+    std::string_view sourceId{};
+    std::string_view text{};
+    std::string_view displayUnit{};
+};
+
+// A round dial over 270 degrees: range, redline (NaN: none), tick spacing,
+// labels every labelStep divided by labelDivisor (3000 rpm as "30").
+struct GaugeView {
+    float minimum{}, maximum{}, redline{}, major{}, minor{}, labelStep{}, labelDivisor{1.0f};
+    std::uint8_t referenceCount{};
+    GaugeReference references[maxGaugeReferences]{};
 };
 
 // One value of a graph. circular: a direction that wraps (the line breaks
@@ -142,6 +175,7 @@ public:
     bool section(const RecordView& record, SectionView& section) const;
     bool page(const RecordView& record, PageView& page) const;
     bool widget(const RecordView& record, WidgetView& widget) const;
+    bool gauge(const WidgetView& widget, GaugeView& gauge) const;
     bool historyPlot(const RecordView& record, HistoryPlotView& plot) const;
     bool historyPlotByPage(std::uint16_t index, HistoryPlotView& plot) const;
     bool sourceByIndex(std::uint16_t index, SourceView& source) const;

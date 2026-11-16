@@ -72,7 +72,30 @@
         "position_format": { "enum": ["DD", "DDM", "DMS"], "default": "DDM" },
         "decimals": { "type": "integer", "minimum": 0, "maximum": 6 },
         "max_digits": { "type": "integer", "minimum": 1, "maximum": 32, "default": 6 },
-        "text": { "type": "string" }
+        "text": { "type": "string" },
+        "states": { "type": "array", "items": { "type": "string" } },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "redline": { "type": "number" },
+        "major": { "type": "number", "exclusiveMinimum": 0 },
+        "minor": { "type": "number", "minimum": 0 },
+        "label_step": { "type": "number", "exclusiveMinimum": 0 },
+        "label_divisor": { "type": "number", "exclusiveMinimum": 0 },
+        "values": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/gaugeValue" } },
+        "chips": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/gaugeValue" } },
+        "side": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/gaugeValue" } }
+      },
+      "additionalProperties": true
+    },
+    "gaugeValue": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "text": { "type": "string", "maxLength": 16 },
+        "display_unit": { "type": "string", "maxLength": 8 },
+        "decimals": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "above": { "type": "number" }
       },
       "additionalProperties": true
     },

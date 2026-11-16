@@ -224,10 +224,30 @@ Supported widgets are:
   that many characters inside the widget. The scale therefore stays unchanged
   as live values change. Values longer than the configured maximum are clipped
   with a trailing dot rather than changing font size.
+  A numeric value may instead name its states: `"states": ["OFF", "ON"]`
+  shows the state whose position is the rounded value (0 OFF, 1 ON; values
+  above the last state show the last), for switch inputs and the like.
 - `text`: shows static text and requires `text`.
 - `local-clock`: asks the device's local RTC formatter for a value. It does not
   use Signal K and is intentionally distinct from a normal server-backed clock
   value.
+
+- `gauge`: a round dial over 270 degrees, `min` at the lower left, `max` at
+  the lower right, the middle straight up. It requires `source`, `min` and
+  `max`; `display_unit` converts the value (`Hz` to `rpm`), `decimals` and
+  `label` (shown under the value) as for `value`. Further settings:
+
+  | Field | Meaning |
+  | --- | --- |
+  | `major`, `minor` | Tick spacing in display units; `minor` 0 or missing draws no minor ticks. Default major: a tenth of the range. |
+  | `label_step`, `label_divisor` | A number every `label_step`, divided by `label_divisor` (3000 rpm as `30` with divisor 100, shown with `x100`). |
+  | `redline` | Optional; the scale is hatched from here to `max`. |
+  | `values` | Up to a few numbers inside the dial under the value, each `{source, display_unit, decimals, text}`; `text` follows the number (`607.1 H`). |
+  | `chips` | Small labels above the hub, each `{source, text, display_unit, above}`, lit (inverted) while the value is above `above` (default 0.5). |
+  | `side` | Values in a column right of the dial when the cell is wider than the dial, each `{source, text, display_unit, decimals}`; `text` is the label. |
+
+  At most ten `values`, `chips` and `side` entries together. A missing or
+  stale value shows `--` and no needle; chips stay dark.
 
 Any other `type` compiles as an unknown widget. The runtime draws a placeholder
 containing `UNKNOWN WIDGET` and the requested type name, while all supported
@@ -322,8 +342,11 @@ use permanent sources for continuous collection.
 Graph redraws follow committed history samples rather than every raw update.
 All samples disappear on reboot or configuration replacement.
 
-Remote-a reserves 1,024 history bytes in total: a 120-point source costs 512
-bytes, so two such sources fit. The designer exposes source interval, points and
+Remote-a reserves 4,096 history bytes in total (1,024 before firmware of
+2026-11-16): a 56-point source costs 256 bytes, so sixteen such sources fit.
+Opening a graph loads its points from the server again, so the graphs of
+section-local sources are complete although those sources are subscribed
+only while their section is shown. The designer exposes source interval, points and
 reducer, page plot assignment, heading, units, precision and fixed bounds. The
 catalog and device compiler enforce the storage budget. Updated display firmware
 is required; saving a designer draft does not update or flash a device.
@@ -343,7 +366,7 @@ real fixed memory are supplied by each firmware in `CompileLimits`:
 
 The compiler returns a precise error instead of accepting a document that the
 runtime cannot hold. The current remote-a composition allows up to 64 sources,
-1,024 history bytes, 8,192 compiled-package bytes, 16,368 staged JSON bytes,
+4,096 history bytes, 8,192 compiled-package bytes, 16,368 staged JSON bytes,
 255 bytes per decoded string, and 16 JSON nesting levels. These are code
 constants, not schema promises, and may be tuned for another MCU.
 

@@ -138,6 +138,34 @@ constexpr TimeFrame timeFrames[timeFrameCount]{
     {31536000u, "1 YEAR", "1 YEAR"},
 };
 
+// sin and cos without the C library (a few hundred bytes less): a Taylor
+// series to x^7 on [-pi/2, pi/2], accurate to about 1e-4, enough for pixels.
+__attribute__((optimize("Os"))) float sine(float angle) {
+    constexpr float pi = 3.14159265f, twoPi = 6.28318531f, halfPi = 1.57079633f;
+    auto turns = static_cast<int>((angle + pi) / twoPi);
+    if (angle + pi < 0.0f) --turns;
+    float x = angle - static_cast<float>(turns) * twoPi; // -pi .. pi
+    if (x > halfPi) x = pi - x;
+    else if (x < -halfPi) x = -pi - x;
+    const float x2 = x * x;
+    return x * (1.0f - x2 / 6.0f * (1.0f - x2 / 20.0f * (1.0f - x2 / 42.0f)));
+}
+float cosine(float angle) { return sine(angle + 1.57079633f); }
+
+// A line of square dots, thickness pixels wide.
+__attribute__((optimize("Os"))) void drawThickLine(slstm32::epd::MonochromeCanvas& canvas, float x0, float y0, float x1, float y1,
+                   std::uint16_t thickness) {
+    const auto steps = static_cast<int>(std::max(std::fabs(x1 - x0), std::fabs(y1 - y0))) + 1;
+    const float half = static_cast<float>(thickness) / 2.0f;
+    for (int step = 0; step <= steps; ++step) {
+        const float px = x0 + (x1 - x0) * static_cast<float>(step) / static_cast<float>(steps) - half;
+        const float py = y0 + (y1 - y0) * static_cast<float>(step) / static_cast<float>(steps) - half;
+        if (px < 0.0f || py < 0.0f) continue;
+        canvas.fillRect(static_cast<std::uint16_t>(px + 0.5f), static_cast<std::uint16_t>(py + 0.5f),
+                        thickness, thickness, true);
+    }
+}
+
 } // namespace
 
 std::uint32_t timeFrameSeconds(std::uint8_t frame) {
@@ -488,6 +516,7 @@ void DisplayService::handle(InputAction action) {
             HistoryPlotView plot{};
             if (package_.historyPlotByPage(activePage_, plot)) {
                 graphMode_ = !graphMode_;
+                if (graphMode_ && historyHandler_.graphShown) historyHandler_.graphShown(historyHandler_.context, activePage_);
                 invalidate(policy_.inputSettleMs);
                 return;
             }
@@ -565,8 +594,14 @@ bool DisplayService::pageUsesSource(std::uint16_t sourceIndex) const {
     if (!package_.first(record)) return false;
     do {
         WidgetView widget{};
-        if (package_.widget(record, widget) && widget.pageIndex == activePage_ &&
-            widget.sourceIndex == sourceIndex) return true;
+        if (!package_.widget(record, widget) || widget.pageIndex != activePage_) continue;
+        if (widget.sourceIndex == sourceIndex) return true;
+        GaugeView gauge{};
+        if (package_.gauge(widget, gauge)) {
+            for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+                if (gauge.references[index].sourceIndex == sourceIndex) return true;
+            }
+        }
     } while (package_.next(record));
     return false;
 }
@@ -942,6 +977,10 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     const bool compact = height < compactWidgetHeight;
     const auto auxiliaryTextHeight = compact ? compactTextHeight : regularTextHeight;
     const auto innerWidth = width > 8u ? static_cast<std::uint16_t>(width - 8u) : width;
+    if (widget.type == WidgetType::gauge) {
+        renderGauge(widget, x, y, width, height);
+        return;
+    }
     char label[48]{};
     copyView(label, sizeof label, widget.label);
     if (*label) {
@@ -1016,6 +1055,18 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
         if (position) {
             if (!formatPosition(text, widget.positionFormat, valueText, sizeof valueText)) copyText(valueText, sizeof valueText, "--");
         } else copyView(valueText, sizeof valueText, text);
+    } else if (value && !stale && value->type == ValueType::number && !widget.text.empty()) {
+        // Named states ("OFF|ON"): the rounded value picks one.
+        const auto converted = convertUnit(value->number, source.unit, widget.displayUnit);
+        auto wanted = converted < 0.5f ? 0 : static_cast<int>(converted + 0.5f);
+        std::size_t start{};
+        for (; wanted > 0; --wanted) {
+            const auto bar = widget.text.find('|', start);
+            if (bar == std::string_view::npos) break;
+            start = bar + 1u;
+        }
+        const auto end = widget.text.find('|', start);
+        copyView(valueText, sizeof valueText, widget.text.substr(start, end == std::string_view::npos ? end : end - start));
     } else if (value && !stale && value->type == ValueType::number) {
         const auto converted = convertUnit(value->number, source.unit, widget.displayUnit);
         (void)formatNumber(converted, static_cast<std::uint8_t>(widget.decimals),
@@ -1067,6 +1118,225 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
                          innerWidth, static_cast<std::uint16_t>(auxiliaryTextHeight + 4u), true);
         if (compact) drawCompactCentered(canvas_, x, width, ageY, ageText, false);
         else drawCentered(x, width, ageY, ageText, false, 2u);
+    }
+}
+
+// A round dial over 270 degrees (min at the lower left, max at the lower
+// right, the middle at the top): ticks, labels, a hatched redline, a band up
+// to the value, the needle, the value in large digits with the label under
+// it, further values and chips inside, and side values in a column to the
+// right when the cell is wider than the dial.
+__attribute__((optimize("Os"))) void DisplayService::renderGauge(const WidgetView& widget, std::uint16_t x, std::uint16_t y,
+                                 std::uint16_t width, std::uint16_t height) {
+    GaugeView gauge{};
+    if (!package_.gauge(widget, gauge)) return;
+    const auto now = runtime_.millis ? runtime_.millis() : 0u;
+    // A source's current value in the display unit; false if missing or stale.
+    const auto number = [&](std::uint16_t sourceIndex, std::string_view unit, float& result) {
+        SourceView source{};
+        const auto* value = data_.get(sourceIndex);
+        if (!package_.sourceByIndex(sourceIndex, source) || !value || value->type != ValueType::number ||
+            valueFreshness(source, value, now) == ValueFreshness::stale) return false;
+        result = convertUnit(value->number, source.unit, unit);
+        return std::isfinite(result);
+    };
+    std::uint8_t sideCount{};
+    for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+        if (gauge.references[index].kind == GaugeReferenceKind::side) ++sideCount;
+    }
+    const auto dialWidth = sideCount != 0u
+        ? static_cast<std::uint16_t>(std::min<int>(width, height * 5 / 4)) : width;
+    const float radius = std::max(20.0f, std::min(dialWidth / 2.0f - 4.0f, (height - 4.0f) / 1.78f));
+    const float cx = x + dialWidth / 2.0f;
+    const float cy = y + 4.0f + radius;
+    const float span = gauge.maximum - gauge.minimum;
+    const auto angleOf = [&](float value) {
+        const float ratio = std::clamp((value - gauge.minimum) / span, 0.0f, 1.0f);
+        return (225.0f - 270.0f * ratio) * 0.0174532925f;
+    };
+    const auto at = [&](float value, float distance, float& px, float& py) {
+        const auto angle = angleOf(value);
+        px = cx + distance * cosine(angle);
+        py = cy - distance * sine(angle);
+    };
+    const auto radial = [&](float value, float inner, float outer, std::uint16_t thickness) {
+        float x0{}, y0{}, x1{}, y1{};
+        at(value, inner, x0, y0);
+        at(value, outer, x1, y1);
+        drawThickLine(canvas_, x0, y0, x1, y1, thickness);
+    };
+    const auto arc = [&](float from, float to, float distance, std::uint16_t thickness) {
+        const float step = span / 540.0f; // half a degree
+        for (float value = from; value <= to; value += step) {
+            float px{}, py{};
+            at(value, distance, px, py);
+            drawThickLine(canvas_, px, py, px, py, thickness);
+        }
+    };
+
+    // Scale: outline, redline hatching, ticks, labels.
+    arc(gauge.minimum, gauge.maximum, radius, 2u);
+    if (std::isfinite(gauge.redline) && gauge.redline < gauge.maximum) {
+        for (float value = std::max(gauge.redline, gauge.minimum); value <= gauge.maximum; value += span / 135.0f) {
+            radial(value, radius - 12.0f, radius - 2.0f, 1u);
+        }
+    }
+    if (gauge.minor > 0.0f) {
+        for (float value = gauge.minimum; value <= gauge.maximum + span / 1000.0f; value += gauge.minor) {
+            radial(value, radius - 7.0f, radius, 1u);
+        }
+    }
+    for (float value = gauge.minimum; value <= gauge.maximum + span / 1000.0f; value += gauge.major) {
+        radial(value, radius - 16.0f, radius, 3u);
+    }
+    const auto labelScale = static_cast<std::uint8_t>(radius >= 80.0f ? 2u : 1u);
+    for (float value = gauge.minimum; value <= gauge.maximum + span / 1000.0f; value += gauge.labelStep) {
+        char text[16]{};
+        (void)formatNumber(value / gauge.labelDivisor, 0u, text, sizeof text);
+        float px{}, py{};
+        at(value, radius - 16.0f - 8.0f * labelScale, px, py);
+        const auto textWidth = Font5x7::textWidth(text, labelScale);
+        Font5x7::drawText(canvas_, static_cast<std::uint16_t>(std::max(0.0f, px - textWidth / 2.0f)),
+                          static_cast<std::uint16_t>(std::max(0.0f, py - 3.5f * labelScale)), text, true, labelScale);
+    }
+    if (gauge.labelDivisor != 1.0f) {
+        char text[16]{"x"};
+        (void)formatNumber(gauge.labelDivisor, 0u, text + 1, sizeof text - 1u);
+        drawCompactCentered(canvas_, static_cast<std::uint16_t>(cx - radius), static_cast<std::uint16_t>(2.0f * radius),
+                            static_cast<std::uint16_t>(cy - radius * 0.62f), text, true);
+    }
+
+    // Value: band, needle, hub.
+    float current{};
+    const bool valid = number(widget.sourceIndex, widget.displayUnit, current);
+    if (valid) {
+        arc(gauge.minimum, std::clamp(current, gauge.minimum, gauge.maximum), radius - 8.0f, 6u);
+        float px{}, py{};
+        at(current, radius - 22.0f, px, py);
+        drawThickLine(canvas_, cx, cy, px, py, 4u);
+    }
+    for (int dy = -7; dy <= 7; ++dy) {
+        int half{};
+        while ((half + 1) * (half + 1) + dy * dy <= 49) ++half;
+        canvas_.fillRect(static_cast<std::uint16_t>(cx - half), static_cast<std::uint16_t>(cy + dy),
+                         static_cast<std::uint16_t>(2 * half + 1), 1u, true);
+    }
+
+    // Chips in a row above the hub.
+    {
+        constexpr std::uint16_t chipHeight = 16u, chipGap = 4u;
+        const auto chipWidthOf = [](const char* text) {
+            return static_cast<std::uint16_t>(Font5x7::textWidthScaled(text, compactTextScaleNumerator,
+                                                                       compactTextScaleDenominator) + 7u);
+        };
+        std::uint16_t total{};
+        for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+            const auto& reference = gauge.references[index];
+            if (reference.kind != GaugeReferenceKind::chip) continue;
+            char text[20]{};
+            copyView(text, sizeof text, reference.text);
+            total = static_cast<std::uint16_t>(total + (total ? chipGap : 0u) + chipWidthOf(text));
+        }
+        auto chipX = static_cast<std::uint16_t>(cx - total / 2.0f);
+        const auto chipY = static_cast<std::uint16_t>(cy - radius * 0.28f - chipHeight);
+        for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+            const auto& reference = gauge.references[index];
+            if (reference.kind != GaugeReferenceKind::chip) continue;
+            char text[20]{};
+            copyView(text, sizeof text, reference.text);
+            const auto chipWidth = chipWidthOf(text);
+            float level{};
+            const bool lit = number(reference.sourceIndex, reference.displayUnit, level) && level > reference.threshold;
+            canvas_.fillRect(chipX, chipY, chipWidth, chipHeight, false);
+            if (lit) canvas_.fillRect(chipX, chipY, chipWidth, chipHeight, true);
+            else canvas_.drawRect(chipX, chipY, chipWidth, chipHeight, true);
+            Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(chipX + 4u), static_cast<std::uint16_t>(chipY + 3u),
+                                    text, !lit, compactTextScaleNumerator, compactTextScaleDenominator);
+            chipX = static_cast<std::uint16_t>(chipX + chipWidth + chipGap);
+        }
+    }
+
+    // The value in large digits on a white backdrop, the label under it.
+    {
+        char text[24]{"--"};
+        if (valid) (void)formatNumber(current, static_cast<std::uint8_t>(widget.decimals), text, sizeof text);
+        const auto digitsWidth = static_cast<std::uint16_t>(radius * 1.0f);
+        const auto scale = fittedValueScale(digitsWidth, static_cast<std::uint16_t>(radius * 0.3f),
+                                            static_cast<std::uint8_t>(std::max<std::size_t>(std::strlen(text), 4u)));
+        const auto top = static_cast<std::uint16_t>(cy + radius * 0.12f);
+        const auto textWidth = Font5x7::textWidth(text, scale);
+        canvas_.fillRect(static_cast<std::uint16_t>(cx - textWidth / 2.0f - 4.0f), static_cast<std::uint16_t>(top - 4u),
+                         static_cast<std::uint16_t>(textWidth + 8u), static_cast<std::uint16_t>(7u * scale + 8u), false);
+        drawCentered(static_cast<std::uint16_t>(cx - radius), static_cast<std::uint16_t>(2.0f * radius), top, text, true, scale);
+        char label[24]{};
+        copyView(label, sizeof label, widget.label.empty() ? widget.displayUnit : widget.label);
+        auto lineY = static_cast<std::uint16_t>(top + 7u * scale + 5u);
+        if (*label) {
+            drawCompactCentered(canvas_, static_cast<std::uint16_t>(cx - radius), static_cast<std::uint16_t>(2.0f * radius),
+                                lineY, label, true);
+        }
+        // Further values below it, in the opening of the dial.
+        lineY = static_cast<std::uint16_t>(std::max<float>(lineY + compactTextHeight + 4u, cy + radius * 0.5f));
+        for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+            const auto& reference = gauge.references[index];
+            if (reference.kind != GaugeReferenceKind::value) continue;
+            char line[40]{"--"};
+            float level{};
+            if (number(reference.sourceIndex, reference.displayUnit, level)) {
+                (void)formatNumber(level, reference.decimals, line, sizeof line);
+            }
+            if (!reference.text.empty()) {
+                const auto length = std::strlen(line);
+                line[length] = ' ';
+                copyView(line + length + 1u, sizeof line - length - 1u, reference.text);
+            }
+            fitText(line, sizeof line, static_cast<std::uint16_t>(radius * 1.3f), 2u);
+            drawCentered(static_cast<std::uint16_t>(cx - radius), static_cast<std::uint16_t>(2.0f * radius), lineY,
+                         line, true, 2u);
+            lineY = static_cast<std::uint16_t>(lineY + 18u);
+        }
+    }
+
+    // Side values: label on top, the value right-aligned in large digits, unit after it.
+    if (sideCount == 0u) return;
+    const auto sideX = static_cast<std::uint16_t>(x + dialWidth + 6u);
+    if (sideX + 60u >= x + width) return;
+    const auto sideWidth = static_cast<std::uint16_t>(x + width - sideX - 2u);
+    canvas_.fillRect(static_cast<std::uint16_t>(sideX - 6u), y, widgetSeparatorWidth, height, true);
+    const auto rowHeight = static_cast<std::uint16_t>(height / sideCount);
+    std::uint8_t row{};
+    for (std::uint8_t index = 0u; index < gauge.referenceCount; ++index) {
+        const auto& reference = gauge.references[index];
+        if (reference.kind != GaugeReferenceKind::side) continue;
+        const auto rowY = static_cast<std::uint16_t>(y + row * rowHeight);
+        if (row != 0u) canvas_.fillRect(static_cast<std::uint16_t>(sideX + 4u), static_cast<std::uint16_t>(rowY - 1u),
+                                        static_cast<std::uint16_t>(sideWidth - 4u), 2u, true);
+        char label[24]{};
+        copyView(label, sizeof label, reference.text);
+        fitCompactText(label, sizeof label, static_cast<std::uint16_t>(sideWidth - 8u));
+        Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(sideX + 6u), static_cast<std::uint16_t>(rowY + 5u), label,
+                                true, compactTextScaleNumerator, compactTextScaleDenominator);
+        char text[24]{"--"};
+        float level{};
+        if (number(reference.sourceIndex, reference.displayUnit, level)) {
+            (void)formatNumber(level, reference.decimals, text, sizeof text);
+        }
+        char unit[12]{};
+        copyView(unit, sizeof unit, reference.displayUnit);
+        const auto unitWidth = static_cast<std::uint16_t>(*unit ? Font5x7::textWidth(unit, 2u) + 6u : 0u);
+        const auto valueTop = static_cast<std::uint16_t>(rowY + 5u + compactTextHeight + 3u);
+        const auto valueHeight = static_cast<std::uint16_t>(rowHeight > compactTextHeight + 14u
+            ? rowHeight - compactTextHeight - 14u : 7u);
+        const auto scale = fittedValueScale(static_cast<std::uint16_t>(sideWidth - unitWidth - 10u), valueHeight, 5u);
+        const auto textWidth = Font5x7::textWidth(text, scale);
+        const auto right = static_cast<std::uint16_t>(sideX + sideWidth - 4u - unitWidth);
+        Font5x7::drawText(canvas_, static_cast<std::uint16_t>(right > textWidth ? right - textWidth : sideX), valueTop,
+                          text, true, scale);
+        if (*unit) {
+            Font5x7::drawText(canvas_, static_cast<std::uint16_t>(right + 6u),
+                              static_cast<std::uint16_t>(valueTop + (7u * scale > 14u ? 7u * scale - 14u : 0u)), unit, true, 2u);
+        }
+        ++row;
     }
 }
 

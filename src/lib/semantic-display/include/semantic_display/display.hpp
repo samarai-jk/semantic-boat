@@ -82,6 +82,9 @@ struct HistoryHandler {
     // The user chose a time frame for the plot of a page; its sources have
     // the new interval and an empty ring (load their history now).
     void (*timeFrameChanged)(void* context, std::uint16_t pageIndex, std::uint8_t frame){};
+    // The graph of a page was opened (load its history again: sources of
+    // other sections have gaps).
+    void (*graphShown)(void* context, std::uint16_t pageIndex){};
 };
 
 struct AlertHandler {
@@ -206,6 +209,8 @@ private:
     void render();
     void renderHistoryPlot(const HistoryPlotView& plot, std::uint16_t x, std::uint16_t y,
                            std::uint16_t width, std::uint16_t height);
+    void renderGauge(const WidgetView& widget, std::uint16_t x, std::uint16_t y,
+                     std::uint16_t width, std::uint16_t height);
     void renderWidget(const PageView& page, const WidgetView& widget,
                       std::uint16_t x, std::uint16_t y,
                       std::uint16_t width, std::uint16_t height);

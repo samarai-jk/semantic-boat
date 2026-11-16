@@ -19,6 +19,8 @@ namespace remote_a {
 // - 30 s after the server is first seen, each history source is loaded once,
 //   one request at a time, so the graphs are complete without waiting;
 //   again 5 s after waking from sleep (the clock stops while sleeping);
+// - opening a graph loads its sources again (values of other sections have
+//   gaps: they are subscribed only while their section is shown);
 // - a new time frame loads the sources of its graph at once and is stored:
 //   the last 8 graphs keep their frame across restarts (least recently used
 //   replaced), restored at start-up.
@@ -32,7 +34,7 @@ public:
 
     bool init() override;
     void run() override;
-    semantic_display::HistoryHandler handler() { return {this, &timeFrameChangedThunk}; }
+    semantic_display::HistoryHandler handler() { return {this, &timeFrameChangedThunk, &graphShownThunk}; }
 
 private:
     static constexpr std::size_t frameSlots = 8u;
@@ -43,6 +45,7 @@ private:
     };
 
     static void timeFrameChangedThunk(void* context, std::uint16_t pageIndex, std::uint8_t frame);
+    static void graphShownThunk(void* context, std::uint16_t pageIndex);
     static void dataThunk(void* context, std::uint16_t requestId, std::uint16_t sourceIndex, std::uint32_t intervalMs,
                           std::uint16_t total, std::uint16_t first, const float* values, std::size_t count);
     std::uint32_t pageKey(std::uint16_t pageIndex) const;

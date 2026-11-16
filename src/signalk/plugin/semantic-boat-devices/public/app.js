@@ -339,8 +339,19 @@ function renderLayout(container, configuration) {
     const entry = currentPage(document).widgets[editorWidget]; entry.type = value;
     if (value === 'value' && !entry.source && available.length) entry.source = available[0].id;
     if (value === 'text' && !entry.text) entry.text = 'Text';
-  }, true), { choices: ['value', 'text', 'local-clock'] });
+    if (value === 'gauge') { entry.min ??= 0; entry.max ??= 3000; if (!entry.source && available.length) entry.source = available[0].id; }
+  }, true), { choices: ['value', 'text', 'local-clock', 'gauge'] });
   propertyField(widgetFields, 'Label', widget.label, value => changeWidget('label', value));
+  if (widget.type === 'gauge') {
+    propertyField(widgetFields, 'Widget source', widget.source, value => changeWidget('source', value),
+      { choices: [{ value: '', label: 'Select source' }, ...available.map(source => ({ value: source.id, label: `${source.id} · ${source.path}` }))] });
+    propertyField(widgetFields, 'Display unit', widget.display_unit, value => changeWidget('display_unit', value));
+    for (const [key, label] of [['min', 'Minimum'], ['max', 'Maximum'], ['redline', 'Redline from'], ['major', 'Major tick every'],
+      ['minor', 'Minor tick every'], ['label_step', 'Number every'], ['label_divisor', 'Numbers divided by']]) {
+      propertyField(widgetFields, label, widget[key], value => changeWidget(key, value), { number: true });
+    }
+    widgetFields.append(text('small', 'Values inside the dial, chips and side values: edit "values", "chips" and "side" in the JSON.', 'muted'));
+  }
   if (widget.type === 'value') {
     propertyField(widgetFields, 'Widget source', widget.source, value => changeWidget('source', value),
       { choices: [{ value: '', label: 'Select source' }, ...available.map(source => ({ value: source.id, label: `${source.id} · ${source.path}` }))] });
@@ -373,7 +384,7 @@ function renderProperties() {
   container.append(text('h2', 'Configuration', 'configuration-heading'));
   propertyField(general, 'Configuration name', configuration.name, value => editDocument(document => { document.name = value; }));
   container.append(general);
-  container.append(text('p', `History RAM: ${historyBytes(configuration)} / 1024 bytes`, 'device-meta'));
+  container.append(text('p', `History RAM: ${historyBytes(configuration)} / 4096 bytes`, 'device-meta'));
   renderSources(container, configuration, { title: 'Permanent sources', address: null, sources: configuration.permanent_sources ?? [] });
   renderLayout(container, configuration);
   if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -431,7 +442,7 @@ function renderSources(container, configuration, group) {
         const target = getSources(document)[index];
         if (value) target.history = { interval_ms: 60000, points: 120, reducer: 'mean' };
         else { if (usedByPlot) throw new Error('History is assigned to a page plot'); delete target.history; }
-        if (historyBytes(document) > 1024) throw new Error('History exceeds 1024 bytes');
+        if (historyBytes(document) > 4096) throw new Error('History exceeds 4096 bytes');
       }, true), { checkbox: true });
       recording.disabled = source.provider === 'signalk-text';
       if (source.history) {
@@ -439,7 +450,7 @@ function renderSources(container, configuration, group) {
           propertyField(row, label, source.history[key], value => editDocument(document => {
             if (!Number.isInteger(value) || value < 1) throw new Error(`${label} must be positive`);
             getSources(document)[index].history[key] = value;
-            if (historyBytes(document) > 1024) throw new Error('History exceeds 1024 bytes');
+            if (historyBytes(document) > 4096) throw new Error('History exceeds 4096 bytes');
           }, true), { number: true, min: 1, max: maximum });
         propertyField(row, 'History reducer', source.history.reducer ?? 'last', value => editDocument(document => {
           getSources(document)[index].history.reducer = value;

@@ -183,10 +183,51 @@ bool PackageView::widget(const RecordView& record, WidgetView& result) const {
            takeString(current, end, labelLength, result.label) &&
            takeString(current, end, unitLength, result.displayUnit) &&
             takeString(current, end, textLength, result.text))) return false;
+        if (result.type == WidgetType::gauge) {
+            if (static_cast<std::size_t>(end - current) < gaugeFixedBytes) return false;
+            result.extra = current;
+            result.extraSize = static_cast<std::uint16_t>(end - current);
+            return true;
+        }
         if (current == end) return true;
         if (end - current != 1 || *current > static_cast<std::uint8_t>(PositionFormat::dms)) return false;
         result.positionFormat = static_cast<PositionFormat>(*current);
         return true;
+}
+
+bool PackageView::gauge(const WidgetView& widget, GaugeView& result) const {
+    if (widget.type != WidgetType::gauge || !widget.extra || widget.extraSize < gaugeFixedBytes) return false;
+    result = GaugeView{};
+    const auto* current = widget.extra;
+    const auto* end = current + widget.extraSize;
+    float* const fields[]{&result.minimum, &result.maximum, &result.redline, &result.major,
+                          &result.minor, &result.labelStep, &result.labelDivisor};
+    for (auto* field : fields) {
+        const auto raw = read32(current);
+        std::memcpy(field, &raw, sizeof raw);
+        current += 4u;
+    }
+    const auto count = *current++;
+    if (count > maxGaugeReferences) return false;
+    for (std::uint8_t index = 0u; index < count; ++index) {
+        if (static_cast<std::size_t>(end - current) < gaugeReferenceBytes) return false;
+        auto& reference = result.references[index];
+        if (*current > static_cast<std::uint8_t>(GaugeReferenceKind::side)) return false;
+        reference.kind = static_cast<GaugeReferenceKind>(*current++);
+        reference.decimals = *current++;
+        const auto raw = read32(current);
+        std::memcpy(&reference.threshold, &raw, sizeof raw);
+        current += 4u;
+        reference.sourceIndex = read16(current); current += 2u;
+        const auto idLength = *current++;
+        const auto textLength = *current++;
+        const auto unitLength = *current++;
+        if (!(takeString(current, end, idLength, reference.sourceId) &&
+              takeString(current, end, textLength, reference.text) &&
+              takeString(current, end, unitLength, reference.displayUnit))) return false;
+    }
+    result.referenceCount = count;
+    return current == end;
 }
 
 bool PackageView::historyPlot(const RecordView& record, HistoryPlotView& result) const {

@@ -183,7 +183,7 @@ test('editor exposes sections and pages with level-specific creation and deletio
   assert.equal(draft().sections[0].pages[0].history_plot.y_max, 100);
   input('Source ID').value = 'air'; input('Source ID').onchange();
   assert.equal(draft().sections[0].pages[0].history_plot.source, 'air');
-  input('History points').value = '249'; input('History points').onchange();
+  input('History points').value = '1017'; input('History points').onchange();
   assert.equal(draft().sections[0].sources[0].history.points, 120);
   select('History source').value = ''; select('History source').onchange();
   assert.equal(draft().sections[0].pages[0].history_plot, undefined);

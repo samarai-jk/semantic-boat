@@ -30,7 +30,7 @@ class Catalog {
     const permanent = document.permanent_sources ?? [];
     const sources = [...permanent, ...document.sections.flatMap(section => section.sources ?? [])];
     const historyBytes = sources.reduce((sum, source) => sum + (source.history ? 32 + 4 * source.history.points : 0), 0);
-    if (historyBytes > 1024) throw new Error('History exceeds the remote-a 1024-byte limit');
+    if (historyBytes > 4096) throw new Error('History exceeds the remote-a 4096-byte limit');
     for (const source of sources) {
       if (source.history && source.provider === 'signalk-text') throw new Error(`Source ${source.id}: history requires numeric values`);
       if (source.outdated_ms && source.stale_ms && source.outdated_ms >= source.stale_ms) {

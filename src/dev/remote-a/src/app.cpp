@@ -87,7 +87,7 @@ constexpr std::size_t installationPackageCapacity = 6u * 1024u;
 constexpr std::size_t installationSourceCapacity = 10u * 1024u;
 static_assert(installationPackageCapacity + installationSourceCapacity <=
               slstm32::epd::Waveshare3In7::bufferSize);
-constexpr std::size_t historyCapacity = 1024u;
+constexpr std::size_t historyCapacity = 4096u;
 constexpr std::size_t sourceCapacity = 64u;
 // Development firmware uses the embedded fake-data configuration only when no
 // persisted or SWD-staged user configuration exists. Set false for a production

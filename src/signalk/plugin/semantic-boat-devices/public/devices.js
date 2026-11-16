@@ -786,7 +786,30 @@
     const channels = text('div', '', 'channels');
     channels.append(...(info.channels ?? []).map(channel => channelPanel(device, channel, card)));
     detail.replaceChildren(header, meta, card.parameters ? devicePanel(device, card) : text('p', 'Reading the device’s settings …', 'empty'),
-      text('h3', 'Channels'), channels, logPanel(device, card));
+      text('h3', 'Channels'), channels, ...standardPanel(info), logPanel(device, card));
+  }
+
+  // Standard PGNs the device sends besides its channels (switch inputs as
+  // 127501), as Signal K mapped them.
+  function standardText(entry) {
+    if (entry.pgn === 127501 && entry.path.endsWith('.state')) return entry.value ? 'on' : 'off';
+    if (typeof entry.value === 'number') return String(Number(entry.value.toPrecision(7)));
+    return entry.value === null || entry.value === undefined ? '–' : JSON.stringify(entry.value);
+  }
+
+  function standardPanel(info) {
+    const values = info.standardValues ?? [];
+    if (!values.length) return [];
+    const rows = values.map(entry => {
+      const value = text('span', standardText(entry), 'channel-value');
+      value.dataset.standard = entry.path;
+      const when = text('span', age(entry.ageMs), 'channel-age');
+      when.dataset.standardAge = entry.path;
+      return cells(entry.path, value, String(entry.pgn ?? ''), when);
+    });
+    return [text('h3', 'Standard PGN values'),
+      text('p', 'Sent by the device besides its channels and mapped by Signal K (switch inputs: 127501, one indicator per input; the device’s README says which is which).', 'muted'),
+      table(['Signal K path', 'Value', 'PGN', 'Received'], rows)];
   }
 
   function updateB1s(device) {
@@ -799,6 +822,12 @@
         when.textContent = state.age;
         when.className = `channel-age${state.stale ? ' stale' : ''}`;
       }
+    }
+    for (const entry of device.detail?.standardValues ?? []) {
+      const value = [...detail.querySelectorAll('[data-standard]')].find(element => element.dataset.standard === entry.path);
+      if (value) value.textContent = standardText(entry);
+      const when = [...detail.querySelectorAll('[data-standard-age]')].find(element => element.dataset.standardAge === entry.path);
+      if (when) when.textContent = age(entry.ageMs);
     }
   }
 
@@ -828,7 +857,7 @@
     const structure = device.kind === 'b1s'
       ? [device.detail.address, device.detail.product, device.detail.pathPrefix, device.detail.channels.map(channel =>
         [channel.channel, channel.label, channel.location, channel.encoding, channel.path, channel.customPath, channel.conflicts]),
-        b1sCard(device.id).version]
+        (device.detail.standardValues ?? []).map(entry => entry.path), b1sCard(device.id).version]
       : [device.status, (device.detail?.subscriptions ?? []).map(source => source.sourceIndex), catalogNames,
         device.detail?.lastTransfer, device.detail?.error];
     const key = JSON.stringify([keyOf(device), structure]);

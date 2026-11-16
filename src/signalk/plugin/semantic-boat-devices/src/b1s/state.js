@@ -10,6 +10,7 @@
 
 const isoAddressClaim = 60928;
 const productInformation = 126996;
+const binarySwitchBankStatus = 127501;
 const specialValues = new Set([0x7fffffff, 0x7ffffffe, 0x7ffffffd]); // not available, error, out of range
 const encodings = ['b1s', 'standard', 'off'];
 
@@ -34,6 +35,7 @@ class B1sState {
     this.devicePrefix = devicePrefix;
     this.channelPath = channelPath;
     this.registry = registry;
+    this.quantityPgns = new Set([...registry.quantities.values()].map(entry => entry.standard_pgn).filter(Boolean));
     this.onDelta = onDelta;
     this.request = request;
     this.now = now;
@@ -145,13 +147,22 @@ class B1sState {
   }
 
   // A value Signal K mapped from a standard PGN of a B1S device (its own
-  // NMEA 2000 mapping decides the path; prefixes do not apply).
+  // NMEA 2000 mapping decides the path; prefixes do not apply): the value of
+  // a channel sent as standard PGN, or one of the device's other standard
+  // PGNs (switch inputs as 127501), shown with the device.
   standardValue(entry) {
     const device = this.deviceAt(Number(entry.source?.src));
-    if (!device) return;
-    device.standard ??= new Map();
-    device.standard.set(`${entry.source.pgn}:${entry.source.instance ?? ''}`,
-      { path: entry.path, value: entry.value, at: Date.parse(entry.timestamp) || this.now() });
+    if (!device || !entry.path) return;
+    const value = { path: entry.path, pgn: entry.source.pgn ?? null, value: entry.value,
+      at: Date.parse(entry.timestamp) || this.now() };
+    if (this.quantityPgns.has(entry.source.pgn)) {
+      device.standard ??= new Map();
+      device.standard.set(`${entry.source.pgn}:${entry.source.instance ?? ''}`, value);
+    }
+    // 127501 also maps each indicator's fixed number to <indicator>.order.
+    if (entry.source.pgn === binarySwitchBankStatus && entry.path.endsWith('.order')) return;
+    device.standardPaths ??= new Map();
+    device.standardPaths.set(entry.path, value);
   }
 
   // The raw value of a channel (Measurement Raw) goes next to its value:
@@ -205,41 +216,55 @@ class B1sState {
 
   // Devices and channels for the HTTP API and the status page.
   snapshot() {
-    return [...this.devices.values()].map(device => ({
+    return [...this.devices.values()].map(device => this.deviceSnapshot(device));
+  }
+
+  deviceSnapshot(device) {
+    const channels = this.channelSnapshots(device);
+    const channelPaths = new Set(channels.map(channel => channel.path));
+    return {
       id: device.id,
       address: device.address,
       product: device.product,
       online: device.lastSeen !== undefined && this.now() - device.lastSeen < 10000,
       pathPrefix: this.devicePrefix(device.id),
-      channels: [...device.channels.values()].sort((a, b) => a.channel - b.channel).map(channel => {
-        const quantity = this.registry.quantities.get(channel.kind);
-        const standardPgn = quantity?.standard_pgn ?? null;
-        let latest = device.values.get(channel.channel);
-        let path = this.pathOf(device, channel, channel.kind);
-        const rawPath = channel.raw && channel.encoding !== 'off' ? `${path}Raw` : null;
-        const raw = rawPath ? device.rawValues.get(channel.channel) : null;
-        if (channel.encoding === 'standard') {
-          // Learned from Signal K's mapping once the first value arrived.
-          const mapped = device.standard?.get(`${standardPgn}:${channel.standardInstance ?? ''}`);
-          latest = mapped;
-          path = mapped?.path ?? null;
-        } else if (channel.encoding === 'off') {
-          latest = null; // not sent: an older value would mislead
-        }
-        return {
-          ...channel,
-          quantity: quantity?.id ?? null,
-          unit: quantity?.unit ?? null,
-          standardPgn,
-          customPath: this.channelPath(device.id, channel.channel),
-          value: latest?.value ?? null,
-          ageMs: latest?.at ? Math.max(0, this.now() - latest.at) : null,
-          path,
-          rawPath,
-          rawValue: raw?.value ?? null
-        };
-      })
-    }));
+      channels,
+      // Standard PGN values that belong to no channel, by path.
+      standardValues: [...(device.standardPaths?.values() ?? [])].filter(entry => !channelPaths.has(entry.path))
+        .sort((a, b) => a.path.localeCompare(b.path, 'en', { numeric: true }))
+        .map(entry => ({ path: entry.path, pgn: entry.pgn, value: entry.value, ageMs: Math.max(0, this.now() - entry.at) }))
+    };
+  }
+
+  channelSnapshots(device) {
+    return [...device.channels.values()].sort((a, b) => a.channel - b.channel).map(channel => {
+      const quantity = this.registry.quantities.get(channel.kind);
+      const standardPgn = quantity?.standard_pgn ?? null;
+      let latest = device.values.get(channel.channel);
+      let path = this.pathOf(device, channel, channel.kind);
+      const rawPath = channel.raw && channel.encoding !== 'off' ? `${path}Raw` : null;
+      const raw = rawPath ? device.rawValues.get(channel.channel) : null;
+      if (channel.encoding === 'standard') {
+        // Learned from Signal K's mapping once the first value arrived.
+        const mapped = device.standard?.get(`${standardPgn}:${channel.standardInstance ?? ''}`);
+        latest = mapped;
+        path = mapped?.path ?? null;
+      } else if (channel.encoding === 'off') {
+        latest = null; // not sent: an older value would mislead
+      }
+      return {
+        ...channel,
+        quantity: quantity?.id ?? null,
+        unit: quantity?.unit ?? null,
+        standardPgn,
+        customPath: this.channelPath(device.id, channel.channel),
+        value: latest?.value ?? null,
+        ageMs: latest?.at ? Math.max(0, this.now() - latest.at) : null,
+        path,
+        rawPath,
+        rawValue: raw?.value ?? null
+      };
+    });
   }
 }
 

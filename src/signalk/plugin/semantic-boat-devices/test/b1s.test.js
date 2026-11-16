@@ -263,3 +263,18 @@ test('raw values go next to the channel value, on <path>Raw', () => {
   assert.strictEqual(channel.rawPath, 'environment.inside.lab.temperatureRaw');
   assert.strictEqual(channel.rawValue, 300.4);
 });
+
+test('standard PGNs besides the channels show with their device', () => {
+  const b1s = new B1sState(registry, { onDelta: () => {}, request: () => {}, now: () => 3000 });
+  b1s.handle(claim);
+  const switchState = (indicator, field, value) => b1s.standardValue({ path: `electrical.switches.bank.0.${indicator}.${field}`,
+    value, timestamp: new Date(1000).toISOString(), source: { label: 'can1', src: '38', pgn: 127501 } });
+  switchState(10, 'state', 1); switchState(2, 'state', 0); switchState(2, 'order', 2);
+  // Another node's values stay out.
+  b1s.standardValue({ path: 'electrical.switches.bank.0.1.state', value: 1, timestamp: new Date(1000).toISOString(),
+    source: { label: 'can1', src: '77', pgn: 127501 } });
+  assert.deepStrictEqual(b1s.snapshot()[0].standardValues, [
+    { path: 'electrical.switches.bank.0.2.state', pgn: 127501, value: 0, ageMs: 2000 },
+    { path: 'electrical.switches.bank.0.10.state', pgn: 127501, value: 1, ageMs: 2000 }
+  ]);
+});

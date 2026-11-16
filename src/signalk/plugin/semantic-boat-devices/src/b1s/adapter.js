@@ -66,9 +66,8 @@ class B1sAdapter {
       channelPath: (id, channel) => this.deviceSettings[id]?.channels?.[channel]?.path ?? '' });
     // Standard PGNs of B1S devices: Signal K maps them itself; their paths,
     // values, and times are learned from its stream.
-    const standardPgns = new Set([...registry.quantities.values()].map(entry => entry.standard_pgn).filter(Boolean));
     this.unsubscribeStream = this.app.streambundle?.getSelfBus().onValue(entry => {
-      if (!entry.isMeta && entry.source?.label === this.options.providerId && standardPgns.has(entry.source.pgn)) {
+      if (!entry.isMeta && entry.source?.label === this.options.providerId && entry.source.pgn) {
         this.state.standardValue(entry);
       }
     });

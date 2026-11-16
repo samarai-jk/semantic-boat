@@ -66,6 +66,9 @@ plugins have their own.
       minute, changes over a window, its state; + Add alarm and Remove; the device's free windows;
       Save alarms; Reset alarms and output to firmware defaults). A Save stores only the
       edited fields, then reads the device again.
+    - **Standard PGN values**: what the device sends besides its channels
+      (switch inputs as 127501), with the path Signal K mapped, the value
+      (switch states as on/off), and its age.
     - **Log**: the device streams its log (debug lines included) only when
       switched on there, for 5, 15, or 60 minutes, at most 512 B/s, and stops
       by itself when the time is up; Stop ends it at once. Level filter,

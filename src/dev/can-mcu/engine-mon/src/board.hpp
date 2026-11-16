@@ -42,7 +42,7 @@ inline constexpr std::uint8_t ad1Address = 0x49u; // R34 fitted
 inline constexpr std::uint8_t ad2Address = 0x48u; // R33 fitted
 inline constexpr std::size_t moduleAnalogCount = 8u;
 inline constexpr const char* moduleAnalogNames[moduleAnalogCount]{
-    "A10 oil pressure", "A11 coolant temperature", "A12 alternator voltage", "A13 starter voltage",
+    "A10 starter voltage", "A11 coolant temperature", "A12 alternator voltage", "A13 oil pressure",
     "A20 12 V system",  "A21 reserve 1",           "A22 reserve 2",          "A23 reserve 3"};
 // D10 counts pulses for the rpm (interrupt on the falling module output,
 // where 12 V appears; HAL_GPIO_EXTI_Callback with digitalInputMask(rpmInput)).

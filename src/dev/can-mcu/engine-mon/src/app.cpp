@@ -25,7 +25,6 @@
 #include "b1s/measurement_publisher.hpp"
 #include "b1s/registry.hpp"
 #include "b1s/service_server.hpp"
-#include "n2k/electrical.hpp"
 #include "n2k/name.hpp"
 #include "semantic_modules/ad_input_iso_12v.hpp"
 #include "semantic_modules/ad_input_iso_12v_calibration.hpp"
@@ -94,13 +93,13 @@ constexpr std::uint32_t inputDebounceMs = 20u;
 constexpr b1s::Product product = b1s::product::engineMon;
 // Builds with development tools say so in the software version, visible to
 // every NMEA 2000 tool (Signal K, can-bench) and in the image header.
-#define ENGINE_MON_VERSION "0.2.0"
+#define ENGINE_MON_VERSION "0.3.0"
 constexpr const char* softwareVersion =
     slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__;
 // Firmware image header for the bootloader; size and CRC are stamped in
 // after the link (src/lib/b1s/FIRMWARE.md).
 [[gnu::section(".image_header"), gnu::used]] const can_mcu::image::Header imageHeader =
-    can_mcu::image::makeHeader(product.code, 0u, 2u, 0u, slstm32::devTools,
+    can_mcu::image::makeHeader(product.code, 0u, 3u, 0u, slstm32::devTools,
                                slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__);
 // The application confirms a newly installed image once it has run normally this long.
 constexpr std::uint32_t firmwareConfirmAfterMs = 10000u;
@@ -184,7 +183,6 @@ Gear loggedGear{Gear::neutral};
 // serial code of the product information.
 char serialCode[25]{};
 constexpr std::uint32_t n2kTransmitPgns[]{n2k::pgn::temperatureExtendedRange,
-                                           n2k::pgn::binarySwitchBankStatus,
                                            b1s::pgn::measurement,
                                            b1s::pgn::measurementRaw,
                                            b1s::pgn::channelDescription,
@@ -347,10 +345,11 @@ slstm32::drivers::Npi19Driver rawWaterSensor{runtime, i2c, logger, &rawWaterPres
 // Analog inputs A10..A13 (AD1) and A20..A23 (AD2) as voltages at the module
 // terminals, one reading per second (module calibration: console "cal").
 // The engine's oil pressure and coolant senders are published as their
-// voltages until their curves are known. No alarms yet.
+// voltages until their curves are known. No alarms yet. A10 is the starter
+// and A13 the oil pressure sender (swapped 2026-11-16 to match the wiring).
 constexpr sensors::MeasurementConfig moduleAnalogConfigs[engine_mon::board::moduleAnalogCount]{
-    {"oil-sender", sensors::Quantity::voltage, 0u},   {"coolant-sender", sensors::Quantity::voltage, 1u},
-    {"alternator-v", sensors::Quantity::voltage, 2u}, {"starter-v", sensors::Quantity::voltage, 3u},
+    {"starter-v", sensors::Quantity::voltage, 0u},    {"coolant-sender", sensors::Quantity::voltage, 1u},
+    {"alternator-v", sensors::Quantity::voltage, 2u}, {"oil-sender", sensors::Quantity::voltage, 3u},
     {"system-v", sensors::Quantity::voltage, 4u},     {"a21", sensors::Quantity::voltage, 5u},
     {"a22", sensors::Quantity::voltage, 6u},          {"a23", sensors::Quantity::voltage, 7u},
 };
@@ -362,6 +361,29 @@ sensors::Measurement moduleAnalogChannels[engine_mon::board::moduleAnalogCount]{
 };
 constexpr std::uint32_t moduleAnalogPeriodMs = 1000u;
 std::uint32_t moduleAnalogAt{};
+
+// Digital inputs D10..D13 (AD1) and D20..D23 (AD2) as states, 1 = 12 V
+// present (an unplugged input reads 0). Updated at once on a change and
+// otherwise once a second; on B1S they go out at once on a change and every
+// 120 s (D10, the rpm pulses, every 10 s and not on change). Alarms: rules on
+// the latest value, e.g. "warning when at least 1 for 5 s" (on for 5 s).
+constexpr sensors::MeasurementConfig digitalConfigs[engine_mon::board::digitalInputCount]{
+    {"d10-w", sensors::Quantity::state, 0u},      {"ignition", sensors::Quantity::state, 1u},
+    {"starter-sol", sensors::Quantity::state, 2u}, {"fuel-stop", sensors::Quantity::state, 3u},
+    {"gear-rev", sensors::Quantity::state, 4u},    {"gear-fwd", sensors::Quantity::state, 5u},
+    {"preheat", sensors::Quantity::state, 6u},     {"d23", sensors::Quantity::state, 7u},
+};
+sensors::Measurement digitalChannels[engine_mon::board::digitalInputCount]{
+    sensors::Measurement{digitalConfigs[0]}, sensors::Measurement{digitalConfigs[1]},
+    sensors::Measurement{digitalConfigs[2]}, sensors::Measurement{digitalConfigs[3]},
+    sensors::Measurement{digitalConfigs[4]}, sensors::Measurement{digitalConfigs[5]},
+    sensors::Measurement{digitalConfigs[6]}, sensors::Measurement{digitalConfigs[7]},
+};
+constexpr std::uint32_t digitalChannelPeriodMs = 1000u;
+constexpr std::uint32_t digitalSendPeriodMs = 120000u;
+constexpr std::uint32_t rpmInputSendPeriodMs = 10000u;
+std::uint32_t digitalChannelsAt{};
+bool digitalChannelStates[engine_mon::board::digitalInputCount]{};
 
 // Engine speed from the alternator W terminal on D10: pulses per revolution
 // = pole pairs x pulley ratio. 15 (6 x 2.5) is a placeholder until it is
@@ -383,7 +405,10 @@ sensors::Measurement* const channels[]{&boardChannel,      &mcuChannel,        &
                                        &moduleAnalogChannels[0], &moduleAnalogChannels[1],
                                        &moduleAnalogChannels[2], &moduleAnalogChannels[3],
                                        &moduleAnalogChannels[4], &moduleAnalogChannels[5],
-                                       &moduleAnalogChannels[6], &moduleAnalogChannels[7]};
+                                       &moduleAnalogChannels[6], &moduleAnalogChannels[7],
+                                       &digitalChannels[0], &digitalChannels[1], &digitalChannels[2],
+                                       &digitalChannels[3], &digitalChannels[4], &digitalChannels[5],
+                                       &digitalChannels[6], &digitalChannels[7]};
 
 can_mcu::BoardTemperatures boardTemperatures{runtime, boardTemperature, mcu, boardChannel, mcuChannel};
 slstm32::storage::KeyedRecordStore::Key sensorSettingsKeys[engine_mon::sensorSettingsSlots]{};
@@ -420,18 +445,27 @@ const b1s::ChannelConfig b1sChannels[]{
      "Raw water pressure"},
     {&rawWaterTemperatureChannel, 17u, b1s::Publish::b1s, engineRoom, "", "Raw water temperature (sensor)"},
     {&rpmChannel, 2u, b1s::Publish::b1s, 0u, "", "Engine speed (alternator W)"},
-    {&moduleAnalogChannels[0], 9u, b1s::Publish::b1s, 0u, "", "Oil pressure sender voltage"},
+    {&moduleAnalogChannels[3], 9u, b1s::Publish::b1s, 0u, "", "Oil pressure sender voltage"},
     {&moduleAnalogChannels[1], 10u, b1s::Publish::b1s, 0u, "", "Coolant temp sender voltage"},
     {&moduleAnalogChannels[2], 11u, b1s::Publish::b1s, 0u, "", "Alternator voltage"},
-    {&moduleAnalogChannels[3], 12u, b1s::Publish::b1s, 0u, "", "Starter voltage"},
+    {&moduleAnalogChannels[0], 12u, b1s::Publish::b1s, 0u, "", "Starter voltage"},
     {&moduleAnalogChannels[4], 13u, b1s::Publish::b1s, 0u, "", "12 V system voltage"},
     {&moduleAnalogChannels[5], 18u, b1s::Publish::b1s, 0u, "", "Reserve input A21"},
     {&moduleAnalogChannels[6], 19u, b1s::Publish::b1s, 0u, "", "Reserve input A22"},
     {&moduleAnalogChannels[7], 20u, b1s::Publish::b1s, 0u, "", "Reserve input A23"},
+    // Fields after the label: send period, raw period, also on change.
+    {&digitalChannels[0], 21u, b1s::Publish::b1s, 0u, "", "Rpm input D10 (alternator W)", rpmInputSendPeriodMs, 0u, false},
+    {&digitalChannels[1], 22u, b1s::Publish::b1s, 0u, "", "Ignition (D11)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[2], 23u, b1s::Publish::b1s, 0u, "", "Starter solenoid (D12)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[3], 24u, b1s::Publish::b1s, 0u, "", "Fuel stop solenoid (D13)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[4], 25u, b1s::Publish::b1s, 0u, "", "Gearbox reverse (D20)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[5], 26u, b1s::Publish::b1s, 0u, "", "Gearbox forward (D21)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[6], 27u, b1s::Publish::b1s, 0u, "", "Preheater relay (D22)", digitalSendPeriodMs, 0u, true},
+    {&digitalChannels[7], 28u, b1s::Publish::b1s, 0u, "", "Reserve input D23", digitalSendPeriodMs, 0u, true},
 };
 static_assert(sizeof b1sChannels / sizeof b1sChannels[0] <= engine_mon::b1sChannelSlots, "B1S channel slots");
 b1s::ChannelSettings::Override b1sOverrides[engine_mon::b1sChannelSlots]{};
-b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides};
+b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverrides, engine_mon::b1sSettingsLayout};
 b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
 b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels, b1sStates, 2000u, logger, &b1sSettings};
 
@@ -720,31 +754,17 @@ void updateModuleAnalogs(std::uint32_t now) {
     }
 }
 
-// Digital inputs D10..D13, D20..D23 as NMEA 2000 Binary Switch Bank Status
-// (127501, bank 0, indicators 1..8 = D10..D23, on = 12 V present): on every
-// change and every 2 s.
-constexpr std::uint8_t switchBank = 0u;
-constexpr std::uint8_t switchBankPriority = 6u;
-constexpr std::uint32_t switchBankPeriodMs = 2000u;
-std::uint32_t switchBankAt{};
-std::uint8_t switchBankSent{0xFFu};
-
-void publishSwitchBank(std::uint32_t now) {
-    using engine_mon::board::digitalInputCount;
-    bool states[digitalInputCount]{};
-    std::uint8_t bits{};
-    for (std::size_t index = 0u; index < digitalInputCount; ++index) {
-        states[index] = digitalOn(index);
-        if (states[index]) bits = static_cast<std::uint8_t>(bits | 1u << index);
+// Digital inputs into their state channels: at once on a change, otherwise
+// once a second.
+void updateDigitalChannels(std::uint32_t now) {
+    const bool due = static_cast<std::int32_t>(now - digitalChannelsAt) >= 0;
+    if (due) digitalChannelsAt = now + digitalChannelPeriodMs;
+    for (std::size_t index = 0u; index < engine_mon::board::digitalInputCount; ++index) {
+        const bool on = digitalOn(index);
+        if (!due && on == digitalChannelStates[index]) continue;
+        digitalChannelStates[index] = on;
+        digitalChannels[index].update(on ? 1000 : 0, now);
     }
-    if (bits == switchBankSent && static_cast<std::int32_t>(now - switchBankAt) < 0) return;
-    if (!n2kNode.claimed()) return;
-    std::uint8_t data[8];
-    n2k::encodeBinarySwitchBankStatus(data, switchBank, states, digitalInputCount);
-    if (!n2kNode.sendSingle(switchBankPriority, n2k::pgn::binarySwitchBankStatus, n2k::broadcastAddress, data,
-                            sizeof data)) return;
-    switchBankSent = bits;
-    switchBankAt = now + switchBankPeriodMs;
 }
 
 void inputLogCommand(void*, std::size_t argc, const char* const* argv) {
@@ -879,6 +899,7 @@ extern "C" void engine_mon_app_init(void) {
             sensors::Identity::i2c(0u, 0u, address, static_cast<std::uint8_t>(index % perModule)));
     }
     rpmChannel.setIdentity(sensors::Identity::internal(2u));
+    // The digital inputs have no calibration and so no identity.
     can_mcu::attachCanDriver(can);
     n2kNode.onMessage(&onN2kMessage, nullptr);
     n2kNode.onAddressChange(&onN2kAddressChange, nullptr);
@@ -919,7 +940,7 @@ extern "C" void engine_mon_app_run(void) {
     {
         const auto now = runtime.millis();
         updateModuleAnalogs(now);
-        publishSwitchBank(now);
+        updateDigitalChannels(now);
     }
     if (clickPending) {
         clickPending = false;

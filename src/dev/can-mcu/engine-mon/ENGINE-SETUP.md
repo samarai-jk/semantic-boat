@@ -27,7 +27,7 @@ energize-to-stop. This firmware monitors only.
          PA0, PA1, PA3, PA7 ── module AD2 D20..D23  gearbox reverse/forward, preheater relay, reserve
  Status  PA15 green LED (sunk), PA2 buzzer (TIM15) -- after the rewiring below
  Buttons PB10, PB11 (frontends BTN_FUN_4/5, reachable from outside)
- I2C1    PB8/PB9 ── AD1 (ADS1115 0x49): A10..A13  oil pressure, coolant temperature, alternator, starter voltage
+ I2C1    PB8/PB9 ── AD1 (ADS1115 0x49): A10..A13  starter voltage, coolant temperature, alternator, oil pressure
                  ── AD2 (ADS1115 0x48): A20..A23  12 V system, reserve x3
                  ── NPI-19 (0x28) ................. raw water pressure 0..2.07 bar
                  ── DHT20 (0x38) .................. engine room temperature and humidity
@@ -61,9 +61,9 @@ Channel numbers are a proposal for B1S (0 and 1 exist already).
 
 | Signal | Sensor | Pin / input | B1S channel |
 | --- | --- | --- | --- |
-| Oil pressure | engine's sender | AD1 A10 | 9 |
+| Oil pressure | engine's sender | AD1 A13 | 9 |
 | Alternator output voltage | direct | AD1 A12 | 11 |
-| Starter voltage | direct | AD1 A13 | 12 |
+| Starter voltage | direct | AD1 A10 | 12 |
 | 12 V system | direct | AD2 A20 | 13 |
 | Reserve | | AD2 A21, A22, A23 | later |
 | Raw water pressure, 0..2.07 bar | Amphenol NovaSensor NPI-19, I2C, 30 psi gauge | I2C 0x28 | 16 |
@@ -170,16 +170,22 @@ As implemented (2026-11-16). Every channel goes out as B1S Measurement
 | 0, 1 | Enclosure, MCU die | temperature | |
 | 2 | Engine speed (D10, alternator W) | rotational speed | 15 pulses per revolution (placeholder) until calibrated against a tachometer |
 | 3..8 | Dry exhaust, wet exhaust, alternator, heat exchanger, gearbox oil, calorifier water | temperature | |
-| 9 | Oil pressure sender (A10) | voltage | until the sender curve is known |
+| 9 | Oil pressure sender (A13) | voltage | until the sender curve is known |
 | 10 | Coolant temperature sender (A11) | voltage | until the sender curve is known |
-| 11, 12, 13 | Alternator, starter, 12 V system (A12, A13, A20) | voltage | |
+| 11, 12, 13 | Alternator, starter, 12 V system (A12, A10, A20) | voltage | A10 and A13 swapped in firmware 0.3.0 to match the wiring |
 | 14, 15 | Engine room | temperature, humidity | |
 | 16, 17 | Raw water | pressure, temperature | |
 | 18, 19, 20 | Reserve A21, A22, A23 | voltage | |
+| 21 | Rpm input D10 (alternator W) | state | every 10 s, not on change (it carries the rpm pulses) |
+| 22..24 | Ignition (D11), starter solenoid (D12), fuel stop solenoid (D13) | state | at once on a change and every 120 s |
+| 25..28 | Gearbox reverse (D20), gearbox forward (D21), preheater relay (D22), reserve D23 | state | at once on a change and every 120 s |
 
 Voltages are at the module terminals (module calibration: console `cal`).
-The digital inputs go out as Binary Switch Bank Status, bank 0
-([README](README.md#host-io)).
+States are 1 while 12 V is present at the input, 0 otherwise (an unplugged
+input reads 0). Their alarms are rules on the latest value: "warning when
+on (at least 1) for at least 5 s" or "when off (at most 0)"; the minimum
+time is the rule's delay. Send period and "on change" are set per channel
+(output record).
 
 ## MCU pin map (all 21 host GPIOs)
 
@@ -343,8 +349,7 @@ After regenerating: commit, then pull the firmware changes (the
 - Firmware: the channels above, LEDs on TIM2; B1S channel slots and the measurement
   channel area enlarged from 16 to 24 (EEPROM still fits: about 30 of 32
   KiB); the window pool reviewed for about 18 channels.
-- B1S: a representation for the digital inputs (switch states). There is no
-  such quantity yet; candidates are standard PGN 127501 (Binary Switch Bank
-  Status, `display`) or a new B1S message. To be decided ("Adding to B1S").
+- B1S: the digital inputs are channels of quantity `state` (registry code
+  24, decided 2026-11-16), sent at once on a change and every period.
 - B1S: engine data could also go out as standard PGNs (127488 engine
   speed, 127489 engine dynamic parameters): to decide per signal.

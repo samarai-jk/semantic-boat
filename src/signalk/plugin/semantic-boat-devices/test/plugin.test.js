@@ -228,7 +228,7 @@ test('plugin lifecycle and catalog routes work with the server API', async conte
     const document = templates.result[name];
     for (const section of document.sections) {
       for (const source of section.sources) {
-        assert.ok(['signalk', 'signalk-text', 'signalk-ugm3'].includes(source.provider));
+        assert.ok(['signalk', 'signalk-text', 'signalk-ugm3'].includes(source.provider ?? 'signalk')); // signalk by default
         assert.ok(!source.path.startsWith('propulsion.main.'));
         assert.ok(!source.path.startsWith('system.server.'));
         if (name === 'server.json') assert.ok(source.path.startsWith('environment.rpi.'));

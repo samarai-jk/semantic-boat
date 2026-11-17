@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diagnostic Sessions</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="icon.svg" alt="" width="28" height="28">
+      <h1>Diagnostic Sessions</h1>
+    </div>
+    <div class="filters">
+      <label for="kind-filter">Kind</label>
+      <select id="kind-filter"><option value="">All kinds</option></select>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <main class="layout">
+    <aside class="list" aria-label="Sessions">
+      <p id="list-state" class="muted">Loading sessions…</p>
+      <ol id="sessions"></ol>
+    </aside>
+    <section id="detail" class="detail" aria-live="polite">
+      <div class="empty">
+        <h2>No session selected</h2>
+        <p>Devices record a diagnostic session when something worth looking at happens, for example an engine start.
+          The Pi fetches it from the device within a few seconds after it ends and keeps it here.</p>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

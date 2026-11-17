@@ -276,6 +276,18 @@ seconds the stream still runs), `GET /b1s/backups[/:id]`,
    default to the ones above; `registryPath` overrides the repository copy of
    the registry). Restart Signal K after a registry change.
 
+### Diagnostic sessions
+
+B1S devices record diagnostic sessions (an engine start;
+`src/lib/b1s/DIAGNOSTICS.md`). The plugin asks every device for one every
+15 s, fetches a complete session in 200-byte pieces, stores it as JSON in
+`diagnostic-sessions/` of its data folder (decoded series, events, phases,
+key numbers of the kind, and the raw bytes), and lets the device free it.
+Routes (admin): `diagnostics/sessions` and `diagnostics/sessions/<name>`.
+The **Diagnostic Sessions** app (`../semantic-boat-diagnostic-sessions`, a
+Signal K webapp) shows them: a list, the key numbers, and the series as
+graphs with the phases and switch inputs.
+
 ## History
 
 Displays fill their graphs from the database instead of waiting for them to

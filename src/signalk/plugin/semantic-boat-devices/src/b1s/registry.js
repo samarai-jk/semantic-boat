@@ -23,7 +23,8 @@ function indexRegistry(registry) {
     parameters: new Map(registry.parameters.map(entry => [entry.code, entry])),
     parameterNames: new Map(registry.parameters.map(entry => [entry.id, entry])),
     standardSources: registry.standard_sources ?? {},
-    records: registry.records ?? {}
+    records: registry.records ?? {},
+    diagnosticSessions: new Map((registry.diagnostic_sessions ?? []).map(entry => [entry.code, entry]))
   };
 }
 

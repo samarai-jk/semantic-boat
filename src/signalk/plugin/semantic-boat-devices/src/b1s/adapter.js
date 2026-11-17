@@ -7,6 +7,7 @@
 // The B1S connection (canbus-canboatjs on the B1S interface) uses its own
 // event names, so B1S traffic stays apart from NMEA 2000 inside Signal K.
 
+const { DiagnosticSessionStore } = require('./diagnostics');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { loadRegistry } = require('./registry');
@@ -43,6 +44,7 @@ class B1sAdapter {
     this.app = app;
     this.options = { ...defaults, ...options };
     this.directory = path.join(directory, 'b1s-backups');
+    this.sessionsDirectory = path.join(directory, 'diagnostic-sessions');
     this.onDelta = onDelta;
     this.onError = onError;
     this.consoles = new Map(); // device ID -> { text, start }: the device log as streamed
@@ -84,6 +86,10 @@ class B1sAdapter {
       }
     };
     this.app.on(this.options.analyzerEvent, this.listener);
+    // Diagnostic sessions (src/lib/b1s/DIAGNOSTICS.md): fetched from the devices, kept on the Pi.
+    this.diagnostics = new DiagnosticSessionStore({ client: this.client, state: this.state, registry,
+      directory: this.sessionsDirectory, log: message => this.app.debug?.(message) });
+    await this.diagnostics.start();
     // Discover the devices: every node answers a global request for its
     // address claim, B1S devices one for their Channel Descriptions.
     this.timers.push(setTimeout(() => request(255, isoAddressClaim), 3000),
@@ -99,12 +105,13 @@ class B1sAdapter {
     this.streams.clear();
     if (this.listener) this.app.removeListener(this.options.analyzerEvent, this.listener);
     this.unsubscribeStream?.();
+    this.diagnostics?.stop();
     this.timers.forEach(clearTimeout);
     this.listener = null;
   }
 
   status() {
-    return this.state ? this.state.status() : 'B1S not started';
+    return this.state ? `${this.state.status()}; ${this.diagnostics?.status() ?? ''}` : 'B1S not started';
   }
 
   devices() {

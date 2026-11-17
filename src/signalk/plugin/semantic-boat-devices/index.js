@@ -112,6 +112,9 @@ module.exports = app => {
         return handler(request, instance.b1s);
       });
       const channelOf = value => (value === undefined || value === null || value === '' ? null : Number(value));
+      // Diagnostic sessions (the Diagnostic Sessions app).
+      router.get('/diagnostics/sessions', b1s((_request, adapter) => adapter.diagnostics.list()));
+      router.get('/diagnostics/sessions/:name', b1s((request, adapter) => adapter.diagnostics.read(request.params.name)));
       router.get('/b1s/devices', b1s((_request, adapter) => adapter.devices()));
       router.get('/b1s/devices/:id/parameters', b1s((request, adapter) => adapter.parameters(request.params.id)));
       router.put('/b1s/devices/:id/parameters/:name', b1s((request, adapter) => adapter.setParameter(

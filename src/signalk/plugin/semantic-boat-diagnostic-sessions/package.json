@@ -1,0 +1,17 @@
+{
+  "name": "@semantic-boat/diagnostic-sessions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Diagnostic Sessions: high-rate recordings of Semantic Boat devices (engine starts and more), stored by Semantic Boat Devices",
+  "keywords": [
+    "signalk-webapp",
+    "signalk-category-utility"
+  ],
+  "signalk": {
+    "displayName": "Diagnostic Sessions",
+    "appIcon": "icon.svg"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

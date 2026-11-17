@@ -27,6 +27,7 @@ marked *planned* is specified here but not implemented yet.
 | `README.md` (this file) | The rules and message layouts |
 | [`CONFIGURATION.md`](CONFIGURATION.md) | Configuration, calibration, and diagnosis over CAN |
 | [`registry.yaml`](registry.yaml) | **Every number B1S assigns**: PGNs, quantities, events, output kinds, commands, products, standard PGN categories |
+| [`DIAGNOSTICS.md`](DIAGNOSTICS.md) | Diagnostic sessions: high-rate recordings (an engine start) fetched by the Pi |
 | `include/b1s/registry.hpp` | Generated from the registry by `tools/generate_registry.py`; never edited by hand |
 | `include/b1s/messages.hpp` | Encoders: proprietary header, Measurement, Channel Description |
 | `include/b1s/quantity.hpp` | slstm32 measurement quantities -> B1S quantities and SI raw values |

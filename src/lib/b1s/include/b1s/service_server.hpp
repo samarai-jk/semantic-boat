@@ -47,6 +47,13 @@ struct ServiceServerConfig {
     std::size_t deviceParameterCount{};
     CommandHandler commands{};
     void* commandContext{};
+    // Diagnostic sessions (DIAGNOSTICS.md): DiagnosticSessions::handler();
+    // empty: none (and no session code linked in).
+    struct Diagnostics {
+        void* context{};
+        std::size_t (*reply)(void* context, Service service, const std::uint8_t* request, std::size_t length,
+                             std::uint8_t* out, std::size_t capacity){};
+    } diagnostics{};
 };
 
 // Configuration, calibration, and diagnosis over CAN (CONFIGURATION.md):

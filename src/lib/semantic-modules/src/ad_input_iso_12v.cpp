@@ -43,6 +43,10 @@ void AdInputIso12v::run() {
     }
 }
 
+void AdInputIso12v::setFastScan(bool fast, std::uint8_t mask) {
+    adc_.setScan(fast ? slstm32::drivers::Ads1115Driver::DataRate::sps860 : config_.dataRate, fast ? mask : 0u);
+}
+
 std::int32_t AdInputIso12v::analogMillivolts(std::size_t channel) const {
     if (channel >= channels) return 0;
     return static_cast<std::int32_t>(static_cast<float>(adc_.microvolts(channel)) *

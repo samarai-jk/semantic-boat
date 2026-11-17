@@ -196,6 +196,7 @@ number, status (4), fields (5..).
 | 3 | `parameterWrite` | id, channel, type, value | as read: the value as stored |
 | 4 | `console` | command line (ASCII, rest of the message; empty = keep alive) | log text (rest of the message), several replies |
 | 8 | `logStream` | minutes (uint8): 1..60 start or extend, 0 stop, 255 only ask | remaining seconds (uint16; 0 = off) |
+| 9..11 | `diagnosticSessionInfo`, `diagnosticSessionRead`, `diagnosticSessionRelease` | see [DIAGNOSTICS.md](DIAGNOSTICS.md) | |
 
 Values: type 0 = int32 (4 bytes), type 1 = text (NMEA 2000 STRING_LAU,
 ASCII, at most 32 characters), type 2 = record (length byte, then the

@@ -148,6 +148,21 @@ void ServiceServer::handleService(const n2k::CanId& id, const std::uint8_t* data
         node_.sendFast(servicePriority, pgn::service, id.source, reply, sizeof reply);
         return;
     }
+    case b1s::Service::diagnosticSessionInfo:
+    case b1s::Service::diagnosticSessionRead:
+    case b1s::Service::diagnosticSessionRelease: {
+        if (!config_.diagnostics.reply) return;
+        // Answered at once; when the transmit buffer is busy the client asks again.
+        std::uint8_t reply[4u + 8u + 200u]{};
+        const auto replyLength = config_.diagnostics.reply(config_.diagnostics.context, static_cast<b1s::Service>(data[2]),
+                                                           data + 4, length - 4u, reply + 4, sizeof reply - 4u);
+        if (replyLength == 0u) return;
+        putHeader(reply);
+        reply[2] = static_cast<std::uint8_t>(data[2] | replyBit);
+        reply[3] = data[3];
+        node_.sendFast(servicePriority, pgn::service, id.source, reply, 4u + replyLength);
+        return;
+    }
     default:
         return;
     }

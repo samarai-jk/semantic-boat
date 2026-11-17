@@ -128,6 +128,14 @@ enum class Service : std::uint8_t {
     firmwareData = 6u,
     firmwareEnd = 7u,
     logStream = 8u,
+    diagnosticSessionInfo = 9u,
+    diagnosticSessionRead = 10u,
+    diagnosticSessionRelease = 11u,
+};
+
+// Kinds of diagnostic sessions (DIAGNOSTICS.md).
+enum class DiagnosticSession : std::uint8_t {
+    engineStart = 1u,
 };
 
 // Boards of firmware images (FIRMWARE.md).

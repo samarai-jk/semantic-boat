@@ -22,6 +22,7 @@
 #include "dev_tools.hpp"
 #include "events.hpp"
 #include "io_console.hpp"
+#include "b1s/diagnostic_sessions.hpp"
 #include "b1s/measurement_publisher.hpp"
 #include "b1s/registry.hpp"
 #include "b1s/service_server.hpp"
@@ -59,6 +60,7 @@
 #include "slstm32/sensors/measurement.hpp"
 #include "slstm32/sensors/measurement_console.hpp"
 #include "slstm32/sensors/measurement_log.hpp"
+#include "slstm32/sensors/recorder.hpp"
 #include "slstm32/sensors/registry.hpp"
 #include "slstm32/sensors/rtd.hpp"
 #include "slstm32/storage/keyed_record_store.hpp"
@@ -94,13 +96,13 @@ constexpr std::uint32_t inputDebounceMs = 20u;
 constexpr b1s::Product product = b1s::product::engineMon;
 // Builds with development tools say so in the software version, visible to
 // every NMEA 2000 tool (Signal K, can-bench) and in the image header.
-#define ENGINE_MON_VERSION "0.3.0"
+#define ENGINE_MON_VERSION "0.4.0"
 constexpr const char* softwareVersion =
     slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__;
 // Firmware image header for the bootloader; size and CRC are stamped in
 // after the link (src/lib/b1s/FIRMWARE.md).
 [[gnu::section(".image_header"), gnu::used]] const can_mcu::image::Header imageHeader =
-    can_mcu::image::makeHeader(product.code, 0u, 3u, 0u, slstm32::devTools,
+    can_mcu::image::makeHeader(product.code, 0u, 4u, 0u, slstm32::devTools,
                                slstm32::devTools ? ENGINE_MON_VERSION "-dev " __DATE__ : ENGINE_MON_VERSION " " __DATE__);
 // The application confirms a newly installed image once it has run normally this long.
 constexpr std::uint32_t firmwareConfirmAfterMs = 10000u;
@@ -416,7 +418,8 @@ constexpr sensors::MeasurementConfig rpmChannelConfig{"rpm", sensors::Quantity::
 sensors::Measurement rpmChannel{rpmChannelConfig};
 std::uint32_t cycleTicks() { return can_mcu::cycleCounter(); }
 // Glitch filter 300 us: up to 3.3 kHz, about 13000 rpm at 15 pulses.
-const slstm32::drivers::FrequencyInputConfig rpmConfig{&cycleTicks, can_mcu::coreClockHz, 15000u, true, 300u, 250u,
+// Updated every 100 ms (the start sessions sample it at 20 Hz).
+const slstm32::drivers::FrequencyInputConfig rpmConfig{&cycleTicks, can_mcu::coreClockHz, 15000u, true, 300u, 100u,
                                                        2000u};
 slstm32::drivers::FrequencyInput rpmSensor{runtime, rpmConfig, &rpmChannel};
 
@@ -492,6 +495,60 @@ b1s::ChannelSettings b1sSettings{eeprom, engine_mon::b1sSettingsOffset, b1sOverr
 b1s::ChannelState b1sStates[sizeof b1sChannels / sizeof b1sChannels[0]]{};
 b1s::MeasurementPublisher measurementPublisher{runtime, n2kNode, b1sChannels, b1sStates, 2000u, logger, &b1sSettings};
 
+// --- Diagnostic session: the engine start (src/lib/b1s/DIAGNOSTICS.md) ---
+// From ignition, preheat or starter on (with all three off before) until the
+// engine has run for 10 s, or until all three are off for 3 s (no start),
+// at most 3 minutes; every crank attempt of the session is in it. Series,
+// as B1S channels: system voltage (A20, 13), starter voltage (A13, 12),
+// alternator D+ (A12, 11), oil sender (A10, 9), rpm (2). Rates per phase:
+// waiting 10 Hz, after 20 s of waiting 2 Hz, cranking 100 Hz for the two
+// voltages and 20 Hz for the rest, running up 10 Hz. The 2 s before the
+// trigger come from a 10 Hz lead-in. The switch inputs are events, the
+// temperatures and engine hours a snapshot at the start. During a session
+// the input modules scan only the recorded inputs at 860 samples/s.
+constexpr std::size_t perModuleInputs = semantic_modules::AdInputIso12v::channels;
+constexpr std::uint8_t sessionAnalogInputs[]{4u, 3u, 2u, 0u}; // A20, A13, A12, A10 (moduleAnalogNames order)
+bool readSessionAnalog(void* context, std::int32_t& value) {
+    const auto index = *static_cast<const std::uint8_t*>(context);
+    const auto& module = *inputModules[index / perModuleInputs];
+    if (!module.analogValid(index % perModuleInputs)) return false;
+    value = module.analogMillivolts(index % perModuleInputs);
+    return true;
+}
+bool readSessionRpm(void*, std::int32_t& value) {
+    value = rpmSensor.value();
+    return true;
+}
+// In the order of the engineStart series roles (registry): battery,
+// starter, alternator excitation, oil pressure sender, engine speed.
+const sensors::RecorderSeries startSeries[]{
+    {13u, 1u, &readSessionAnalog, const_cast<std::uint8_t*>(&sessionAnalogInputs[0])},
+    {12u, 1u, &readSessionAnalog, const_cast<std::uint8_t*>(&sessionAnalogInputs[1])},
+    {11u, 1u, &readSessionAnalog, const_cast<std::uint8_t*>(&sessionAnalogInputs[2])},
+    {9u, 1u, &readSessionAnalog, const_cast<std::uint8_t*>(&sessionAnalogInputs[3])},
+    {2u, 1000u, &readSessionRpm, nullptr},
+};
+constexpr std::size_t startSeriesCount = sizeof startSeries / sizeof startSeries[0];
+const sensors::Quantity startQuantities[startSeriesCount]{sensors::Quantity::voltage, sensors::Quantity::voltage,
+                                                          sensors::Quantity::voltage, sensors::Quantity::voltage,
+                                                          sensors::Quantity::rotationalSpeed};
+// Phase intervals (ms) per series.
+constexpr std::uint16_t waitingIntervals[startSeriesCount]{100u, 100u, 100u, 100u, 100u};
+constexpr std::uint16_t waitingLongIntervals[startSeriesCount]{500u, 500u, 500u, 500u, 500u};
+constexpr std::uint16_t crankingIntervals[startSeriesCount]{10u, 10u, 50u, 50u, 50u};
+constexpr std::uint16_t runningUpIntervals[startSeriesCount]{100u, 100u, 100u, 100u, 100u};
+constexpr std::size_t sessionEvents = 48u;
+constexpr std::uint16_t leadInIntervalMs = 100u;
+std::array<std::uint8_t, 10u * 1024u> sessionArena{}; // a typical start about 4 KiB
+std::array<std::uint8_t, 2u * startSeriesCount * 20u> sessionLeadIn{}; // 2 s
+sensors::Recorder startRecorder{runtime, startSeries, startSeriesCount, sessionArena.data(), sessionArena.size(),
+                                sessionEvents, sessionLeadIn.data(), sessionLeadIn.size(), leadInIntervalMs};
+std::uint32_t unixNow() {
+    const auto seconds = rtc.unixSeconds();
+    return seconds > 0 ? static_cast<std::uint32_t>(seconds) : 0u;
+}
+b1s::DiagnosticSessions startSessions{startRecorder, b1s::DiagnosticSession::engineStart, startQuantities, &unixNow};
+
 // Alarm sounds on the passive buzzer, one per severity, all at full volume
 // (an engine room is loud) and near the buzzer's 2.7 kHz resonance, where it
 // is loudest: two chirps every 30 s ("have a look"), three beeps every 3 s
@@ -530,7 +587,8 @@ const b1s::DeviceParameter deviceParameters[]{
 };
 const b1s::ServiceServerConfig serviceServerConfig{
     &measurementPublisher, &measurements, &console, &serialLog,
-    deviceParameters, sizeof deviceParameters / sizeof deviceParameters[0], &runDeviceCommand, nullptr};
+    deviceParameters, sizeof deviceParameters / sizeof deviceParameters[0], &runDeviceCommand, nullptr,
+    {&startSessions, &b1s::DiagnosticSessions::replyThunk}};
 b1s::ServiceServer serviceServer{runtime, n2kNode, serviceServerConfig};
 std::uint32_t restartAt{};
 bool restartRequested{};
@@ -839,6 +897,112 @@ void updateRunTime(std::uint32_t now) {
     runTimeChannel.update(static_cast<std::int32_t>(static_cast<std::uint64_t>(runSeconds) * 1000u / 3600u), now);
 }
 
+// The engine start session (see startSeries above).
+enum class StartPhase : std::uint8_t { idle, waiting, waitingLong, cranking, runningUp };
+constexpr std::uint8_t phaseCode(StartPhase phase) { return static_cast<std::uint8_t>(phase); } // registry phases 1..4
+constexpr std::uint32_t waitingLongAfterMs = 20000u;
+constexpr std::uint32_t runningUpMs = 10000u;
+constexpr std::uint32_t quietEndMs = 3000u;
+constexpr std::uint32_t sessionMaxMs = 180000u;
+// Switch inputs recorded as events: input index and B1S channel, in the
+// order of the engineStart input roles (registry: ignition, starter, fuel
+// stop, gearbox reverse, forward, preheat).
+constexpr std::uint8_t sessionInputIndex[]{1u, 2u, 3u, 4u, 5u, 6u};       // D11..D13, D20..D22
+constexpr std::uint8_t sessionInputChannel[]{22u, 23u, 24u, 25u, 26u, 27u};
+// Snapshot at the start: coolant sender, heat exchanger, dry exhaust,
+// engine room, engine hours, gearbox oil.
+constexpr std::uint8_t sessionSnapshotChannels[]{10u, 6u, 3u, 14u, 21u, 7u};
+StartPhase startPhase{StartPhase::idle};
+std::uint32_t startPhaseAt{};
+std::uint32_t startQuietAt{};
+bool startTriggerBefore{};
+bool sessionInputs[sizeof sessionInputIndex]{};
+constexpr std::uint8_t ad1SessionMask = 0b1101u; // A10, A12, A13
+constexpr std::uint8_t ad2SessionMask = 0b0001u; // A20
+
+void setStartPhase(StartPhase phase, std::uint32_t now) {
+    startPhase = phase;
+    startPhaseAt = now;
+    const std::uint16_t* intervals = phase == StartPhase::waiting       ? waitingIntervals
+                                   : phase == StartPhase::waitingLong   ? waitingLongIntervals
+                                   : phase == StartPhase::cranking      ? crankingIntervals
+                                                                        : runningUpIntervals;
+    (void)startSessions.phase(phaseCode(phase), intervals);
+}
+
+void endStartSession(sensors::Recorder::EndReason reason) {
+    startSessions.finish(reason);
+    startPhase = StartPhase::idle;
+    ad1.setFastScan(false, 0u);
+    ad2.setFastScan(false, 0u);
+    const auto kib10 = startSessions.totalBytes() * 10u / 1024u;
+    logger.writef(LogLevel::info, "start session #%u: %s after %lu.%lu s, %u.%u KiB%s",
+                  static_cast<unsigned>(startRecorder.recordingNumber()),
+                  reason == sensors::Recorder::EndReason::finished ? "engine running"
+                  : reason == sensors::Recorder::EndReason::aborted ? "no start"
+                  : reason == sensors::Recorder::EndReason::timeout ? "time limit" : "memory full",
+                  static_cast<unsigned long>(startRecorder.durationMs() / 1000u),
+                  static_cast<unsigned long>(startRecorder.durationMs() % 1000u / 100u),
+                  static_cast<unsigned>(kib10 / 10u), static_cast<unsigned>(kib10 % 10u),
+                  startRecorder.truncated() ? ", truncated" : "");
+}
+
+void updateStartSession(std::uint32_t now) {
+    startRecorder.run();
+    const bool ignition = digitalOn(1u), starter = digitalOn(2u), preheat = digitalOn(6u);
+    const bool trigger = ignition || starter || preheat;
+    const bool running = rpmSensor.value() > engineRunningRpm;
+    if (startPhase == StartPhase::idle) {
+        // A new session on the first of the three from all off, not while running.
+        if (trigger && !startTriggerBefore && !running && startSessions.start()) {
+            ad1.setFastScan(true, ad1SessionMask);
+            ad2.setFastScan(true, ad2SessionMask);
+            for (std::size_t index = 0u; index < sizeof sessionInputIndex; ++index) {
+                sessionInputs[index] = digitalOn(sessionInputIndex[index]);
+                startSessions.state(sessionInputChannel[index], sessionInputs[index], static_cast<std::uint8_t>(index + 1u));
+            }
+            for (const auto channel : sessionSnapshotChannels) {
+                if (const auto* config = measurementPublisher.find(channel)) startSessions.snapshot(*config);
+            }
+            startQuietAt = now;
+            setStartPhase(starter ? StartPhase::cranking : StartPhase::waiting, now);
+            logger.writef(LogLevel::info, "start session #%u: started (%s)", static_cast<unsigned>(startRecorder.recordingNumber()),
+                          starter ? "starter" : preheat ? "preheat" : "ignition");
+        }
+        startTriggerBefore = trigger;
+        return;
+    }
+    startTriggerBefore = trigger;
+    if (startRecorder.state() != sensors::Recorder::State::recording) { // ended itself (memory full)
+        endStartSession(startRecorder.endReason());
+        return;
+    }
+    for (std::size_t index = 0u; index < sizeof sessionInputIndex; ++index) {
+        const bool on = digitalOn(sessionInputIndex[index]);
+        if (on == sessionInputs[index]) continue;
+        sessionInputs[index] = on;
+        startSessions.state(sessionInputChannel[index], on, static_cast<std::uint8_t>(index + 1u));
+    }
+    if (trigger) startQuietAt = now;
+    const auto inPhase = now - startPhaseAt;
+    if (startRecorder.elapsedMs() >= sessionMaxMs) {
+        endStartSession(sensors::Recorder::EndReason::timeout);
+    } else if (startPhase == StartPhase::cranking) {
+        if (!starter) setStartPhase(running ? StartPhase::runningUp : StartPhase::waiting, now);
+    } else if (starter) {
+        setStartPhase(StartPhase::cranking, now);
+    } else if (startPhase == StartPhase::runningUp) {
+        if (!running) setStartPhase(StartPhase::waiting, now);
+        else if (inPhase >= runningUpMs) endStartSession(sensors::Recorder::EndReason::finished);
+    } else if (running) {
+        setStartPhase(StartPhase::runningUp, now);
+    } else if (now - startQuietAt >= quietEndMs) {
+        endStartSession(sensors::Recorder::EndReason::aborted);
+    } else if (startPhase == StartPhase::waiting && inPhase >= waitingLongAfterMs) {
+        setStartPhase(StartPhase::waitingLong, now);
+    }
+}
+
 void inputLogCommand(void*, std::size_t argc, const char* const* argv) {
     if (argc == 2u && (std::strcmp(argv[1], "on") == 0 || std::strcmp(argv[1], "off") == 0)) {
         inputLogging = argv[1][1] == 'n';
@@ -1017,6 +1181,7 @@ extern "C" void engine_mon_app_run(void) {
         updateModuleAnalogs(now);
         updateDigitalChannels(now);
         updateRunTime(now);
+        updateStartSession(now);
     }
     if (clickPending) {
         clickPending = false;

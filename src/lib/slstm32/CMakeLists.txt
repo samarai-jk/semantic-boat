@@ -47,6 +47,7 @@ add_library(slstm32 STATIC
     src/sensors/alarm_annunciator.cpp
     src/sensors/attitude_summary.cpp
     src/sensors/measurement.cpp
+    src/sensors/recorder.cpp
     src/sensors/measurement_console.cpp
     src/sensors/measurement_log.cpp
     src/sensors/registry.cpp

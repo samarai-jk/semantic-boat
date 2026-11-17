@@ -43,6 +43,15 @@ public:
     bool init() override;
     void run() override;
 
+    // Faster scanning for a while (a recording): another data rate, and
+    // only the channels of the mask (bit n = channel n; 0 = all). Takes
+    // effect with the next conversion; the others keep their last value.
+    void setScan(DataRate dataRate, std::uint8_t mask) {
+        dataRate_ = dataRate;
+        mask_ = mask;
+    }
+    DataRate dataRate() const { return dataRate_; }
+
     bool present() const { return present_; }
     std::uint8_t address() const { return address_; }
     bool valid(std::size_t channel) const { return channel < channelCount_ && valid_[channel]; }
@@ -70,6 +79,7 @@ private:
     const Channel* channels_{};
     std::size_t channelCount_{};
     DataRate dataRate_{};
+    std::uint8_t mask_{};
     Phase phase_{Phase::idle};
     std::size_t current_{};
     std::uint32_t startedAt_{};

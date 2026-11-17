@@ -421,6 +421,12 @@ everything that uses measured values (alarms, NMEA 2000, consoles, displays):
 - `MeasurementConsole` adds the service commands `sensors`, `sensor <name>
   [cal|cal2 <ref> | alarm <rule> <threshold> | trend <min> | reset [alarms]
   | stats]`, and `ack`. Full rules are set over CAN (B1S).
+- `Recorder` records several values at rates that change with the
+  situation (phases), with a lead-in ring of the moments before its start,
+  timestamped events, and fixed memory; the application decides when and
+  how fast. B1S serves its recordings as diagnostic sessions
+  (`src/lib/b1s/DIAGNOSTICS.md`); host tests in
+  `src/lib/b1s/tests/diagnostics_tests.cpp`.
 - Host tests: `tests/sensors_tests.cpp` (windows, rules, persistence; build
   command in the file).
 

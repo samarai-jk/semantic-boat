@@ -123,7 +123,11 @@ void Ads1115Driver::run() {
     raw_[current_] = static_cast<std::int16_t>(static_cast<std::uint16_t>(data[0] << 8u | data[1]));
     valid_[current_] = true;
     ++samples_[current_];
-    current_ = current_ + 1u == channelCount_ ? 0u : current_ + 1u;
+    // The next channel of the scan (all, or those of the mask).
+    for (std::size_t step = 0u; step < channelCount_; ++step) {
+        current_ = current_ + 1u == channelCount_ ? 0u : current_ + 1u;
+        if (mask_ == 0u || (mask_ & (1u << current_)) != 0u) break;
+    }
     (void)startConversion(now);
 }
 

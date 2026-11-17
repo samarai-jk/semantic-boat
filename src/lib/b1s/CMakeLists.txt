@@ -3,6 +3,7 @@
 # tools/generate_registry.py after changing registry.yaml.
 add_library(b1s STATIC
     src/channel_settings.cpp
+    src/diagnostic_sessions.cpp
     src/measurement_publisher.cpp
     src/quantity.cpp
     src/service_server.cpp

@@ -57,6 +57,10 @@ public:
 
     bool init() override;
     void run() override;
+    // Fast analog scanning of some inputs (bit n = input n) for a recording:
+    // 860 samples/s, about 2 ms per conversion; fast(false, 0) returns to
+    // the configured rate and all inputs.
+    void setFastScan(bool fast, std::uint8_t mask);
 
     bool adcPresent() const { return adc_.present(); }
     std::uint32_t adcErrors() const { return adc_.errors(); }

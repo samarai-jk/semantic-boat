@@ -89,6 +89,11 @@ update support, and the health, I2C scan, and CAN monitor services.
   configurable like every other channel
   ([ENGINE-SETUP.md](ENGINE-SETUP.md#b1s-channels)). D10 carries the rpm
   pulses and has no state channel.
+- **Start sessions:** every engine start (ignition, preheat or starter on
+  until the engine runs, or until all three are off for 3 s) is recorded
+  at up to 100 Hz into 10 KiB of RAM and fetched by the Pi as a B1S
+  diagnostic session; the Diagnostic Sessions app in Signal K shows it
+  ([DIAGNOSTICS.md](../../../lib/b1s/DIAGNOSTICS.md#engine-mon)).
 - **Engine hours:** B1S channel 21 (quantity `runTime`, Signal K
   `<location>.runTime` in seconds), counted while the engine turns above
   300 rpm, kept in EEPROM (bottom 128 bytes; saved every 3 minutes of

@@ -36,6 +36,12 @@ const std::uint8_t* glyph(char character) {
     static constexpr std::uint8_t comma[5] = {0x00,0x40,0x20,0x00,0x00};
     static constexpr std::uint8_t less[5] = {0x08,0x14,0x22,0x41,0x00};
     static constexpr std::uint8_t greater[5] = {0x00,0x41,0x22,0x14,0x08};
+    static constexpr std::uint8_t asterisk[5] = {0x08,0x2a,0x1c,0x2a,0x08};
+    static constexpr std::uint8_t plus[5] = {0x08,0x08,0x3e,0x08,0x08};
+    static constexpr std::uint8_t leftParenthesis[5] = {0x00,0x1c,0x22,0x41,0x00};
+    static constexpr std::uint8_t rightParenthesis[5] = {0x00,0x41,0x22,0x1c,0x00};
+    static constexpr std::uint8_t slash[5] = {0x20,0x10,0x08,0x04,0x02};
+    static constexpr std::uint8_t percent[5] = {0x23,0x13,0x08,0x64,0x62};
 
     if (character >= 'a' && character <= 'z') character = static_cast<char>(character - 'a' + 'A');
     if (character >= '0' && character <= '9') return digits[character - '0'];
@@ -49,6 +55,12 @@ const std::uint8_t* glyph(char character) {
     if (character == ',') return comma;
     if (character == '<') return less;
     if (character == '>') return greater;
+    if (character == '*') return asterisk;
+    if (character == '+') return plus;
+    if (character == '(') return leftParenthesis;
+    if (character == ')') return rightParenthesis;
+    if (character == '/') return slash;
+    if (character == '%') return percent;
     return space;
 }
 

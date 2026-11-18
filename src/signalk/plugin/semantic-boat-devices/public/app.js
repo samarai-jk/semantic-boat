@@ -9,6 +9,8 @@ let selectedName = null;
 let signalPaths = [];
 let editorSection = 0;
 let editorPage = 0;
+// The widget being edited: a page widget (0, 1, ...) or one pinned to the
+// section (-1 the first, -2 the second, ...).
 let editorWidget = 0;
 const openSourcePanels = new Set();
 
@@ -133,13 +135,24 @@ function historyBytes(document) {
     .reduce((sum, source) => sum + (source.history ? 32 + 4 * source.history.points : 0), 0);
 }
 
-function widgetFits(page, widget, ignored = -1) {
+function cellsOverlap(cell, other) {
+  return cell.column < other.column + (other.column_span ?? 1) && cell.column + (cell.column_span ?? 1) > other.column &&
+    cell.row < other.row + (other.row_span ?? 1) && cell.row + (cell.row_span ?? 1) > other.row;
+}
+
+// Inside the page grid and clear of the page's widgets and the section's
+// pinned widgets (ignored: the widget's own index, as in editorWidget).
+function widgetFits(page, widget, ignored = null, pinned = []) {
   const cell = widget.cell ?? {};
-  const width = cell.column_span ?? 1; const height = cell.row_span ?? 1;
-  if (cell.column < 0 || cell.row < 0 || cell.column + width > page.grid.columns || cell.row + height > page.grid.rows) return false;
-  return !page.widgets.some((other, index) => index !== ignored &&
-    cell.column < other.cell.column + (other.cell.column_span ?? 1) && cell.column + width > other.cell.column &&
-    cell.row < other.cell.row + (other.cell.row_span ?? 1) && cell.row + height > other.cell.row);
+  if (cell.column < 0 || cell.row < 0 || cell.column + (cell.column_span ?? 1) > page.grid.columns ||
+      cell.row + (cell.row_span ?? 1) > page.grid.rows) return false;
+  return !page.widgets.some((other, index) => index !== ignored && cellsOverlap(cell, other.cell)) &&
+    !pinned.some((other, index) => -(index + 1) !== ignored && cellsOverlap(cell, other.cell));
+}
+
+// A pinned widget fits every page of its section.
+function pinnedFits(section, widget, ignored) {
+  return section.pages.length > 0 && section.pages.every(page => widgetFits(page, widget, ignored, section.pinned ?? []));
 }
 
 function newId(entries, prefix) {
@@ -265,7 +278,8 @@ function renderLayout(container, configuration) {
     propertyField(fields, label, page.grid[key] ?? 0, value => editDocument(document => {
       if (value === undefined) throw new Error(`${label} is required`);
       const target = currentPage(document); target.grid[key] = value;
-      if (target.widgets.some(widget => widget.cell.column + (widget.cell.column_span ?? 1) > target.grid.columns || widget.cell.row + (widget.cell.row_span ?? 1) > target.grid.rows)) throw new Error('Grid must contain all widgets');
+      const pinned = document.sections[editorSection].pinned ?? [];
+      if ([...target.widgets, ...pinned].some(widget => widget.cell.column + (widget.cell.column_span ?? 1) > target.grid.columns || widget.cell.row + (widget.cell.row_span ?? 1) > target.grid.rows)) throw new Error('Grid must contain all widgets, the pinned ones too');
     }, true), { number: true, min: key === 'gap' ? 0 : 1, max: 255 });
   }
   container.append(fields);
@@ -306,7 +320,7 @@ function renderLayout(container, configuration) {
   heading.append(icon('plus', 'Add widget', () => editDocument(document => {
     const target = currentPage(document); let cell;
     for (let row = 0; row < target.grid.rows && !cell; row += 1) for (let column = 0; column < target.grid.columns && !cell; column += 1) {
-      if (widgetFits(target, { cell: { column, row } })) cell = { column, row };
+      if (widgetFits(target, { cell: { column, row } }, null, document.sections[editorSection].pinned ?? [])) cell = { column, row };
     }
     if (!cell) throw new Error('No empty cells; enlarge the grid or remove a widget');
     target.widgets.push(available.length ? { type: 'value', source: available[0].id, label: 'VALUE', cell }
@@ -317,13 +331,29 @@ function renderLayout(container, configuration) {
   const preview = text('div', '', 'layout-preview'); preview.setAttribute('aria-label', 'Page layout');
   preview.style.gridTemplateColumns = `repeat(${page.grid.columns},minmax(0,1fr))`;
   preview.style.gridTemplateRows = `repeat(${page.grid.rows},minmax(0,1fr))`;
-  editorWidget = Math.min(editorWidget, Math.max(0, page.widgets.length - 1));
+  const pinned = section.pinned ?? [];
+  if (editorWidget < 0 && -editorWidget > pinned.length) editorWidget = 0;
+  if (editorWidget >= 0) editorWidget = Math.min(editorWidget, Math.max(0, page.widgets.length - 1));
+  // Pinned widgets first, marked; a click edits them like the page's own.
+  for (const [position, widget] of pinned.entries()) {
+    const index = -(position + 1);
+    const tile = text('button', '', `layout-widget pinned ${index === editorWidget ? 'selected' : ''}`);
+    tile.title = `${widget.label || widget.text || widget.type} (pinned: every page of the section)`;
+    tile.setAttribute('aria-label', `Edit pinned widget ${position + 1}: ${tile.title}`);
+    tile.append(text('span', widget.label || widget.text || widget.type), text('small', `pinned · ${widget.source || widget.type}`));
+    if (widgetFits(page, widget, index, pinned)) {
+      tile.style.gridColumn = `${widget.cell.column + 1} / span ${widget.cell.column_span ?? 1}`;
+      tile.style.gridRow = `${widget.cell.row + 1} / span ${widget.cell.row_span ?? 1}`;
+      preview.append(tile);
+    } else { tile.append(text('small', 'Invalid placement on this page')); container.append(tile); }
+    tile.onclick = () => { editorWidget = index; renderProperties(); };
+  }
   for (const [index, widget] of page.widgets.entries()) {
     const tile = text('button', '', `layout-widget ${index === editorWidget ? 'selected' : ''}`);
     tile.title = widget.label || widget.text || widget.type;
     tile.setAttribute('aria-label', `Edit widget ${index + 1}: ${tile.title}`);
     tile.append(text('span', widget.label || widget.text || widget.type), text('small', widget.source || widget.type));
-    if (widgetFits(page, widget, index)) {
+    if (widgetFits(page, widget, index, pinned)) {
       tile.style.gridColumn = `${widget.cell.column + 1} / span ${widget.cell.column_span ?? 1}`;
       tile.style.gridRow = `${widget.cell.row + 1} / span ${widget.cell.row_span ?? 1}`;
       preview.append(tile);
@@ -331,12 +361,18 @@ function renderLayout(container, configuration) {
     tile.onclick = () => { editorWidget = index; renderProperties(); };
   }
   container.append(preview);
-  const widget = page.widgets[editorWidget]; if (!widget) return;
+  const isPinned = editorWidget < 0;
+  const widget = isPinned ? pinned[-editorWidget - 1] : page.widgets[editorWidget]; if (!widget) return;
+  // The list holding the edited widget, and its index there.
+  const currentList = document => isPinned ? document.sections[editorSection].pinned : currentPage(document).widgets;
+  const listIndex = isPinned ? -editorWidget - 1 : editorWidget;
+  const currentWidget = document => currentList(document)[listIndex];
   const widgetFields = text('div', '', 'property-grid widget-fields');
-  container.append(text('h3', `Widget ${editorWidget + 1}: ${widget.label || widget.text || widget.type}`, 'widget-title'));
-  const changeWidget = (key, value) => editDocument(document => { currentPage(document).widgets[editorWidget][key] = value; }, true);
+  container.append(text('h3', isPinned ? `Pinned widget ${listIndex + 1}: ${widget.label || widget.text || widget.type}`
+    : `Widget ${editorWidget + 1}: ${widget.label || widget.text || widget.type}`, 'widget-title'));
+  const changeWidget = (key, value) => editDocument(document => { currentWidget(document)[key] = value; }, true);
   propertyField(widgetFields, 'Widget type', widget.type, value => editDocument(document => {
-    const entry = currentPage(document).widgets[editorWidget]; entry.type = value;
+    const entry = currentWidget(document); entry.type = value;
     if (value === 'value' && !entry.source && available.length) entry.source = available[0].id;
     if (value === 'text' && !entry.text) entry.text = 'Text';
     if (value === 'gauge') { entry.min ??= 0; entry.max ??= 3000; if (!entry.source && available.length) entry.source = available[0].id; }
@@ -367,11 +403,29 @@ function renderLayout(container, configuration) {
   for (const [key, label] of [['column', 'Column'], ['row', 'Row'], ['column_span', 'Column span'], ['row_span', 'Row span']]) {
     propertyField(widgetFields, label, widget.cell[key] ?? (key.endsWith('span') ? 1 : 0), value => editDocument(document => {
       if (value === undefined) throw new Error(`${label} is required`);
-      const target = currentPage(document); const entry = target.widgets[editorWidget]; entry.cell[key] = value;
-      if (!widgetFits(target, entry, editorWidget)) throw new Error('Widget must fit the grid without overlapping another widget');
+      const entry = currentWidget(document); entry.cell[key] = value;
+      const targetSection = document.sections[editorSection];
+      if (isPinned ? !pinnedFits(targetSection, entry, editorWidget) : !widgetFits(currentPage(document), entry, editorWidget, targetSection.pinned ?? []))
+        throw new Error(isPinned ? 'A pinned widget must fit every page without overlapping a widget' : 'Widget must fit the grid without overlapping another widget');
     }, true), { number: true, min: key.endsWith('span') ? 1 : 0, max: 255 });
   }
-  widgetFields.append(icon('trash-2', 'Delete widget', () => editDocument(document => { currentPage(document).widgets.splice(editorWidget, 1); editorWidget = 0; }, true)));
+  // Pinned: shown on every page of the section in the same cell.
+  propertyField(widgetFields, 'Pinned (every page of the section)', isPinned, value => editDocument(document => {
+    const targetSection = document.sections[editorSection];
+    const [entry] = currentList(document).splice(listIndex, 1);
+    if (value) {
+      targetSection.pinned ??= [];
+      if (!pinnedFits(targetSection, entry, null)) throw new Error('The cell must be free on every page of the section');
+      targetSection.pinned.push(entry); editorWidget = -targetSection.pinned.length;
+    } else {
+      currentPage(document).widgets.push(entry); editorWidget = currentPage(document).widgets.length - 1;
+      if (!targetSection.pinned.length) delete targetSection.pinned;
+    }
+  }, true), { checkbox: true });
+  widgetFields.append(icon('trash-2', 'Delete widget', () => editDocument(document => {
+    currentList(document).splice(listIndex, 1); editorWidget = 0;
+    if (isPinned && !document.sections[editorSection].pinned.length) delete document.sections[editorSection].pinned;
+  }, true)));
   container.append(widgetFields);
 }
 
@@ -415,6 +469,7 @@ function renderSources(container, configuration, group) {
           if (page.history_plot?.source === source.id) page.history_plot.source = value;
           for (const widget of page.widgets ?? []) if (widget.source === source.id) widget.source = value;
         }
+        for (const section of sections) for (const widget of section.pinned ?? []) if (widget.source === source.id) widget.source = value;
       }, true));
       const signalKSource = source.provider === undefined || ['signalk', 'signalk-text', 'signalk-ugm3'].includes(source.provider);
       const path = propertyField(row, 'Signal K path', source.path, value => editDocument(document => {
@@ -457,7 +512,8 @@ function renderSources(container, configuration, group) {
         }), { choices: ['last', 'mean', 'minimum', 'maximum'] });
       }
       const remove = icon('trash-2', `Delete source ${source.id}`, () => editDocument(document => { getSources(document).splice(index, 1); }, true));
-      remove.disabled = usedByPlot || sections.some(section => section.pages?.some(page => page.widgets?.some(widget => widget.source === source.id)));
+      remove.disabled = usedByPlot || sections.some(section => section.pinned?.some(widget => widget.source === source.id) ||
+        section.pages?.some(page => page.widgets?.some(widget => widget.source === source.id)));
       if (remove.disabled) remove.title = 'Source is used by a widget or history plot';
       row.append(remove); block.append(row);
     }

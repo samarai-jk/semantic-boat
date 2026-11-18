@@ -215,6 +215,34 @@ Grid coordinates are zero-based. `column_span` and `row_span` default to one.
 Every widget must fit within its page and widget rectangles may not overlap.
 There is no arbitrary-pixel positioning in v1.
 
+### Pinned widgets
+
+A section's optional `pinned` array holds widgets shown on every page of the
+section, for example a gauge on the left while the pages change the values on
+the right. They are written like page widgets, with a `cell` in the page grid.
+Every page of the section must contain the pinned cells and must leave them
+free; give all pages the same grid, so the pinned widget keeps its size. A
+page's graph (GRAPH) still uses the whole screen.
+
+```json
+{
+  "id": "engine",
+  "pinned": [
+    {"type": "gauge", "source": "rpm", "min": 0, "max": 3000,
+     "cell": {"column": 0, "row": 0, "column_span": 2, "row_span": 4}}
+  ],
+  "pages": [
+    {"id": "senders", "grid": {"columns": 4, "rows": 4}, "widgets": [
+      {"type": "value", "source": "oil", "label": "OIL SENDER", "display_unit": "V",
+       "cell": {"column": 2, "row": 0, "column_span": 2}}
+    ]}
+  ]
+}
+```
+
+Switching pages redraws the whole screen as always; the E-paper changes only
+the pixels that differ, so the pinned widget does not flicker.
+
 Supported widgets are:
 
 - `value`: shows a number or short string. It requires `source`; numeric values
@@ -224,6 +252,8 @@ Supported widgets are:
   that many characters inside the widget. The scale therefore stays unchanged
   as live values change. Values longer than the configured maximum are clipped
   with a trailing dot rather than changing font size.
+  A low widget (under 80 pixels) uses small text for its label and shows its
+  unit after the value instead of below it.
   A numeric value may instead name its states: `"states": ["OFF", "ON"]`
   shows the state whose position is the rounded value (0 OFF, 1 ON; values
   above the last state show the last), for switch inputs and the like.

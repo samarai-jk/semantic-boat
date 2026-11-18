@@ -27,6 +27,8 @@ constexpr std::uint8_t compactTextScaleDenominator = 2u;
 constexpr std::uint16_t compactTextHeight = 11u;
 constexpr std::uint16_t regularTextHeight = 14u;
 constexpr std::uint16_t auxiliaryTextGap = 4u;
+constexpr std::uint16_t compactVerticalPadding = 4u;
+constexpr std::uint16_t compactTextGap = 2u;
 
 void copyText(char* destination, std::size_t capacity, const char* source) {
     if (!destination || capacity == 0u) return;
@@ -592,6 +594,17 @@ bool DisplayService::wake() {
     return true;
 }
 
+// A widget of the page, or pinned to the page's section.
+bool DisplayService::shownOn(const WidgetView& widget, const PageView& page) {
+    return widget.pageIndex == page.pageIndex ||
+           (widget.pageIndex == noIndex && widget.sectionIndex == page.sectionIndex);
+}
+
+bool DisplayService::shownOnActivePage(const WidgetView& widget) const {
+    return widget.pageIndex == activePage_ ||
+           (widget.pageIndex == noIndex && widget.sectionIndex == activeSection_);
+}
+
 bool DisplayService::pageUsesSource(std::uint16_t sourceIndex) const {
     if (graphMode_) {
         HistoryPlotView plot{};
@@ -601,7 +614,7 @@ bool DisplayService::pageUsesSource(std::uint16_t sourceIndex) const {
     if (!package_.first(record)) return false;
     do {
         WidgetView widget{};
-        if (!package_.widget(record, widget) || widget.pageIndex != activePage_) continue;
+        if (!package_.widget(record, widget) || !shownOnActivePage(widget)) continue;
         if (widget.sourceIndex == sourceIndex) return true;
         GaugeView gauge{};
         if (package_.gauge(widget, gauge)) {
@@ -618,7 +631,7 @@ bool DisplayService::pageHasLocalClock() const {
     if (!package_.first(record)) return false;
     do {
         WidgetView widget{};
-        if (package_.widget(record, widget) && widget.pageIndex == activePage_ &&
+        if (package_.widget(record, widget) && shownOnActivePage(widget) &&
             widget.type == WidgetType::localClock) return true;
     } while (package_.next(record));
     return false;
@@ -1008,7 +1021,7 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
         if (compact) {
             fitCompactText(label, sizeof label, innerWidth);
             drawCompactCentered(canvas_, x, width,
-                                static_cast<std::uint16_t>(y + widgetVerticalPadding),
+                                static_cast<std::uint16_t>(y + compactVerticalPadding),
                                 label, true);
         } else {
             fitText(label, sizeof label, innerWidth, 2u);
@@ -1096,11 +1109,20 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     copyView(unitText, sizeof unitText, widget.displayUnit);
     if (compact) fitCompactText(unitText, sizeof unitText, innerWidth);
     else fitText(unitText, sizeof unitText, innerWidth, 2u);
-    const auto valueTop = static_cast<std::uint16_t>(y + widgetVerticalPadding +
-        (*label ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
-    const auto valueBottomInset = static_cast<std::uint16_t>(widgetVerticalPadding +
-        (*unitText ? auxiliaryTextHeight + auxiliaryTextGap : 0u) +
-        (*ageText ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
+    // A low cell: less padding, the unit after the value instead of below it.
+    const auto padding = compact ? compactVerticalPadding : widgetVerticalPadding;
+    const auto textGap = compact ? compactTextGap : auxiliaryTextGap;
+    const bool unitInline = compact && *unitText && !position;
+    const auto unitWidth = unitInline
+        ? static_cast<std::uint16_t>(Font5x7::textWidthScaled(unitText, compactTextScaleNumerator,
+                                                              compactTextScaleDenominator) + 4u)
+        : 0u;
+    const auto valueWidth = unitWidth < innerWidth ? static_cast<std::uint16_t>(innerWidth - unitWidth) : innerWidth;
+    const auto valueTop = static_cast<std::uint16_t>(y + padding +
+        (*label ? auxiliaryTextHeight + textGap : 0u));
+    const auto valueBottomInset = static_cast<std::uint16_t>(padding +
+        (*unitText && !unitInline ? auxiliaryTextHeight + textGap : 0u) +
+        (*ageText ? auxiliaryTextHeight + textGap : 0u));
     const auto valueBottom = height > valueBottomInset
         ? static_cast<std::uint16_t>(y + height - valueBottomInset) : valueTop;
     const auto valueHeight = valueBottom > valueTop
@@ -1117,24 +1139,32 @@ void DisplayService::renderWidget(const PageView&, const WidgetView& widget,
     const auto lineHeight = longitudeText
         ? static_cast<std::uint16_t>(valueHeight > positionLineGap ? (valueHeight - positionLineGap) / 2u : 1u)
         : valueHeight;
-    const auto scale = fittedValueScale(innerWidth, lineHeight, digits);
-    fitText(valueText, sizeof valueText, innerWidth, scale);
+    const auto scale = fittedValueScale(valueWidth, lineHeight, digits);
+    fitText(valueText, sizeof valueText, valueWidth, scale);
     if (longitudeText) fitText(longitudeText, std::strlen(longitudeText) + 1u, innerWidth, scale);
     const auto blockHeight = longitudeText ? 14u * scale + positionLineGap : 7u * scale;
     const auto valueY = valueHeight > blockHeight
         ? static_cast<std::uint16_t>(valueTop + (valueHeight - blockHeight) / 2u)
         : valueTop;
-    drawCentered(x, width, valueY, valueText, true, scale);
+    if (unitInline) {
+        // Value and unit centred together, the unit on the value's baseline.
+        const auto textWidth = static_cast<std::uint16_t>(Font5x7::textWidth(valueText, scale) + unitWidth);
+        const auto valueX = textWidth < width ? static_cast<std::uint16_t>(x + (width - textWidth) / 2u) : x;
+        Font5x7::drawText(canvas_, valueX, valueY, valueText, true, scale);
+        Font5x7::drawTextScaled(canvas_, static_cast<std::uint16_t>(valueX + textWidth - unitWidth + 4u),
+                                static_cast<std::uint16_t>(valueY + 7u * scale - compactTextHeight), unitText, true,
+                                compactTextScaleNumerator, compactTextScaleDenominator);
+    } else drawCentered(x, width, valueY, valueText, true, scale);
     if (longitudeText) drawCentered(x, width, static_cast<std::uint16_t>(valueY + 7u * scale + positionLineGap), longitudeText, true, scale);
-    if (*unitText) {
+    if (*unitText && !unitInline) {
         const auto unitY = static_cast<std::uint16_t>(
-            y + height - widgetVerticalPadding - auxiliaryTextHeight -
-            (*ageText ? auxiliaryTextHeight + auxiliaryTextGap : 0u));
+            y + height - padding - auxiliaryTextHeight -
+            (*ageText ? auxiliaryTextHeight + textGap : 0u));
         if (compact) drawCompactCentered(canvas_, x, width, unitY, unitText, true);
         else drawCentered(x, width, unitY, unitText, true, 2u);
     }
     if (*ageText) {
-        const auto ageY = static_cast<std::uint16_t>(y + height - widgetVerticalPadding - auxiliaryTextHeight);
+        const auto ageY = static_cast<std::uint16_t>(y + height - padding - auxiliaryTextHeight);
         canvas_.fillRect(static_cast<std::uint16_t>(x + 4u), static_cast<std::uint16_t>(ageY - 2u),
                          innerWidth, static_cast<std::uint16_t>(auxiliaryTextHeight + 4u), true);
         if (compact) drawCompactCentered(canvas_, x, width, ageY, ageText, false);
@@ -1385,7 +1415,7 @@ void DisplayService::renderWidgetSeparators(const PageView& page,
     if (!package_.first(leftRecord)) return;
     do {
         WidgetView first{};
-        if (!package_.widget(leftRecord, first) || first.pageIndex != page.pageIndex) continue;
+        if (!package_.widget(leftRecord, first) || !shownOn(first, page)) continue;
         const auto firstRight = static_cast<std::uint16_t>(first.column + first.columnSpan);
         const auto firstBottom = static_cast<std::uint16_t>(first.row + first.rowSpan);
 
@@ -1393,8 +1423,7 @@ void DisplayService::renderWidgetSeparators(const PageView& page,
         if (!package_.first(rightRecord)) return;
         do {
             WidgetView second{};
-            if (!package_.widget(rightRecord, second) ||
-                second.pageIndex != page.pageIndex) continue;
+            if (!package_.widget(rightRecord, second) || !shownOn(second, page)) continue;
 
             if (firstRight == second.column) {
                 const auto start = first.row > second.row ? first.row : second.row;
@@ -2176,7 +2205,7 @@ void DisplayService::render() {
     RecordView record{};
     if (package_.first(record)) do {
         WidgetView widget{};
-        if (!package_.widget(record, widget) || widget.pageIndex != activePage_) continue;
+        if (!package_.widget(record, widget) || !shownOnActivePage(widget)) continue;
         const auto x = static_cast<std::uint16_t>(contentX + widget.column * (cellWidth + gap));
         const auto y = static_cast<std::uint16_t>(contentY + widget.row * (cellHeight + gap));
         const auto width = static_cast<std::uint16_t>(widget.columnSpan * cellWidth +
@@ -2250,7 +2279,7 @@ void DisplayService::run() {
             RecordView record{};
             if (package_.first(record)) do {
                 WidgetView widget{}; SourceView source{};
-                if (!package_.widget(record, widget) || widget.pageIndex != activePage_ ||
+                if (!package_.widget(record, widget) || !shownOnActivePage(widget) ||
                     widget.type != WidgetType::value || !package_.sourceByIndex(widget.sourceIndex, source)) continue;
                 const auto* value = data_.get(widget.sourceIndex);
                 const auto current = valueFreshness(source, value, now);

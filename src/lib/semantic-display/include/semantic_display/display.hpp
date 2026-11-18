@@ -205,6 +205,8 @@ private:
     bool actionAvailable(InputAction action) const;
     std::string_view actionLabel(InputAction action, std::string_view configuredLabel) const;
     bool dialogVisible() const;
+    static bool shownOn(const WidgetView& widget, const PageView& page);
+    bool shownOnActivePage(const WidgetView& widget) const;
     bool pageUsesSource(std::uint16_t sourceIndex) const;
     bool pageHasLocalClock() const;
     bool pageByIndex(std::uint16_t index, PageView& page) const;

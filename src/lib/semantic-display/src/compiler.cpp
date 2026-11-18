@@ -550,6 +550,10 @@ private:
                     if (!parseSources(sectionIndex, false)) return false;
                 } else if (key.equals("pages")) {
                     if (!parsePages(sectionIndex)) return false;
+                } else if (key.equals("pinned")) {
+                    // Widgets shown on every page of the section (page index
+                    // noIndex), in the cells the pages leave free.
+                    if (!parseWidgets(sectionIndex, noIndex)) return false;
                 } else if (!reader_.skipValue()) return false;
                 if (!nextObjectMember(done)) return false;
             }
@@ -1125,20 +1129,25 @@ private:
         return true;
     }
 
-    bool pageGrid(std::uint16_t pageIndex, std::uint8_t& columns, std::uint8_t& rows) const {
+    // A widget's cell lies inside its page's grid; a pinned widget's inside
+    // the grid of every page of its section (and the section has pages).
+    bool cellInGrid(std::uint16_t sectionIndex, std::uint16_t pageIndex, const std::uint8_t* payload) const {
+        if (payload[9] == 0u || payload[10] == 0u) return false;
+        bool found{};
         for (std::size_t offset = packageHeaderSize; offset < output_.size();) {
             const auto* record = output_.data() + offset;
             const auto recordSize = read16(record + 2u);
             if (record[0] == static_cast<std::uint8_t>(RecordType::page) && recordSize >= 13u) {
-                const auto* payload = record + 4u;
-                if (read16(payload + 2u) == pageIndex) {
-                    columns = payload[4]; rows = payload[5];
-                    return true;
+                const auto* page = record + 4u;
+                if (pageIndex == noIndex ? read16(page) == sectionIndex : read16(page + 2u) == pageIndex) {
+                    if (static_cast<unsigned>(payload[7]) + payload[9] > page[4] ||
+                        static_cast<unsigned>(payload[8]) + payload[10] > page[5]) return false;
+                    found = true;
                 }
             }
             offset += recordSize;
         }
-        return false;
+        return found;
     }
 
     bool sectionIdentity(std::size_t offset, std::uint16_t& sectionIndex,
@@ -1227,7 +1236,10 @@ private:
                     if (rightRecord[0] == static_cast<std::uint8_t>(RecordType::widget) &&
                         rightSize >= 22u) {
                         const auto* b = rightRecord + 4u;
-                        const bool samePage = read16(a + 2u) == read16(b + 2u);
+                        // Same page, or a pinned widget and any widget of its section.
+                        const bool samePage = read16(a) == read16(b) &&
+                            (read16(a + 2u) == read16(b + 2u) || read16(a + 2u) == noIndex ||
+                             read16(b + 2u) == noIndex);
                         const bool columnsOverlap = a[7] < static_cast<unsigned>(b[7]) + b[9] &&
                             b[7] < static_cast<unsigned>(a[7]) + a[9];
                         const bool rowsOverlap = a[8] < static_cast<unsigned>(b[8]) + b[10] &&
@@ -1326,10 +1338,7 @@ private:
                 if (payload[6] == static_cast<std::uint8_t>(WidgetType::gauge) && !resolveGauge(payload, recordSize - 4u)) {
                     return false;
                 }
-                std::uint8_t columns{}, rows{};
-                if (!pageGrid(pageIndex, columns, rows) || payload[9] == 0u || payload[10] == 0u ||
-                    static_cast<unsigned>(payload[7]) + payload[9] > columns ||
-                    static_cast<unsigned>(payload[8]) + payload[10] > rows) {
+                if (!cellInGrid(sectionIndex, pageIndex, payload)) {
                     fail(CompileError::invalidLayout, "widget is outside its page grid");
                     return false;
                 }

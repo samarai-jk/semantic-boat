@@ -142,6 +142,11 @@ API of the hub: `GET /devices` (transports and all devices),
   Its clickable layout is a placement preview, not a pixel-exact firmware render.
   Add/delete controls manage sections, pages, widgets and sources; the final
   section/page and sources used by widgets are protected from deletion.
+- A widget's **Pinned** checkbox moves it to the section: it is shown on
+  every page of the section in the same cell (the engine gauge, for
+  example), drawn dashed in every page's preview; a click edits it, the
+  checkbox moves it back to the current page. remote-a firmware from
+  2026-11-18 is needed.
 - Each page can select one History source. Expand the source panel and enable
   Record history to set its interval, retained points and reducer. The designer
   shows the shared 4096-byte history RAM budget (remote-a firmware from

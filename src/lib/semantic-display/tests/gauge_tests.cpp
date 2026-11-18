@@ -82,6 +82,107 @@ constexpr auto json = R"json({
       {"type":"value","source":"fwd","label":"FORWARD","states":["OFF","ON"],"max_digits":3,"cell":{"column":1,"row":0}}]}]}]
 })json";
 
+// A gauge pinned to the left half of a section; two pages fill the right.
+constexpr auto pinnedJson = R"json({
+  "schema":"semantic-display/v1",
+  "sections":[{"id":"engine","title":"ENGINE","sources":[
+      {"id":"rpm","path":"propulsion.engine.revolutions","unit":"Hz"},
+      {"id":"ign","path":"engine.ignition.state","unit":""},
+      {"id":"battery","path":"electrical.engine.system.voltage","unit":"V"},
+      {"id":"coolant","path":"electrical.engine.coolant.sender.voltage","unit":"V"}],
+    "pinned":[{"type":"gauge","source":"rpm","display_unit":"rpm","label":"RPM","cell":{"column":0,"row":0,"row_span":2},
+       "min":0,"max":3000,"major":500,"minor":100,"label_step":500,"label_divisor":100,
+       "chips":[{"source":"ign","text":"IGN"}]}],
+    "pages":[{"id":"a","grid":{"columns":2,"rows":2},"widgets":[
+      {"type":"value","source":"battery","label":"BATTERY","decimals":1,"cell":{"column":1,"row":0}},
+      {"type":"value","source":"coolant","label":"COOLANT","decimals":1,"cell":{"column":1,"row":1}}]},
+     {"id":"b","grid":{"columns":2,"rows":2},"widgets":[
+      {"type":"value","source":"ign","label":"IGNITION","states":["OFF","ON"],"cell":{"column":1,"row":0,"row_span":2}}]}]},
+   {"id":"other","sources":[{"id":"x","path":"x"}],
+    "pages":[{"id":"c","grid":{"columns":2,"rows":2},"widgets":[
+      {"type":"value","source":"x","label":"X","cell":{"column":0,"row":0}}]}]}]
+})json";
+
+void pinnedTests(const char* directory) {
+    std::array<std::uint8_t, 4096> bytes{};
+    semantic_display::ConfigCompiler compiler{};
+    const auto compiled = compiler.compile(pinnedJson, bytes.data(), bytes.size());
+    if (!compiled) std::printf("compile error: %s\n", compiled.message);
+    assert(compiled);
+    // Refused: a page widget in a pinned cell, a pinned cell outside a page's
+    // grid, a section with pinned widgets but no pages.
+    std::array<std::uint8_t, 2048> other{};
+    const char* const refused[]{
+        R"({"schema":"semantic-display/v1","sections":[{"id":"s","sources":[{"id":"a","path":"a"}],
+            "pinned":[{"type":"value","source":"a","cell":{"column":0,"row":0}}],
+            "pages":[{"id":"p","grid":{"columns":2,"rows":1},"widgets":[{"type":"value","source":"a","cell":{"column":0,"row":0}}]}]}]})",
+        R"({"schema":"semantic-display/v1","sections":[{"id":"s","sources":[{"id":"a","path":"a"}],
+            "pinned":[{"type":"value","source":"a","cell":{"column":1,"row":0}}],
+            "pages":[{"id":"p","grid":{"columns":2,"rows":1}},{"id":"q","grid":{"columns":1,"rows":1}}]}]})",
+        R"({"schema":"semantic-display/v1","sections":[{"id":"s","sources":[{"id":"a","path":"a"}],
+            "pinned":[{"type":"value","source":"a","cell":{"column":0,"row":0}}],"pages":[]}]})",
+    };
+    for (const auto* json : refused) assert(!compiler.compile(json, other.data(), other.size()));
+    // A pinned widget does not collide with the same cell in another section.
+    assert(compiler.compile(R"({"schema":"semantic-display/v1","sections":[
+        {"id":"s","sources":[{"id":"a","path":"a"}],"pinned":[{"type":"value","source":"a","cell":{"column":0,"row":0}}],
+         "pages":[{"id":"p","grid":{"columns":2,"rows":1}}]},
+        {"id":"t","sources":[{"id":"b","path":"b"}],
+         "pages":[{"id":"q","grid":{"columns":2,"rows":1},"widgets":[{"type":"value","source":"b","cell":{"column":0,"row":0}}]}]}]})",
+        other.data(), other.size()));
+
+    semantic_display::PackageView package{bytes.data(), compiled.packageSize};
+    std::array<semantic_display::ValueSlot, 8> slots{};
+    std::array<std::uint8_t, 256> historyMemory{};
+    semantic_display::DataStore data{slots.data(), slots.size()};
+    semantic_display::HistoryStore history{historyMemory.data(), historyMemory.size()};
+    std::array<std::uint8_t, 16800> frame{};
+    slstm32::epd::MonochromeCanvas canvas{frame.data(), frame.size(), 280u, 480u, slstm32::epd::Rotation::degrees90};
+    FakePanel panel;
+    semantic_display::DisplayService display{{&millis, nullptr, nullptr}, panel, canvas, data, history};
+    assert(display.setPackage(package) && display.init());
+    const float values[]{20.0f, 1.0f, 13.2f, 7.4f};
+    for (std::uint16_t index = 0u; index < 4u; ++index) {
+        assert(data.setNumber(index, values[index], now));
+        display.sourceUpdated(index, true);
+    }
+    const auto settle = [&] {
+        for (int step = 0; step < 5; ++step) { now += 1000u; display.run(); panel.state = slstm32::epd::UpdateState::idle; }
+    };
+    const auto half = [&](bool right) {
+        std::array<std::uint8_t, 240u * 220u> pixels{};
+        for (std::uint16_t y = 36u; y < 246u; ++y)
+            for (std::uint16_t x = 0u; x < 236u; ++x)
+                pixels[(y - 36u) * 240u + x] = black(frame, static_cast<std::uint16_t>(right ? x + 244u : x), y) ? 1u : 0u;
+        return pixels;
+    };
+    settle();
+    save(frame, directory, "pinned-a");
+    const auto gaugeA = half(false), rightA = half(true);
+    std::size_t ink{};
+    for (const auto pixel : gaugeA) ink += pixel;
+    assert(ink > 1000u); // the dial is drawn
+    // The gauge is a source of the page: an rpm update redraws page b too.
+    display.handle(semantic_display::InputAction::nextPage);
+    settle();
+    save(frame, directory, "pinned-b");
+    assert(display.activePage() == 1u);
+    assert(half(false) == gaugeA && half(true) != rightA);
+    assert(data.setNumber(0u, 25.0f, now));
+    display.sourceUpdated(0u, true);
+    assert(display.updatePending());
+    settle();
+    assert(half(false) != gaugeA);
+    // Not in the other section.
+    display.handle(semantic_display::InputAction::nextSection);
+    settle();
+    save(frame, directory, "pinned-other");
+    assert(display.activeSection() == 1u && half(false) != gaugeA);
+    std::size_t otherInk{};
+    for (const auto pixel : half(false)) otherInk += pixel;
+    assert(otherInk < ink);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -166,6 +267,7 @@ int main(int argc, char** argv) {
     save(frame, directory, "apps");
     display.handle(semantic_display::InputAction::action2);
     assert(appResult == semantic_display::SelectionResult::selected && chosenApp == 4u);
+    pinnedTests(directory);
     std::puts("gauge tests passed");
     return 0;
 }

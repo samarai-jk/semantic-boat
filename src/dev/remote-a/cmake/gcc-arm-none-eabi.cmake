@@ -16,8 +16,10 @@ set(CMAKE_ASM_FLAGS_INIT "${MCU_FLAGS} -x assembler-with-cpp")
 # Cache entries, not the *_INIT variables: CMake appends its defaults
 # (-O3 -DNDEBUG for Release) to *_INIT, and the last -O wins. Existing build
 # directories keep their old cache: configure them with --fresh once.
-set(CMAKE_C_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C compiler flags for Debug builds")
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3" CACHE STRING "C++ compiler flags for Debug builds")
+# Debug: -Og (debuggable, about 80 KB smaller); -O0 no longer fits the
+# 224 KB application slot (2026-11-18).
+set(CMAKE_C_FLAGS_DEBUG "-Og -g3" CACHE STRING "C compiler flags for Debug builds")
+set(CMAKE_CXX_FLAGS_DEBUG "-Og -g3" CACHE STRING "C++ compiler flags for Debug builds")
 # remote-a release builds are optimized for speed (-O3, 173 KB of the 224 KB
 # application slot after the bootloader): the display is noticeably more
 # responsive than with -Os (about 111 KB) (decision 2026-10-18). can-mcu

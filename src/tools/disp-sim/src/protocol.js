@@ -21,6 +21,7 @@ export const MessageType = Object.freeze({
   CONFIG_BEGIN: 0x35,
   CONFIG_CHUNK: 0x36,
   CONFIG_END: 0x37,
+  CONFIG_CHECK: 0x38,
   ALERT_UPDATE: 0x40,
   ALERT_REMOVE: 0x41,
   ALERT_ACTION: 0x42,

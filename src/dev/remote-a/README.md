@@ -176,11 +176,30 @@ this device. Choosing **Emergency only** suppresses Info, Warning, and Alarm;
 Emergency is always enabled. This preference is stored with the other device
 settings in EEPROM.
 
+## Apps in the EEPROM
+
+The display keeps up to five compiled apps in its EEPROM (layout and power
+safety: [semantic-display CONFIGURATION.md](../../lib/semantic-display/CONFIGURATION.md#binary-package-and-eeprom)).
+Choosing an app from **Apps** (hold Menu):
+
+- **Cached and unchanged** (the server lists each app with the CRC of its
+  JSON): the display switches to it at once, a restart of about 3 s.
+- **New or changed:** it is downloaded (about 4 s for 9 KB over RS485),
+  compiled and cached; the least recently used app makes room.
+- **Server not connected:** the list shows the cached apps (`APPS
+  (OFFLINE)`), which open without the server.
+- About 5 s after connecting (after a start, and after the server was gone),
+  the display sends the server the name and CRC
+  of the app it runs; if the server's version differs (edited in the
+  designer), the server sends it and the display restarts with it. A failed
+  background update leaves the running app; it is tried again up to three
+  times before an error shows.
+
 ## EEPROM layout
 
-The AT24C256C uses 7-bit I2C address `0x52`. The compiled display-application
-store occupies two large alternating slots. The final 256 bytes are reserved
-for device setup. The settings store currently uses the first 128 bytes of that
+The AT24C256C uses 7-bit I2C address `0x52`. The app cache occupies five
+slots of 6,502 bytes. The final 256 bytes (offset 32,512, read by the
+bootloader as well) are reserved for device setup. The settings store currently uses the first 128 bytes of that
 reservation as two alternating 64-byte records; the remaining 128 bytes stay
 reserved for future settings data.
 

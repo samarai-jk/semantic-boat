@@ -414,19 +414,36 @@ section, page, widget, and optional history-plot records. All integers have an e
 encoding and all relationships use indices, so the bytes can be loaded at any
 address after reboot.
 
-The default 32 KiB EEPROM layout is:
+The 32 KiB EEPROM caches up to five compiled apps (`ConfigCache`), so a
+display switches between them without downloading:
 
 ```text
-slot A: 64-byte header + package bytes
-slot B: 64-byte header + package bytes
-settings: 256 bytes reserved at the end
+slot 0..4: 6,502 bytes each = 128-byte header + package (at most 6,374 bytes)
+settings: 256 bytes at the end (offset 32,512, unchanged)
 ```
 
-The two slots provide atomic replacement and fallback. Settings are reserved
-for device-local preferences and are not part of the display JSON. The physical
-slot capacity is 16,192 bytes, while the current Remote-A runtime deliberately
-limits compiled packages to 8,192 bytes so half of RAM2 remains available to
-future firmware features.
+A header holds the app's name (its catalog filename), the CRC-32 of the JSON
+it was compiled from, the package size and CRC, a generation, a header CRC,
+and a commit marker. The newest generation is the active app. Power-safety:
+
+- A new app goes into a free slot, else an older copy of the same name, else
+  the least recently used app, never over the active one. Its header is
+  written without the commit marker first, then the package, then the
+  marker; until then the previous app stays active. An older copy of the
+  name is removed afterwards.
+- Activating a cached app rewrites only its header with the next
+  generation; a torn header fails its CRC, so the previous app stays
+  active (that cached copy is lost and is downloaded again when chosen).
+- At start the newest app whose package checks out is loaded; a corrupt one
+  falls back to the next.
+
+Earlier firmware (until 2026-11-18) kept one app in two 16 KB slots (A/B). The first
+start of newer firmware takes that app over into a cache slot that does not
+overlap its active copy, so an interrupted take-over, or going back to the
+earlier firmware, still finds it. The taken-over app has no name (it is
+downloaded again when chosen from the list). Settings are reserved for
+device-local preferences and are not part of the display JSON. Remote-A
+installs packages up to 6 KiB and runs packages up to 8 KiB.
 
 ## Uploading through SWD
 

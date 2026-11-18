@@ -76,7 +76,10 @@ slstm32::epd::MonochromeCanvas canvas{frameBuffer.data(), frameBuffer.size(),
     slstm32::epd::Waveshare3In7::panelWidth, slstm32::epd::Waveshare3In7::panelHeight,
     slstm32::epd::Rotation::degrees90};
 
-constexpr semantic_display::ConfigStorageLayout configStorageLayout{};
+// The EEPROM: five cached apps (the newest is active), the settings at the end.
+constexpr semantic_display::ConfigCacheLayout configStorageLayout{};
+static_assert(configStorageLayout.maxPackageBytes() >= 6u * 1024u,
+              "a slot holds the largest installable package");
 // The compiled package remains resident in RAM2 while the display is running.
 // Installation uses the otherwise idle EPD framebuffer as two temporary 8 KiB
 // areas, so no download/compilation workspace consumes normal-operation RAM.
@@ -110,7 +113,7 @@ semantic_display::PackageView displayPackage{};
 semantic_display::DataStore dataStore{values.data(), values.size()};
 semantic_display::HistoryStore historyStore{historyMemory.data(), historyMemory.size()};
 slstm32::drivers::At24c256 configEeprom{remote_a::eepromHardware()};
-semantic_display::ConfigStore configStore{configEeprom, configStorageLayout};
+semantic_display::ConfigCache configStore{configEeprom, configStorageLayout};
 remote_a::DeviceSettingsStore deviceSettingsStore{
     configEeprom,
     static_cast<std::uint32_t>(configStorageLayout.settingsOffset()),
@@ -357,13 +360,29 @@ extern "C" void remote_a_app_init(void) {
     }
 
     remote_a::DeviceMetricsService::beginStackMonitoring();
-    semantic_display::StoredConfigInfo stored{};
+    semantic_display::CachedConfig stored{};
     bool loaded = eepromDetected &&
-        configStore.load(compiledConfig.data(), compiledConfig.size(), stored);
+        configStore.loadActive(compiledConfig.data(), compiledConfig.size(), stored);
     const auto staged = remote_a::stagedConfiguration();
     const char* warningTitle = nullptr;
     const char* warningMessage = nullptr;
     std::size_t packageSize = loaded ? stored.packageSize : 0u;
+    // Compiles firmware JSON as the active app and caches it under its name.
+    const auto compileLocal = [&](std::string_view source, std::string_view name, bool warn) {
+        const auto result = configCompiler.compile(source, compiledConfig.data(), compiledConfig.size());
+        if (!result) return result;
+        packageSize = result.packageSize;
+        stored = {};
+        remote_a::clearEepromIoError();
+        if (!configStore.store(name, compiledConfig.data(), packageSize, stored) && warn && !warningTitle) {
+            warningTitle = "STORAGE ERROR";
+            warningMessage = remote_a::eepromIoErrorMessage();
+        }
+        return result;
+    };
+    const auto crcOf = [](std::string_view json) {
+        return semantic_display::crc32(reinterpret_cast<const std::uint8_t*>(json.data()), json.size());
+    };
 
     if (!eepromDetected) {
         warningTitle = "EEPROM NOT FOUND";
@@ -371,58 +390,41 @@ extern "C" void remote_a_app_init(void) {
     }
 
     if (staged.valid && (!loaded || stored.sourceCrc32 != staged.sourceCrc32)) {
-        const auto result = configCompiler.compile(staged.json, compiledConfig.data(), compiledConfig.size());
-        if (result) {
-            packageSize = result.packageSize;
-            semantic_display::StoredConfigInfo committed{};
-            remote_a::clearEepromIoError();
-            if (!configStore.commit(compiledConfig.data(), packageSize, committed)) {
-                warningTitle = "STORAGE ERROR";
-                warningMessage = remote_a::eepromIoErrorMessage();
-            }
-        } else {
+        const auto result = compileLocal(staged.json, "STAGED (SWD)", true);
+        if (!result) {
             warningTitle = "CONFIG ERROR";
             warningMessage = result.message;
-            loaded = configStore.load(compiledConfig.data(), compiledConfig.size(), stored);
+            loaded = configStore.loadActive(compiledConfig.data(), compiledConfig.size(), stored);
             packageSize = loaded ? stored.packageSize : 0u;
         }
     }
 
     if (!staged.valid && useDevelopmentDisplayConfiguration && !loaded) {
-        const auto source = remote_a::testDisplayConfiguration();
-        const auto result = configCompiler.compile(source, compiledConfig.data(),
-                                             compiledConfig.size());
-        if (!result) Error_Handler();
-        packageSize = result.packageSize;
-        semantic_display::StoredConfigInfo committed{};
-        remote_a::clearEepromIoError();
-        if (!configStore.commit(compiledConfig.data(), packageSize, committed) &&
-            showDevelopmentStorageWarnings && !warningTitle) {
-            warningTitle = "STORAGE ERROR";
-            warningMessage = remote_a::eepromIoErrorMessage();
+        if (!compileLocal(remote_a::testDisplayConfiguration(), "TEST (LOCAL)", showDevelopmentStorageWarnings)) {
+            Error_Handler();
         }
     }
 
+    // The factory app of an earlier firmware is compiled again.
+    const auto factory = remote_a::factoryDisplayConfiguration();
+    if (packageSize != 0u && stored.valid &&
+        stored.nameView() == remote_a::ConfigurationService::localDefaultName &&
+        stored.sourceCrc32 != crcOf(factory)) {
+        packageSize = 0u;
+    }
+
     if (packageSize == 0u) {
-        auto result = configCompiler.compile(staged.valid || !useDevelopmentDisplayConfiguration
-                                           ? remote_a::factoryDisplayConfiguration()
-                                           : remote_a::testDisplayConfiguration(),
-                                       compiledConfig.data(), compiledConfig.size());
+        const bool test = !staged.valid && useDevelopmentDisplayConfiguration;
+        auto result = compileLocal(test ? remote_a::testDisplayConfiguration() : factory,
+                                   test ? "TEST (LOCAL)" : remote_a::ConfigurationService::localDefaultName,
+                                   !useDevelopmentDisplayConfiguration || showDevelopmentStorageWarnings);
         if (!result) {
-            result = configCompiler.compile(remote_a::factoryDisplayConfiguration(), compiledConfig.data(),
-                                      compiledConfig.size());
+            result = compileLocal(factory, remote_a::ConfigurationService::localDefaultName,
+                                  !useDevelopmentDisplayConfiguration || showDevelopmentStorageWarnings);
         }
         if (!result) Error_Handler();
-        packageSize = result.packageSize;
-        semantic_display::StoredConfigInfo committed{};
-        remote_a::clearEepromIoError();
-        if (!configStore.commit(compiledConfig.data(), packageSize, committed) &&
-            (!useDevelopmentDisplayConfiguration || showDevelopmentStorageWarnings) &&
-            !warningTitle) {
-            warningTitle = "STORAGE ERROR";
-            warningMessage = remote_a::eepromIoErrorMessage();
-        }
     }
+    configurationService.setActive(stored);
 
     displayPackage = {compiledConfig.data(), packageSize};
     if (!display.setPackage(displayPackage)) Error_Handler();

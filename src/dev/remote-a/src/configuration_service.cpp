@@ -8,7 +8,9 @@ namespace {
 
 constexpr std::uint32_t transferTimeoutMs = 10000u;
 constexpr std::uint32_t requestTimeoutMs = 10000u;
-constexpr char localDefaultName[] = "DEFAULT (LOCAL)";
+// After connecting, the active app is checked against the server's version
+// once the subscriptions are through.
+constexpr std::uint32_t checkDelayMs = 5000u;
 
 void copyName(char* destination, std::size_t capacity, std::string_view source) {
     if (!destination || capacity == 0u) return;
@@ -40,6 +42,21 @@ void ConfigurationService::indicateTransfer(bool active) {
 
 void ConfigurationService::run() {
     const auto now = runtime_.millis();
+    // Checked again for every gateway session (the server may have
+    // restarted with edited apps).
+    if (link_.gatewaySessions() != checkedSession_) {
+        checkedSession_ = link_.gatewaySessions();
+        connectedAt_ = 0u;
+        checkSent_ = false;
+    }
+    if (!link_.connected()) {
+        connectedAt_ = 0u;
+    } else if (!checkSent_ && active_.valid && active_.nameLength != 0u) {
+        if (connectedAt_ == 0u) connectedAt_ = now == 0u ? 1u : now;
+        else if (static_cast<std::uint32_t>(now - connectedAt_) >= checkDelayMs) {
+            checkSent_ = link_.sendConfigCheck(active_.nameView(), active_.sourceCrc32);
+        }
+    }
     if (requestWhenShown_ && !display_.updatePending()) {
         requestWhenShown_ = false;
         initialDroppedBytes_ = link_.droppedBytes();
@@ -78,7 +95,10 @@ void ConfigurationService::run() {
     }
     if (!transferActive_) return;
     if (static_cast<std::uint32_t>(now - lastTransferAt_) < transferTimeoutMs) return;
-    transferError("CONFIGURATION TRANSFER TIMED OUT.");
+    char message[96]{};
+    std::snprintf(message, sizeof message, "CONFIGURATION TRANSFER TIMED OUT AFTER %lu OF %lu BYTES.",
+                  static_cast<unsigned long>(receivedBytes_), static_cast<unsigned long>(expectedBytes_));
+    transferError(message);
 }
 
 void ConfigurationService::requestList() {
@@ -86,8 +106,7 @@ void ConfigurationService::requestList() {
     listRequestPending_ = false;
     listRequestTimedOut_ = false;
     if (!link_.connected()) {
-        display_.showModal("LINK ERROR", "SERVER IS NOT CONNECTED.",
-                           semantic_display::ModalSeverity::error);
+        showCachedList();
         return;
     }
     if (!link_.requestConfigList()) {
@@ -108,8 +127,9 @@ void ConfigurationService::receiveListBegin(void* context, std::uint16_t listId,
 
 void ConfigurationService::receiveListItem(void* context, std::uint16_t listId,
                                             std::uint16_t index,
-                                            std::string_view name) {
-    static_cast<ConfigurationService*>(context)->listItem(listId, index, name);
+                                            std::string_view name, bool hasCrc,
+                                            std::uint32_t crc) {
+    static_cast<ConfigurationService*>(context)->listItem(listId, index, name, hasCrc, crc);
 }
 
 void ConfigurationService::receiveListEnd(void* context, std::uint16_t listId) {
@@ -141,17 +161,58 @@ void ConfigurationService::listBegin(std::uint16_t listId, std::uint16_t) {
     }
     display_.dismissSelection();
     listId_ = listId;
+    names_[0] = {};
     copyName(names_[0].bytes, sizeof names_[0].bytes, localDefaultName);
     nameCount_ = 1u;
     listActive_ = true;
 }
 
 void ConfigurationService::listItem(std::uint16_t listId, std::uint16_t,
-                                    std::string_view name) {
+                                    std::string_view name, bool hasCrc, std::uint32_t crc) {
     if (!listActive_ || listId != listId_ || name.empty() ||
         name.size() > maxNameBytes || nameCount_ == names_.size()) return;
+    names_[nameCount_] = {};
     copyName(names_[nameCount_].bytes, sizeof names_[nameCount_].bytes, name);
+    names_[nameCount_].hasCrc = hasCrc;
+    names_[nameCount_].crc = crc;
     ++nameCount_;
+}
+
+// Without the server: the apps in the EEPROM (they open without it).
+__attribute__((optimize("Os"))) void ConfigurationService::showCachedList() {
+    semantic_display::CachedConfig entries[semantic_display::maxConfigCacheSlots]{};
+    std::size_t count{};
+    names_[0] = {};
+    copyName(names_[0].bytes, sizeof names_[0].bytes, localDefaultName);
+    nameCount_ = 1u;
+    if (store_.list(entries, semantic_display::maxConfigCacheSlots, count)) {
+        for (std::size_t index = 0u; index < count && nameCount_ < names_.size(); ++index) {
+            const auto name = entries[index].nameView();
+            if (name.empty() || name == localDefaultName) continue;
+            names_[nameCount_] = {};
+            copyName(names_[nameCount_].bytes, sizeof names_[nameCount_].bytes, name);
+            ++nameCount_;
+        }
+    }
+    (void)display_.showSelection("APPS (OFFLINE)",
+        {this, nameCount_, &selectionItem, &selectionCompleted}, 0u, true);
+}
+
+// Opens a cached app (its version matches the server's, or the server is
+// not there to ask): one EEPROM header write and a restart.
+__attribute__((optimize("Os"))) bool ConfigurationService::switchToCached(std::string_view name, bool hasCrc, std::uint32_t crc) {
+    semantic_display::CachedConfig cached{};
+    if (!store_.find(name, cached) || (hasCrc && cached.sourceCrc32 != crc)) return false;
+    // The check reads the package into the framebuffer's memory.
+    display_.setRenderingPaused(true);
+    clearEepromIoError();
+    if (!store_.activate(cached, packageBuffer_, packageCapacity_)) {
+        display_.setRenderingPaused(false);
+        return false;
+    }
+    link_.unsubscribe();
+    actions_.reset(actions_.context);
+    return true;
 }
 
 void ConfigurationService::listEnd(std::uint16_t listId) {
@@ -176,14 +237,20 @@ std::string_view ConfigurationService::selectionItem(void* context, std::size_t 
         ? name.substr(0u, extension) : name;
 }
 
-void ConfigurationService::selectionCompleted(
+__attribute__((optimize("Os"))) void ConfigurationService::selectionCompleted(
     void* context, semantic_display::SelectionResult result, std::size_t index) {
     auto& self = *static_cast<ConfigurationService*>(context);
     if (result == semantic_display::SelectionResult::cancelled) return;
+    if (index >= self.nameCount_) return;
     if (index == 0u) {
-        self.loadDefault();
+        // Cached unless the firmware's own JSON has changed since.
+        const auto source = self.fallback_();
+        const auto crc = semantic_display::crc32(reinterpret_cast<const std::uint8_t*>(source.data()), source.size());
+        if (!self.switchToCached(localDefaultName, true, crc)) self.loadDefault();
         return;
     }
+    const auto& entry = self.names_[index];
+    if (self.switchToCached(entry.bytes, entry.hasCrc, entry.crc)) return;
     self.configRequestPending_ = false;
     self.configRequestTimedOut_ = false;
     if (index >= self.nameCount_ || !self.link_.connected()) {
@@ -205,10 +272,11 @@ void ConfigurationService::selectionCompleted(
     self.requestWhenShown_ = true;
 }
 
-void ConfigurationService::loadDefault() {
+__attribute__((optimize("Os"))) void ConfigurationService::loadDefault() {
     display_.setRenderingPaused(true);
     link_.unsubscribe();
-    if (!compileAndStore(fallback_())) return;
+    requestedTransfer_ = true;
+    if (!compileAndStore(fallback_(), localDefaultName)) return;
     actions_.reset(actions_.context);
 }
 
@@ -219,6 +287,7 @@ void ConfigurationService::configBegin(std::uint16_t transferId, std::uint32_t s
         initialReceiveErrors_ = link_.receiveErrors();
         initialDecodeErrors_ = link_.decodeErrors();
     }
+    requestedTransfer_ = configRequestPending_;
     configRequestPending_ = false;
     if (configRequestTimedOut_) {
         display_.dismissModal();
@@ -277,15 +346,15 @@ void ConfigurationService::configChunk(std::uint16_t transferId, std::uint32_t o
     lastTransferAt_ = runtime_.millis();
 }
 
-bool ConfigurationService::compileAndStore(std::string_view source) {
+__attribute__((optimize("Os"))) bool ConfigurationService::compileAndStore(std::string_view source, std::string_view name) {
     const auto result = compiler_.compile(source, packageBuffer_, packageCapacity_);
     if (!result) {
         transferError(result.message);
         return false;
     }
-    semantic_display::StoredConfigInfo committed{};
+    semantic_display::CachedConfig committed{};
     clearEepromIoError();
-    if (!store_.commit(packageBuffer_, result.packageSize, committed)) {
+    if (!store_.store(name, packageBuffer_, result.packageSize, committed)) {
         transferError(eepromIoErrorMessage());
         return false;
     }
@@ -296,12 +365,20 @@ void ConfigurationService::transferError(const char* message) {
     transferActive_ = false;
     indicateTransfer(false);
     display_.setRenderingPaused(false);
+    // An update the server sent by itself (the check): the running app
+    // stays; checked (and sent) again a few times before the error shows.
+    if (!requestedTransfer_ && backgroundFailures_ < 3u) {
+        ++backgroundFailures_;
+        checkSent_ = false;
+        connectedAt_ = 0u;
+        return;
+    }
     display_.dismissTransientModal();
     display_.showModal("CONFIG ERROR", message,
                        semantic_display::ModalSeverity::error);
 }
 
-void ConfigurationService::configEnd(std::uint16_t transferId) {
+__attribute__((optimize("Os"))) void ConfigurationService::configEnd(std::uint16_t transferId) {
     if (!transferActive_ || transferId != transferId_) return;
     transferActive_ = false;
     if (transferFailed_) {
@@ -337,7 +414,7 @@ void ConfigurationService::configEnd(std::uint16_t transferId) {
     // synchronous compile/EEPROM phase; on failure the link service will
     // publish the active subscriptions again on its next run.
     link_.unsubscribe();
-    if (!compileAndStore({sourceBuffer_, receivedBytes_})) return;
+    if (!compileAndStore({sourceBuffer_, receivedBytes_}, transferName_.bytes)) return;
     display_.dismissTransientModal();
     actions_.reset(actions_.context);
 }

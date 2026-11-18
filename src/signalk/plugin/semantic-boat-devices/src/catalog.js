@@ -81,7 +81,15 @@ class Catalog {
 
   async remove(name) { await fs.unlink(this.filename(name)); }
 
-  async sendList(send, protocol, listId) {
+  // The CRC-32 of the JSON as transfer() sends it; null for a missing or
+  // invalid configuration.
+  async jsonCrc(name, protocol) {
+    try { return protocol.crc32(this.validate(await this.read(name))); } catch { return null; }
+  }
+
+  // withCrc: each item ends with the CRC-32 of its JSON (0 if invalid), so a
+  // display opens its cached copy when unchanged.
+  async sendList(send, protocol, listId, { withCrc = false } = {}) {
     const names = (await this.list()).slice(0, 16);
     const begin = Buffer.alloc(4);
     begin.writeUInt16LE(listId); begin.writeUInt16LE(names.length, 2);
@@ -90,23 +98,30 @@ class Catalog {
       const nameBytes = Buffer.from(name);
       const header = Buffer.alloc(5);
       header.writeUInt16LE(listId); header.writeUInt16LE(index, 2); header[4] = nameBytes.length;
-      await send(protocol.MessageType.CONFIG_LIST_ITEM, Buffer.concat([header, nameBytes]));
+      const parts = [header, nameBytes];
+      if (withCrc) {
+        const crc = Buffer.alloc(4); crc.writeUInt32LE((await this.jsonCrc(name, protocol)) ?? 0); parts.push(crc);
+      }
+      await send(protocol.MessageType.CONFIG_LIST_ITEM, Buffer.concat(parts));
     }
     const end = Buffer.alloc(2); end.writeUInt16LE(listId);
     await send(protocol.MessageType.CONFIG_LIST_END, end);
   }
 
-  async transfer(name, send, protocol, transferId) {
+  // chunkBytes: up to 234 (a 240-byte frame); 32 suits a device that reads
+  // its UART in 64-byte blocks without flow control (point-to-point link).
+  async transfer(name, send, protocol, transferId, { chunkBytes = 32 } = {}) {
+    if (!Number.isInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > 234) throw new Error('Invalid chunk size');
     const data = this.validate(await this.read(name));
     const nameBytes = Buffer.from(name);
     const begin = Buffer.alloc(11);
     begin.writeUInt16LE(transferId); begin.writeUInt32LE(data.length, 2);
     begin.writeUInt32LE(protocol.crc32(data), 6); begin[10] = nameBytes.length;
     await send(protocol.MessageType.CONFIG_BEGIN, Buffer.concat([begin, nameBytes]));
-    for (let offset = 0; offset < data.length; offset += 32) {
+    for (let offset = 0; offset < data.length; offset += chunkBytes) {
       const header = Buffer.alloc(6);
       header.writeUInt16LE(transferId); header.writeUInt32LE(offset, 2);
-      await send(protocol.MessageType.CONFIG_CHUNK, Buffer.concat([header, data.subarray(offset, offset + 32)]));
+      await send(protocol.MessageType.CONFIG_CHUNK, Buffer.concat([header, data.subarray(offset, offset + chunkBytes)]));
     }
     const end = Buffer.alloc(2); end.writeUInt16LE(transferId);
     await send(protocol.MessageType.CONFIG_END, end);

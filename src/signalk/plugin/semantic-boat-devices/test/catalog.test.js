@@ -102,4 +102,23 @@ test('configuration transfer uses contiguous bounded chunks and complete CRC', a
   assert.deepEqual(JSON.parse(bytes), document);
   await catalog.sendList(send, protocol, 8);
   assert.equal(sent.at(-1).type, protocol.MessageType.CONFIG_LIST_END);
+
+  // Full frames on the addressed bus: 234 JSON bytes per chunk.
+  sent.length = 0;
+  await catalog.transfer('test.json', send, protocol, 9, { chunkBytes: 234 });
+  const large = sent.slice(1, -1);
+  assert.ok(large.every(chunk => chunk.payload.length <= 240));
+  assert.equal(large.length, Math.ceil(sent[0].payload.readUInt32LE(2) / 234));
+  assert.deepEqual(JSON.parse(Buffer.concat(large.map(chunk => chunk.payload.subarray(6)))), document);
+  await assert.rejects(catalog.transfer('test.json', send, protocol, 10, { chunkBytes: 235 }));
+
+  // List items with the CRC of the JSON the transfer sends.
+  sent.length = 0;
+  await catalog.sendList(send, protocol, 11, { withCrc: true });
+  const item = sent.find(entry => entry.type === protocol.MessageType.CONFIG_LIST_ITEM);
+  const nameLength = item.payload[4];
+  assert.equal(item.payload.length, 5 + nameLength + 4);
+  assert.equal(item.payload.readUInt32LE(5 + nameLength), bytes.length ? protocol.crc32(bytes) : 0);
+  assert.equal(await catalog.jsonCrc('test.json', protocol), protocol.crc32(bytes));
+  assert.equal(await catalog.jsonCrc('missing.json', protocol), null);
 });

@@ -24,14 +24,16 @@ struct ConfigurationActions {
 class ConfigurationService final : public slstm32::Service {
 public:
     static constexpr std::size_t maxConfigurations = 16u;
-    static constexpr std::size_t maxNameBytes = 47u;
+    static constexpr std::size_t maxNameBytes = semantic_display::maxConfigNameBytes;
+    // Names of the apps compiled from the firmware's own JSON.
+    static constexpr std::string_view localDefaultName{"DEFAULT (LOCAL)"};
 
     using FallbackConfiguration = std::string_view (*)();
 
     ConfigurationService(slstm32::Runtime runtime, DisplayLinkService& link,
                          semantic_display::DisplayService& display,
                          semantic_display::ConfigCompiler& compiler,
-                         semantic_display::ConfigStore& store,
+                         semantic_display::ConfigCache& store,
                          std::uint8_t* packageBuffer, std::size_t packageCapacity,
                          char* sourceBuffer, std::size_t sourceCapacity,
                          FallbackConfiguration fallback,
@@ -43,17 +45,23 @@ public:
 
     bool init() override;
     void run() override;
+    // The apps: from the server, or the cached ones while it is not connected.
     void requestList();
+    // The app running since the start (from the cache), for the update check.
+    void setActive(const semantic_display::CachedConfig& active) { active_ = active; }
 
 private:
     struct Name {
         char bytes[maxNameBytes + 1u]{};
+        std::uint32_t crc{};
+        bool hasCrc{}; // the server's CRC-32 of the app's JSON
     };
 
     static void receiveListBegin(void* context, std::uint16_t listId,
                                  std::uint16_t count);
     static void receiveListItem(void* context, std::uint16_t listId,
-                                std::uint16_t index, std::string_view name);
+                                std::uint16_t index, std::string_view name, bool hasCrc,
+                                std::uint32_t crc);
     static void receiveListEnd(void* context, std::uint16_t listId);
     static void receiveConfigBegin(void* context, std::uint16_t transferId,
                                    std::uint32_t size, std::uint32_t crc,
@@ -69,7 +77,9 @@ private:
 
     void listBegin(std::uint16_t listId, std::uint16_t count);
     void listItem(std::uint16_t listId, std::uint16_t index,
-                  std::string_view name);
+                  std::string_view name, bool hasCrc, std::uint32_t crc);
+    void showCachedList();
+    bool switchToCached(std::string_view name, bool hasCrc, std::uint32_t crc);
     void listEnd(std::uint16_t listId);
     void configBegin(std::uint16_t transferId, std::uint32_t size,
                      std::uint32_t crc, std::string_view name);
@@ -77,7 +87,7 @@ private:
                      const std::uint8_t* data, std::size_t size);
     void configEnd(std::uint16_t transferId);
     void loadDefault();
-    bool compileAndStore(std::string_view source);
+    bool compileAndStore(std::string_view source, std::string_view name);
     void indicateTransfer(bool active);
     void transferError(const char* message);
 
@@ -85,7 +95,13 @@ private:
     DisplayLinkService& link_;
     semantic_display::DisplayService& display_;
     semantic_display::ConfigCompiler& compiler_;
-    semantic_display::ConfigStore& store_;
+    semantic_display::ConfigCache& store_;
+    semantic_display::CachedConfig active_{};
+    std::uint32_t connectedAt_{};
+    std::uint16_t checkedSession_{};
+    std::uint8_t backgroundFailures_{};
+    bool requestedTransfer_{}; // chosen on the display, not sent by the server
+    bool checkSent_{};
     std::uint8_t* packageBuffer_{};
     std::size_t packageCapacity_{};
     char* sourceBuffer_{};

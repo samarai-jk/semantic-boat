@@ -62,7 +62,8 @@ class ControlServer {
           id: device.id, label: device.label, address: device.address, online: device.online,
           queuedFrames: device.detail?.queuedFrames, sentFrames: device.detail?.sentFrames,
           subscriptions: device.detail?.subscriptions?.length, historyRequests: device.detail?.historyRequests,
-          historyError: device.detail?.historyError, recentHistory: device.detail?.recentHistory })) });
+          historyError: device.detail?.historyError, recentHistory: device.detail?.recentHistory,
+          lastTransfer: device.detail?.lastTransfer, lastCheck: device.detail?.lastCheck })) });
       } else if (request.command === 'bus') {
         send({ event: 'done', buses: this.runtime.busStates() });
       } else if (request.command === 'install-config') {

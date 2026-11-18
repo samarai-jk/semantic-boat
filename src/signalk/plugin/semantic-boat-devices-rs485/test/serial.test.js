@@ -99,3 +99,32 @@ test('control frames go ahead of queued values in their own order', async () => 
   link.running = false; link.cancelQueue();
   await Promise.allSettled(sends);
 });
+
+test('a display asks for the app list with CRCs and has its cached app checked', async () => {
+  const protocol = await import('../../../../tools/disp-sim/src/protocol.js');
+  const calls = [];
+  const catalog = {
+    sendList: async (send, proto, listId, options) => { calls.push(['list', options]); },
+    jsonCrc: async name => (name === 'engine.json' ? 0x1234 : null)
+  };
+  const link = new SerialLink({ app: { getSelfPath: () => undefined, subscriptionmanager: { subscribe() {} } },
+    bus: { id: 'test', path: '/dev/fake', baudRate: 115200, type: 'rs485-addressed' }, device: { id: 'test', address: 2 },
+    protocol, catalog, mappings: {}, onError: error => calls.push(['error', error.message]), Port: FakePort });
+  link.install = async name => { calls.push(['install', name]); };
+  link.start();
+  const check = (name, crc) => {
+    const payload = Buffer.alloc(5 + name.length);
+    payload[0] = name.length; payload.write(name, 1); payload.writeUInt32LE(crc, 1 + name.length);
+    return protocol.encodeFrame(protocol.MessageType.CONFIG_CHECK, 0, payload);
+  };
+  link.port.emit('data', Buffer.concat([
+    protocol.encodeFrame(protocol.MessageType.SUBSCRIPTIONS_BEGIN, 1, Buffer.alloc(4)),
+    protocol.encodeFrame(protocol.MessageType.SUBSCRIPTIONS_END, 2),
+    protocol.encodeFrame(protocol.MessageType.CONFIG_LIST_REQUEST, 3, Buffer.from([1])),
+    check('engine.json', 0x1234), check('other.json', 1), check('engine.json', 0x9999)
+  ]));
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(calls, [['list', { withCrc: true }], ['install', 'engine.json']]);
+  assert.equal(link.snapshot().lastCheck.current, false);
+  await link.stop();
+});

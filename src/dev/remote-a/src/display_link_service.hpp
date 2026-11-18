@@ -16,8 +16,9 @@ namespace remote_a {
 struct ConfigMessageReceiver {
     void* context{};
     void (*listBegin)(void* context, std::uint16_t listId, std::uint16_t count){};
+    // hasCrc: the gateway sent the CRC-32 of the app's JSON.
     void (*listItem)(void* context, std::uint16_t listId, std::uint16_t index,
-                     std::string_view name){};
+                     std::string_view name, bool hasCrc, std::uint32_t crc){};
     void (*listEnd)(void* context, std::uint16_t listId){};
     void (*configBegin)(void* context, std::uint16_t transferId, std::uint32_t size,
                         std::uint32_t crc, std::string_view name){};
@@ -74,12 +75,16 @@ public:
                         std::uint16_t points, std::uint8_t reducer);
     bool requestConfigList();
     bool requestConfig(std::string_view name);
+    bool sendConfigCheck(std::string_view name, std::uint32_t crc);
     bool sendAlertAction(semantic_link::AlertAction action, std::uint32_t occurrence,
                          std::string_view id);
     void packageChanged();
     void unsubscribe();
     void shutdown();
     bool connected() const { return peerSeen_; }
+    // Counts gateway sessions: the first frame after a silence and every
+    // gateway Hello (a restarted gateway).
+    std::uint16_t gatewaySessions() const { return gatewaySessions_; }
     std::uint32_t droppedBytes() const { return transport_.droppedBytes(); }
     std::uint32_t receiveErrors() const { return transport_.receiveErrors(); }
     std::uint32_t lastReceiveError() const { return transport_.lastReceiveError(); }
@@ -119,6 +124,7 @@ private:
     std::uint32_t lastAnnouncementAt_{};
     std::uint32_t lastPeerAt_{};
     bool peerSeen_{};
+    std::uint16_t gatewaySessions_{};
     bool shuttingDown_{};
     std::uint8_t sequence_{};
 };

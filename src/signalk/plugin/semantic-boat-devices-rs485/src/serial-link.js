@@ -157,14 +157,34 @@ class SerialLink {
     const { MessageType } = this.protocol;
     const catalog = this.catalog();
     if (!catalog) return; // no hub: the display keeps its installed configuration
-    if (message.type === MessageType.CONFIG_LIST_REQUEST && message.payload.length === 0 && !this.listActive) {
+    // Payload: none, or flags (bit 0: items with the CRC of their JSON).
+    if (message.type === MessageType.CONFIG_LIST_REQUEST && message.payload.length <= 1 && !this.listActive) {
       this.listActive = true;
-      void catalog.sendList((...args) => this.send(...args), this.protocol, ++this.listId & 65535)
+      const withCrc = message.payload.length === 1 && (message.payload[0] & 1) !== 0;
+      void catalog.sendList((...args) => this.send(...args), this.protocol, ++this.listId & 65535, { withCrc })
         .catch(this.onError).finally(() => { this.listActive = false; });
     } else if (message.type === MessageType.CONFIG_REQUEST && message.payload.length > 1 &&
                message.payload[0] === message.payload.length - 1) {
       void this.install(message.payload.subarray(1).toString('utf8')).catch(this.onError);
+    } else if (message.type === MessageType.CONFIG_CHECK && message.payload.length > 5 &&
+               message.payload[0] === message.payload.length - 5) {
+      const name = message.payload.subarray(1, 1 + message.payload[0]).toString('utf8');
+      void this.check(name, message.payload.readUInt32LE(1 + message.payload[0])).catch(this.onError);
     }
+  }
+
+  // The display runs a cached app: send it again if the catalog's version
+  // differs (an unknown name, a local app, is left alone).
+  async check(name, crc) {
+    const catalog = this.catalog();
+    const current = catalog ? await catalog.jsonCrc(name, this.protocol) : null;
+    this.lastCheck = { name, at: new Date().toISOString(), current: current === null || current === crc };
+    if (current === null || current === crc) return;
+    // The install waits for the subscription snapshot.
+    for (let attempt = 0; attempt < 15 && !this.session.ready; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    await this.install(name);
   }
 
   // Graph history for one of the display's sources (hub history, PROTOCOL.md
@@ -204,7 +224,10 @@ class SerialLink {
     this.transferActive = true;
     this.lastTransfer = { name, state: 'sending', startedAt: Date.now() };
     try {
-      await catalog.transfer(name, (...args) => this.send(...args), this.protocol, ++this.transferId & 65535);
+      // Addressed RS485 delivers one frame per turn: full frames. A
+      // point-to-point UART keeps 32-byte chunks (64-byte receive blocks).
+      await catalog.transfer(name, (...args) => this.send(...args), this.protocol, ++this.transferId & 65535,
+        { chunkBytes: this.addressed ? 234 : 32 });
       this.lastTransfer.state = 'sent-awaiting-device-restart';
     } catch (error) {
       this.lastTransfer.state = 'failed';
@@ -234,7 +257,7 @@ class SerialLink {
     return { ...this.session.snapshot(), subscriptions, bus: this.bus.id, open: this.port.isOpen,
       transport: this.bus.type ?? 'serial-point-to-point', error: this.port.lastError ?? this.error, receivedFrames: this.receivedFrames,
       sentFrames: this.sentFrames, decodeErrors: this.decoder.errors + (this.port.busDecodeErrors ?? 0), queuedFrames: this.queue.length,
-      lastTransfer: this.lastTransfer, historyRequests: this.historyRequests ?? 0, historyError: this.historyError ?? null,
+      lastTransfer: this.lastTransfer, lastCheck: this.lastCheck ?? null, historyRequests: this.historyRequests ?? 0, historyError: this.historyError ?? null,
       recentHistory: this.recentHistory ?? [] };
   }
 }

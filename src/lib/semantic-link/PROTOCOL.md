@@ -83,14 +83,15 @@ device address routes traffic but is not authentication or a hardware UID.
 | `0x12` | Unavailable value | Gateway to device | source index `u16` |
 | `0x20` | Ping | Either | Sender uptime in ms `u32` |
 | `0x21` | Pong | Either | The ping payload being answered |
-| `0x30` | Config list request | Device to gateway | Empty |
+| `0x30` | Config list request | Device to gateway | Empty, or flags `u8` (bit 0: items with CRC) |
 | `0x31` | Config list begin | Gateway to device | list ID `u16`, item count `u16` |
-| `0x32` | Config list item | Gateway to device | list ID `u16`, item index `u16`, name length `u8`, UTF-8 filename |
+| `0x32` | Config list item | Gateway to device | list ID `u16`, item index `u16`, name length `u8`, UTF-8 filename, then JSON CRC-32 `u32` if requested |
 | `0x33` | Config list end | Gateway to device | list ID `u16` |
 | `0x34` | Config request | Device to gateway | name length `u8`, UTF-8 filename |
 | `0x35` | Config begin | Gateway to device | transfer ID `u16`, JSON size `u32`, JSON CRC-32 `u32`, name length `u8`, UTF-8 filename |
 | `0x36` | Config chunk | Gateway to device | transfer ID `u16`, byte offset `u32`, JSON bytes |
 | `0x37` | Config end | Gateway to device | transfer ID `u16` |
+| `0x38` | Config check | Device to gateway | name length `u8`, UTF-8 filename, JSON CRC-32 `u32` of the app the device runs |
 | `0x40` | Alert update | Gateway to device | level `u8`, flags `u8`, occurrence `u32`, ID length `u8`, title length `u8`, message length `u8`, then ID, title, and message UTF-8 bytes |
 | `0x41` | Alert remove | Gateway to device | ID length `u8`, alarm ID UTF-8 bytes |
 | `0x42` | Alert action | Device to gateway | action `u8`, occurrence `u32`, ID length `u8`, alarm ID UTF-8 bytes |
@@ -159,10 +160,23 @@ received. The largest chunk contains 234 JSON bytes because its six-byte
 transfer header must fit the 240-byte frame payload.
 
 Senders should pace chunks for the receiving device rather than relying on
-request/acknowledgement flow control. `disp-sim` uses 32-byte JSON chunks with
-a 30 ms inter-frame gap so every encoded chunk fits Remote-A's 64-byte UART
-receive block and leaves ample processing time. This is a gateway
-implementation choice, not another protocol state or handshake.
+request/acknowledgement flow control. On a point-to-point UART, `disp-sim` and
+the gateway use 32-byte JSON chunks with a 30 ms inter-frame gap so every
+encoded chunk fits Remote-A's 64-byte UART receive block and leaves ample
+processing time. On addressed RS485 (version 2) the device takes one frame per
+turn, so the gateway sends full 234-byte chunks (a 9 KB app in about 4 s
+instead of 23 s). This is a gateway implementation choice, not another
+protocol state or handshake.
+
+**Cached apps.** A device that keeps several compiled apps asks for the list
+with flag bit 0; the gateway then ends each item with the CRC-32 of the JSON
+it would send for it (0 if the file is invalid). The device opens its cached
+copy when that CRC equals the one it was compiled from, and requests the app
+otherwise. A gateway that sends no CRC (an item of 5 + name bytes) leaves the
+choice to the device. After connecting, the device sends `Config check` for
+the app it runs; a gateway whose catalog has that name with another CRC
+sends the app (begin, chunks, end) as if requested. Unknown names (apps
+compiled from the device's own JSON) are ignored.
 
 The CRC in `Config begin` is standard CRC-32/ISO-HDLC over the complete JSON
 file: reflected polynomial `0xedb88320`, initial value `0xffffffff`, and final

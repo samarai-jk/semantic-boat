@@ -35,7 +35,18 @@ void DisplayLinkService::transportRestored() {
 }
 
 bool DisplayLinkService::requestConfigList() {
-    return send(semantic_link::MessageType::configListRequest);
+    // Flag bit 0: list the apps with the CRC-32 of their JSON.
+    const std::uint8_t flags = 0x01u;
+    return send(semantic_link::MessageType::configListRequest, &flags, 1u);
+}
+
+bool DisplayLinkService::sendConfigCheck(std::string_view name, std::uint32_t crc) {
+    if (name.empty() || name.size() > 0xffu || name.size() + 5u > semantic_link::maxPayloadSize) return false;
+    std::array<std::uint8_t, semantic_link::maxPayloadSize> payload{};
+    payload[0] = static_cast<std::uint8_t>(name.size());
+    std::memcpy(payload.data() + 1u, name.data(), name.size());
+    semantic_link::writeU32(payload.data() + 1u + name.size(), crc);
+    return send(semantic_link::MessageType::configCheck, payload.data(), name.size() + 5u);
 }
 
 bool DisplayLinkService::requestConfig(std::string_view name) {
@@ -222,6 +233,7 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
     const auto firstPeerFrame = !peerSeen_;
     peerSeen_ = true;
     lastPeerAt_ = runtime_.millis();
+    if (firstPeerFrame) ++gatewaySessions_;
     if (firstPeerFrame) {
         // The gateway may have attached after our one-shot startup frames were
         // sent. Re-announce the complete state for any first valid peer frame,
@@ -230,6 +242,7 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
         sendSubscriptions();
     }
     if (message.type == semantic_link::MessageType::hello) {
+        if (!firstPeerFrame) ++gatewaySessions_;
         if (!firstPeerFrame) {
             sendHello();
             sendSubscriptions();
@@ -247,12 +260,15 @@ void DisplayLinkService::handle(const semantic_link::MessageView& message) {
         }
         return;
     }
+    // An item may end with the CRC-32 of the app's JSON.
     if (message.type == semantic_link::MessageType::configListItem && size >= 5u &&
-        payload[4] == size - 5u) {
+        (payload[4] == size - 5u || payload[4] + 9u == size)) {
+        const bool hasCrc = payload[4] + 9u == size;
         if (configReceiver_.listItem) {
             configReceiver_.listItem(configReceiver_.context,
                 semantic_link::readU16(payload), semantic_link::readU16(payload + 2u),
-                {reinterpret_cast<const char*>(payload + 5u), payload[4]});
+                {reinterpret_cast<const char*>(payload + 5u), payload[4]}, hasCrc,
+                hasCrc ? semantic_link::readU32(payload + 5u + payload[4]) : 0u);
         }
         return;
     }

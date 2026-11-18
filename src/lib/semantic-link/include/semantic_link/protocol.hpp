@@ -35,6 +35,9 @@ enum class MessageType : std::uint8_t {
     configBegin = 0x35u,
     configChunk = 0x36u,
     configEnd = 0x37u,
+    // The device's active app and the CRC of its JSON; the gateway sends
+    // the app again if its catalog has a newer version (PROTOCOL.md).
+    configCheck = 0x38u,
     alertUpdate = 0x40u,
     alertRemove = 0x41u,
     alertAction = 0x42u,

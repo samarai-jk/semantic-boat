@@ -161,16 +161,15 @@ void ConfigurationService::listBegin(std::uint16_t listId, std::uint16_t) {
     }
     display_.dismissSelection();
     listId_ = listId;
-    names_[0] = {};
-    copyName(names_[0].bytes, sizeof names_[0].bytes, localDefaultName);
-    nameCount_ = 1u;
+    nameCount_ = 0u;
     listActive_ = true;
 }
 
 void ConfigurationService::listItem(std::uint16_t listId, std::uint16_t,
                                     std::string_view name, bool hasCrc, std::uint32_t crc) {
-    if (!listActive_ || listId != listId_ || name.empty() ||
-        name.size() > maxNameBytes || nameCount_ == names_.size()) return;
+    // One entry stays free for the local app.
+    if (!listActive_ || listId != listId_ || name.empty() || name == localDefaultName ||
+        name.size() > maxNameBytes || nameCount_ + 1u >= names_.size()) return;
     names_[nameCount_] = {};
     copyName(names_[nameCount_].bytes, sizeof names_[nameCount_].bytes, name);
     names_[nameCount_].hasCrc = hasCrc;
@@ -182,11 +181,9 @@ void ConfigurationService::listItem(std::uint16_t listId, std::uint16_t,
 __attribute__((optimize("Os"))) void ConfigurationService::showCachedList() {
     semantic_display::CachedConfig entries[semantic_display::maxConfigCacheSlots]{};
     std::size_t count{};
-    names_[0] = {};
-    copyName(names_[0].bytes, sizeof names_[0].bytes, localDefaultName);
-    nameCount_ = 1u;
+    nameCount_ = 0u;
     if (store_.list(entries, semantic_display::maxConfigCacheSlots, count)) {
-        for (std::size_t index = 0u; index < count && nameCount_ < names_.size(); ++index) {
+        for (std::size_t index = 0u; index < count && nameCount_ + 1u < names_.size(); ++index) {
             const auto name = entries[index].nameView();
             if (name.empty() || name == localDefaultName) continue;
             names_[nameCount_] = {};
@@ -194,6 +191,7 @@ __attribute__((optimize("Os"))) void ConfigurationService::showCachedList() {
             ++nameCount_;
         }
     }
+    arrangeList();
     (void)display_.showSelection("APPS (OFFLINE)",
         {this, nameCount_, &selectionItem, &selectionCompleted}, 0u, true);
 }
@@ -220,16 +218,49 @@ void ConfigurationService::listEnd(std::uint16_t listId) {
     listActive_ = false;
     display_.dismissTransientModal();
     indicateTransfer(false);
+    arrangeList();
     // Tiles like the page menu.
     (void)display_.showSelection("APPS",
         {this, nameCount_, &selectionItem, &selectionCompleted}, 0u, true);
 }
 
-std::string_view ConfigurationService::selectionItem(void* context, std::size_t index) {
-    auto& self = *static_cast<ConfigurationService*>(context);
-    if (index >= self.nameCount_) return {};
+// The apps in the order to show: recently opened first (the cache's
+// generations), then the server's others in its order, the local app last;
+// cached apps whose version matches get an asterisk.
+__attribute__((optimize("Os"))) void ConfigurationService::arrangeList() {
+    semantic_display::CachedConfig entries[semantic_display::maxConfigCacheSlots]{};
+    std::size_t count{};
+    if (!store_.list(entries, semantic_display::maxConfigCacheSlots, count)) count = 0u;
+    // The local app, cached unless the firmware's own JSON has changed.
+    auto& local = names_[nameCount_++];
+    local = {};
+    copyName(local.bytes, sizeof local.bytes, localDefaultName);
+    local.local = true;
+    local.hasCrc = true;
+    const auto source = fallback_();
+    local.crc = semantic_display::crc32(reinterpret_cast<const std::uint8_t*>(source.data()), source.size());
+    for (std::size_t position = 0u; position < nameCount_; ++position) {
+        auto& entry = names_[position];
+        entry.rank = static_cast<std::uint16_t>(entry.local ? 0xffffu : 0x100u + position);
+        for (std::size_t index = 0u; index < count; ++index) {
+            if (entries[index].nameView() != std::string_view{entry.bytes}) continue;
+            if (!entry.local) entry.rank = static_cast<std::uint16_t>(index);
+            entry.cached = !entry.hasCrc || entries[index].sourceCrc32 == entry.crc;
+            break;
+        }
+    }
+    for (std::size_t position = 1u; position < nameCount_; ++position) {
+        for (auto index = position; index != 0u && names_[index].rank < names_[index - 1u].rank; --index) {
+            const auto swap = names_[index];
+            names_[index] = names_[index - 1u];
+            names_[index - 1u] = swap;
+        }
+    }
+}
 
-    auto name = std::string_view{self.names_[index].bytes};
+std::string_view ConfigurationService::baseName(std::size_t index) const {
+    if (index >= nameCount_) return {};
+    auto name = std::string_view{names_[index].bytes};
     const auto separator = name.find_last_of("/\\");
     if (separator != std::string_view::npos) name.remove_prefix(separator + 1u);
     const auto extension = name.find_last_of('.');
@@ -237,19 +268,28 @@ std::string_view ConfigurationService::selectionItem(void* context, std::size_t 
         ? name.substr(0u, extension) : name;
 }
 
+std::string_view ConfigurationService::selectionItem(void* context, std::size_t index) {
+    auto& self = *static_cast<ConfigurationService*>(context);
+    const auto name = self.baseName(index);
+    if (name.empty() || !self.names_[index].cached) return name;
+    // The display copies the text at once, so one buffer serves all tiles.
+    copyName(self.label_, sizeof self.label_ - 1u, name);
+    const auto length = std::char_traits<char>::length(self.label_);
+    self.label_[length] = '*';
+    self.label_[length + 1u] = '\0';
+    return {self.label_, length + 1u};
+}
+
 __attribute__((optimize("Os"))) void ConfigurationService::selectionCompleted(
     void* context, semantic_display::SelectionResult result, std::size_t index) {
     auto& self = *static_cast<ConfigurationService*>(context);
     if (result == semantic_display::SelectionResult::cancelled) return;
     if (index >= self.nameCount_) return;
-    if (index == 0u) {
-        // Cached unless the firmware's own JSON has changed since.
-        const auto source = self.fallback_();
-        const auto crc = semantic_display::crc32(reinterpret_cast<const std::uint8_t*>(source.data()), source.size());
-        if (!self.switchToCached(localDefaultName, true, crc)) self.loadDefault();
+    const auto& entry = self.names_[index];
+    if (entry.local) {
+        if (!self.switchToCached(localDefaultName, entry.hasCrc, entry.crc)) self.loadDefault();
         return;
     }
-    const auto& entry = self.names_[index];
     if (self.switchToCached(entry.bytes, entry.hasCrc, entry.crc)) return;
     self.configRequestPending_ = false;
     self.configRequestTimedOut_ = false;
@@ -260,7 +300,7 @@ __attribute__((optimize("Os"))) void ConfigurationService::selectionCompleted(
     }
     // Show what happens first; run() sends the request once it is on the panel.
     char message[128]{};
-    const auto name = selectionItem(&self, index);
+    const auto name = self.baseName(index);
     std::snprintf(message, sizeof message, "RECEIVING %.*s. THE DISPLAY RESTARTS WHEN IT IS INSTALLED.",
                   static_cast<int>(name.size()), name.data());
     for (auto* cursor = message; *cursor; ++cursor) {

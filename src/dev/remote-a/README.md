@@ -180,7 +180,10 @@ settings in EEPROM.
 
 The display keeps up to five compiled apps in its EEPROM (layout and power
 safety: [semantic-display CONFIGURATION.md](../../lib/semantic-display/CONFIGURATION.md#binary-package-and-eeprom)).
-Choosing an app from **Apps** (hold Menu):
+Choosing an app from **Apps** (hold Menu). The list starts with the apps
+opened most recently (the running one first), then the server's other apps,
+and ends with the local default app; an asterisk (`ENGINE*`) marks an app
+that opens from the EEPROM:
 
 - **Cached and unchanged** (the server lists each app with the CRC of its
   JSON): the display switches to it at once, a restart of about 3 s.

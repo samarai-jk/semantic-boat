@@ -54,7 +54,10 @@ private:
     struct Name {
         char bytes[maxNameBytes + 1u]{};
         std::uint32_t crc{};
+        std::uint16_t rank{}; // list order: recently opened first
         bool hasCrc{}; // the server's CRC-32 of the app's JSON
+        bool cached{}; // opens from the EEPROM (shown with an asterisk)
+        bool local{};  // the firmware's own app, last in the list
     };
 
     static void receiveListBegin(void* context, std::uint16_t listId,
@@ -79,6 +82,8 @@ private:
     void listItem(std::uint16_t listId, std::uint16_t index,
                   std::string_view name, bool hasCrc, std::uint32_t crc);
     void showCachedList();
+    void arrangeList();
+    std::string_view baseName(std::size_t index) const;
     bool switchToCached(std::string_view name, bool hasCrc, std::uint32_t crc);
     void listEnd(std::uint16_t listId);
     void configBegin(std::uint16_t transferId, std::uint32_t size,
@@ -110,6 +115,7 @@ private:
     ConfigurationActions actions_{};
     std::array<Name, maxConfigurations> names_{};
     Name transferName_{};
+    char label_[maxNameBytes + 2u]{}; // the tile text being drawn
     std::size_t nameCount_{};
     std::size_t receivedBytes_{};
     std::uint32_t expectedBytes_{};

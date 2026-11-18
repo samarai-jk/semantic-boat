@@ -174,7 +174,7 @@ bool displayActionAvailable(void*, semantic_display::InputAction action,
 
 bool executeDisplayAction(void*, semantic_display::InputAction action,
                           std::uint16_t, std::uint16_t) {
-    // Short press: page menu. Holding B5 refreshes (DisplayInputService).
+    // Short press: page menu. Holding B5 opens the apps (DisplayInputService).
     if (action == semantic_display::InputAction::action2) (void)display.showPageMenu();
     return false;
 }
@@ -252,6 +252,10 @@ void openSetup(void* context) {
     static_cast<DisplayInputActionContext*>(context)->setup->open();
 }
 
+void openApps(void* context) {
+    static_cast<DisplayInputActionContext*>(context)->setup->openApps();
+}
+
 void inputReset(void* context) {
     static_cast<DisplayInputActionContext*>(context)->shutdown->requestReset();
 }
@@ -262,7 +266,7 @@ bool inputSetSleeping(void* context, bool sleeping) {
 
 remote_a::DisplayInputService displayInput{
     runtime, events, buttons, display, feedback,
-    {&displayInputActionContext, &openSetup, &inputReset, &inputSetSleeping}};
+    {&displayInputActionContext, &openSetup, &openApps, &inputReset, &inputSetSleeping}};
 
 void disableInactiveDataUart() {
 #if REMOTE_A_USE_STLINK_DATA_LINK

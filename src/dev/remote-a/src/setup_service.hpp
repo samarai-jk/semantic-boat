@@ -31,20 +31,20 @@ public:
 
     bool init() override;
     void run() override {}
+    // Settings (held Down); the apps the server offers (held Menu).
     void open();
+    void openApps();
     void setStorageAvailable(bool available) { storageAvailable_ = available; }
     bool setSleeping(bool sleeping);
     const DeviceSettings& settings() const { return settings_; }
 
 private:
-    static std::string_view mainItem(void*, std::size_t index);
     static std::string_view settingsItem(void*, std::size_t index);
     static std::string_view beepItem(void*, std::size_t index);
     static std::string_view ledItem(void*, std::size_t index);
     static std::string_view alertLevelItem(void*, std::size_t index);
     static std::string_view developerModeItem(void*, std::size_t index);
     static std::string_view rs485AddressItem(void*, std::size_t index);
-    static void mainCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void settingsCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void beepCompleted(void*, semantic_display::SelectionResult, std::size_t index);
     static void ledCompleted(void*, semantic_display::SelectionResult, std::size_t index);

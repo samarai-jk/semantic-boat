@@ -170,14 +170,14 @@ The remote-a mapping is:
 
 | Button | Action |
 | --- | --- |
-| B0 / B1 | Previous / next section; hold B0 for three seconds to sleep, B1 for one second for setup |
-| B2 / B3 | Previous / next page |
+| B0 / B1 | Previous / next section; hold B0 for three seconds to sleep, B1 for one second for the settings |
+| B2 / B3 | Previous / next page; hold B2 for one second for a full display refresh |
 | B4 | Action 1: toggle GRAPH / VALUES when the page assigns a history plot |
-| B5 | Action 2 (`MENU`): press for the page menu (sections, then pages, as tiles), hold one second for a full display refresh |
+| B5 | Action 2 (`MENU`): press for the page menu (sections, then pages, as tiles), hold one second for the apps |
 
-B0, B1, and B5 act when released, so their long presses (switch off, setup,
-refresh) work on every screen, in menus and dialogs too; only a full-screen
-alert takes them over. After B0 has been held for one second, remote-a displays a two-second countdown
+B0, B1, B2 and B5 act when released, so their long presses (switch off,
+settings, refresh, apps) work on every screen, in menus and dialogs too; only
+a full-screen alert takes them over. After B0 has been held for one second, remote-a displays a two-second countdown
 and asks the user to keep holding it. Releasing B0 cancels the countdown and
 performs the normal previous-section action. At shutdown it sounds one long
 beep. Once asleep, the retained E-paper image is blank apart from one small

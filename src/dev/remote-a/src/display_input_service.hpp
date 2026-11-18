@@ -12,6 +12,7 @@ namespace remote_a {
 struct DisplayInputActions {
     void* context{};
     void (*openSetup)(void* context){};
+    void (*openApps)(void* context){};
     void (*reset)(void* context){};
     bool (*setSleeping)(void* context, bool sleeping){};
 };
@@ -39,9 +40,11 @@ private:
     std::uint32_t upPressedAt_{};
     std::uint32_t downPressedAt_{};
     std::uint32_t menuPressedAt_{};
+    std::uint32_t leftPressedAt_{};
     bool upHoldPending_{};
     bool downHoldPending_{};
     bool menuHoldPending_{};
+    bool leftHoldPending_{};
     bool wakeReleasePending_{};
     std::uint8_t upHoldStage_{};
     std::uint8_t wakeButtonId_{};

@@ -9,8 +9,11 @@ constexpr std::uint32_t releaseSettleMs = 50u;
 constexpr std::uint32_t sleepPromptMs = 1000u;
 constexpr std::uint32_t sleepCountdownMs = 2000u;
 constexpr std::uint32_t sleepHoldMs = 3000u;
+// B1: a press moves to the next section, holding it opens the settings.
 constexpr std::uint32_t setupHoldMs = 1000u;
-// B5: a press opens the page menu, holding it refreshes the whole display.
+// B5: a press opens the page menu, holding it the apps.
+constexpr std::uint32_t appsHoldMs = 1000u;
+// B2: a press goes to the previous page, holding it refreshes the whole display.
 constexpr std::uint32_t refreshHoldMs = 1000u;
 
 } // namespace
@@ -34,6 +37,7 @@ void DisplayInputService::onButton(std::uint8_t id) {
         upHoldPending_ = false;
         downHoldPending_ = false;
         menuHoldPending_ = false;
+        leftHoldPending_ = false;
         upHoldStage_ = 0u;
         if (display_.wake()) {
             // Consume the whole physical wake press. In particular, do not
@@ -66,6 +70,8 @@ void DisplayInputService::onButton(std::uint8_t id) {
         // device gestures. Vertical buttons are deliberately inert here.
         upHoldPending_ = false;
         downHoldPending_ = false;
+        menuHoldPending_ = false;
+        leftHoldPending_ = false;
         upHoldStage_ = 0u;
         if (id == 2u) display_.handle(InputAction::previousPage);
         else if (id == 3u) display_.handle(InputAction::nextPage);
@@ -73,8 +79,9 @@ void DisplayInputService::onButton(std::uint8_t id) {
         else if (id == 5u) display_.handle(InputAction::action2);
         return;
     }
-    // B0, B1, and B5 act when released, everywhere (pages, menus, dialogs),
-    // so their long presses (switch off, setup, refresh) work everywhere too.
+    // B0, B1, B2 and B5 act when released, everywhere (pages, menus,
+    // dialogs), so their long presses (switch off, settings, refresh, apps)
+    // work everywhere too.
     if (id != 0u && upHoldPending_) {
         upHoldPending_ = false;
         upHoldStage_ = 0u;
@@ -82,6 +89,7 @@ void DisplayInputService::onButton(std::uint8_t id) {
     }
     if (id != 1u) downHoldPending_ = false;
     if (id != 5u) menuHoldPending_ = false;
+    if (id != 2u) leftHoldPending_ = false;
     switch (id) {
     case 0u:
         upPressedAt_ = runtime_.millis();
@@ -92,7 +100,10 @@ void DisplayInputService::onButton(std::uint8_t id) {
         downPressedAt_ = runtime_.millis();
         downHoldPending_ = true;
         break;
-    case 2u: display_.handle(InputAction::previousPage); break;
+    case 2u:
+        leftPressedAt_ = runtime_.millis();
+        leftHoldPending_ = true;
+        break;
     case 3u: display_.handle(InputAction::nextPage); break;
     case 4u: display_.handle(InputAction::action1); break;
     case 5u:
@@ -114,8 +125,19 @@ void DisplayInputService::run() {
         if (elapsed >= releaseSettleMs && !buttons_.pressed(5u)) {
             menuHoldPending_ = false;
             display_.handle(semantic_display::InputAction::action2);
-        } else if (elapsed >= refreshHoldMs && buttons_.pressed(5u)) {
+        } else if (elapsed >= appsHoldMs && buttons_.pressed(5u)) {
             menuHoldPending_ = false;
+            display_.dismissPageMenu();
+            if (actions_.openApps) actions_.openApps(actions_.context);
+        }
+    }
+    if (leftHoldPending_) {
+        const auto elapsed = static_cast<std::uint32_t>(runtime_.millis() - leftPressedAt_);
+        if (elapsed >= releaseSettleMs && !buttons_.pressed(2u)) {
+            leftHoldPending_ = false;
+            display_.handle(semantic_display::InputAction::previousPage);
+        } else if (elapsed >= refreshHoldMs && buttons_.pressed(2u)) {
+            leftHoldPending_ = false;
             display_.requestFullRefresh();
         }
     }

@@ -2,11 +2,16 @@
 
 ## Device setup
 
-Hold the Down button (`BTN1`) for one second to open **Setup**. A short press
-continues to move to the next display section. Setup contains:
+| Hold for one second | Opens |
+| --- | --- |
+| Down (`BTN1`) | **Settings**, the device-local preferences |
+| Menu (`BTN5`) | **Apps**, the display applications (configurations) the server offers |
+| Previous page (`BTN2`, the left bottom button) | a full display refresh |
+| Up (`BTN0`), three seconds | switch off (sleep) |
 
-- **Settings** for device-local preferences;
-- **Apps** for display applications/configurations offered by the server.
+A short press of each keeps its normal action (next section, page menu,
+previous page, previous section). These four act when released, so a held
+button never also does its short action.
 
 Selection dialogs use Up and Down to move, Previous or Action 1 to go back,
 and Next or Action 2 to select.
@@ -69,8 +74,8 @@ data can provide the required ambient state.
 
 B5 (Action 2) is **Menu** in every application: a press opens the page menu
 (sections as tiles, then the pages of the chosen section; B0/B1 move up/down,
-B2/B3 left/right, B4 back, B5 open), holding it for one second forces a full
-display refresh.
+B2/B3 left/right, B4 back, B5 open), holding it for one second opens the
+apps. Holding B2 for one second forces a full display refresh.
 
 ## Local metrics
 

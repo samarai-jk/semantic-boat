@@ -5,7 +5,6 @@
 namespace remote_a {
 namespace {
 
-constexpr std::string_view mainItems[]{"SETTINGS", "APPS"};
 constexpr std::string_view settingItems[]{
     "BEEP VOLUME", "LED MODE", "SHOW ALARM LEVELS", "DEVELOPER MODE",
     "RS485 ADDRESS", "RESET"};
@@ -40,10 +39,9 @@ bool SetupService::init() {
     return true;
 }
 
-void SetupService::open() {
-    (void)display_.showSelection("SETUP",
-        {this, 2u, &mainItem, &mainCompleted});
-}
+void SetupService::open() { openSettings(); }
+
+void SetupService::openApps() { configurations_.requestList(); }
 
 bool SetupService::setSleeping(bool sleeping) {
     if (settings_.sleeping == sleeping) return true;
@@ -89,10 +87,6 @@ void SetupService::openDeveloperMode() {
         settings_.rs485Address - DeviceSettings::minimumRs485Address);
     }
 
-std::string_view SetupService::mainItem(void*, std::size_t index) {
-    return itemAt(mainItems, index);
-}
-
 std::string_view SetupService::settingsItem(void*, std::size_t index) {
     return itemAt(settingItems, index);
 }
@@ -119,20 +113,12 @@ std::string_view SetupService::rs485AddressItem(void*, std::size_t index) {
         std::string_view{};
 }
 
-void SetupService::mainCompleted(void* context, semantic_display::SelectionResult result,
-                                 std::size_t index) {
-    auto& self = *static_cast<SetupService*>(context);
-    if (result == semantic_display::SelectionResult::cancelled) return;
-    if (index == 0u) self.openSettings();
-    else if (index == 1u) self.configurations_.requestList();
-}
-
 void SetupService::settingsCompleted(void* context,
                                      semantic_display::SelectionResult result,
                                      std::size_t index) {
     auto& self = *static_cast<SetupService*>(context);
     if (result == semantic_display::SelectionResult::cancelled) {
-        self.open();
+        return; // back to the page
     } else if (index == 0u) {
         self.openBeepVolume();
     } else if (index == 1u) {
